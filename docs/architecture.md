@@ -210,11 +210,14 @@ flowchart LR
     Common --> Offline["Verify installed tools without network"]
     Native --> Offline
     Offline --> Registry["Publish images and record digests"]
-    Registry --> Qualification["Measure hosted jobs with candidate digests"]
-    Qualification --> Review["Review adoption in development checks"]
+    Registry --> Plan["Validate source and public digest on a trial branch"]
+    Plan --> Cold["Compare baseline and candidate with fresh hosted runners"]
+    Cold --> Warm["Repeat with exact cache hits on fresh hosted runners"]
+    Warm --> Review["Review adoption in development checks"]
 ```
 
-The required development jobs continue to use their current Fedora image
+The qualification workflow runs isolated cold and warm pairs for both required
+job profiles. The development jobs continue to use their current Fedora image
 until the candidate digests pass hosted qualification. See
 [CI image qualification](ci-images.md) for the comparison and adoption procedure.
 

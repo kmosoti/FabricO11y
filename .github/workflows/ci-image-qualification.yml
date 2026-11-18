@@ -1,0 +1,101 @@
+name: CI image qualification
+
+on:
+  push:
+    branches: ['ci/tool-image-qualification/**']
+    paths:
+      - '.github/ci-images/qualification.json'
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    if: github.repository == 'kmosoti/FabricO11y'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      revision: ${{ steps.plan.outputs.revision }}
+      profile: ${{ steps.plan.outputs.profile }}
+      candidate: ${{ steps.plan.outputs.candidate }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - name: Validate the source revision and public image
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TMPDIR: /var/tmp
+        run: |
+          set -euo pipefail
+          plan=.github/ci-images/qualification.json
+          revision=$(jq -er '.revision | select(test("^[0-9a-f]{40}$"))' "$plan")
+          profile=$(jq -er '.profile | select(. == "verify" or . == "native-acceptance")' "$plan")
+          candidate=$(jq -er '.candidate | select(test("^ghcr[.]io/kmosoti/fabrico11y-ci@sha256:[0-9a-f]{64}$"))' "$plan")
+          status=$(gh api "repos/$GITHUB_REPOSITORY/compare/develop...$revision" --jq .status)
+          case "$status" in identical|behind) ;; *) echo "Revision is outside develop history" >&2; exit 1 ;; esac
+
+          # Inspect the public manifest and config without a registry login or a layer pull.
+          DOCKER_CONFIG=$(mktemp -d "$TMPDIR/fabric-qualification-docker.XXXXXXXX")
+          export DOCKER_CONFIG
+          trap 'rm -rf -- "$DOCKER_CONFIG"' EXIT
+          docker_root=$(docker info --format '{{.DockerRootDir}}')
+          df -P "$docker_root" "$GITHUB_WORKSPACE"
+          docker system df
+          config=$(docker buildx imagetools inspect "$candidate" --format '{{json .Image}}')
+          jq -e --arg revision "$revision" '
+            .architecture == "amd64" and .os == "linux" and
+            .config.Labels["org.opencontainers.image.source"] == "https://github.com/kmosoti/FabricO11y" and
+            .config.Labels["org.opencontainers.image.revision"] == $revision
+          ' <<< "$config"
+          compressed_bytes=$(docker buildx imagetools inspect "$candidate" --raw |
+            jq -er '.layers | map(.size) | add | select(. > 0)')
+          {
+            printf 'revision=%s\nprofile=%s\ncandidate=%s\n' "$revision" "$profile" "$candidate"
+          } >> "$GITHUB_OUTPUT"
+          {
+            printf '## CI image qualification\n\n'
+            printf -- '- Check profile: `%s`\n- Product revision: `%s`\n' "$profile" "$revision"
+            printf -- '- Candidate: `%s` (%s compressed layer bytes)\n' "$candidate" "$compressed_bytes"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  baseline-cold:
+    needs: plan
+    uses: ./.github/workflows/ci-image-trial.yml
+    with:
+      revision: ${{ needs.plan.outputs.revision }}
+      profile: ${{ needs.plan.outputs.profile }}
+      image: registry.fedoraproject.org/fedora@sha256:d68cae9185777603262e0a7094f792ffed9326b22e1a03e2d2a1731fc3f94733
+      prebuilt: false
+      warm: false
+
+  baseline-warm:
+    needs: [plan, baseline-cold]
+    uses: ./.github/workflows/ci-image-trial.yml
+    with:
+      revision: ${{ needs.plan.outputs.revision }}
+      profile: ${{ needs.plan.outputs.profile }}
+      image: registry.fedoraproject.org/fedora@sha256:d68cae9185777603262e0a7094f792ffed9326b22e1a03e2d2a1731fc3f94733
+      prebuilt: false
+      warm: true
+
+  candidate-cold:
+    needs: plan
+    uses: ./.github/workflows/ci-image-trial.yml
+    with:
+      revision: ${{ needs.plan.outputs.revision }}
+      profile: ${{ needs.plan.outputs.profile }}
+      image: ${{ needs.plan.outputs.candidate }}
+      prebuilt: true
+      warm: false
+
+  candidate-warm:
+    needs: [plan, candidate-cold]
+    uses: ./.github/workflows/ci-image-trial.yml
+    with:
+      revision: ${{ needs.plan.outputs.revision }}
+      profile: ${{ needs.plan.outputs.profile }}
+      image: ${{ needs.plan.outputs.candidate }}
+      prebuilt: true
+      warm: true
