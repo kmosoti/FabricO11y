@@ -4,7 +4,7 @@
     {
       "id": "local",
       "title": "Single-host observability",
-      "summary": "Inspect local host and agent observations; fabric production-ready checks the resident collector and Spindle without requiring a receiver.",
+      "summary": "Inspect local host and agent observations. Run fabric production-ready to check the resident collector and local Spindle.",
       "scenarios": [
         {
           "description": "Read a locally collected metric",
@@ -40,7 +40,7 @@
     {
       "id": "custody",
       "title": "Spindle and canonical custody",
-      "summary": "Inspect durable local Spindle and optional receiver custody. fabric production-ready --require-canonical checks progress for the local origin; each contiguous frontier belongs to one configured origin.",
+      "summary": "Inspect durable local Spindle and optional receiver custody. Run fabric production-ready --require-canonical to check the configured authority and the local origin frontier.",
       "scenarios": [
         {
           "description": "Compare the Spindle, receiver, and collector frontiers",
