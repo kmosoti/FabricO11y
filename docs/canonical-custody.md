@@ -103,8 +103,8 @@ projection-readiness checks, and background Parquet replay batches. It returns
 a retryable error for plans and queries and reports projection evidence as
 unavailable on a deferred readiness check. Work already admitted keeps its
 lease through execution and response cleanup or completion of the projection
-batch. Cancellation remains available to authorized readers and leaves the
-query slot occupied until that cleanup. The server continues to accept
+batch. Cancellation uses a separate authorized connection within the connection cap
+and leaves the query slot occupied until cleanup. The server continues to accept
 canonical custody and authenticated readback within the effective connection
 cap. Once pressure clears, the Parquet projector resumes at its committed
 checkpoint. Greptime-backed custody, including pending writes and verification,
