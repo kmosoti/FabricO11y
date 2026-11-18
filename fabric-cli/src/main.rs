@@ -382,7 +382,7 @@ async fn run() -> Result<(), String> {
                 let state = collect_once(catalog.layout().data_dir(), &tmp_dir)?;
                 let olap = fabric_store::OlapParquetStore::new(catalog.layout().clone());
                 let spindle_sock = cli_spindle_sock.or_else(default_spindle_socket);
-                let mut pending_wm: Option<u64> = None;
+                let mut spindle_range = None;
                 let mut spindle_error = None;
                 let mut spindle_metrics = Vec::new();
                 let mut extra_logs = Vec::new();
@@ -417,13 +417,11 @@ async fn run() -> Result<(), String> {
                             }
                         };
                         let now_ms = Utc::now().timestamp_millis();
-                        let mut next_wm = after_id;
                         for (provenance, env) in records {
-                            next_wm = admission_kernel::telemetry::watermark_advance(
-                                next_wm,
-                                provenance.record_id,
-                                true,
-                            );
+                            fabric_collect::SpindleProjectionRange::include(
+                                &mut spindle_range,
+                                &provenance,
+                            )?;
                             match env {
                                 IngestEnvelope::Metric(mut pt) => {
                                     if pt.timestamp_ms <= 0 {
@@ -445,9 +443,6 @@ async fn run() -> Result<(), String> {
                                 }
                             }
                         }
-                        if next_wm > after_id {
-                            pending_wm = Some(next_wm);
-                        }
                     }
                 }
                 catalog.commit_cycle(&state.snapshot, &state.drift, &state.graph)?;
@@ -457,24 +452,15 @@ async fn run() -> Result<(), String> {
                 let mut volatile_plan =
                     olap.plan_flush(&state.metrics, &[], &[], &state.fs_events, &edges)?;
                 olap.execute_flush_plan(&mut volatile_plan)?;
-                if !spindle_metrics.is_empty()
-                    || !extra_logs.is_empty()
-                    || !extra_traces.is_empty()
-                    || pending_wm.is_some()
-                {
+                let committed_wm = if let Some(range) = spindle_range {
                     let mut spindle_plan = olap
                         .plan_spindle_flush(&spindle_metrics, &extra_logs, &extra_traces)?
-                        .with_spindle_watermark(pending_wm);
+                        .with_spindle_watermark(Some(range.last_id()));
                     olap.execute_flush_plan(&mut spindle_plan)?;
-                }
-                let mut committed_wm = None;
-                if let Some(wm) = pending_wm {
-                    let committed = catalog.read_watermark("spindle_watermark_id")?.unwrap_or(0);
-                    let next_wm =
-                        admission_kernel::telemetry::watermark_advance(committed, wm, true);
-                    catalog.set_watermark("spindle_watermark_id", next_wm)?;
-                    committed_wm = Some(next_wm);
-                }
+                    Some(range.commit_published(&catalog)?)
+                } else {
+                    None
+                };
                 fabric_store::clear_committed_uncommitted(
                     catalog.layout(),
                     committed_wm,
