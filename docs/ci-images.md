@@ -67,16 +67,24 @@ preserves the native engine binary checksum and version checks.
    `gh api --paginate repos/kmosoti/FabricO11y/actions/runs/<run-id>/attempts/<attempt>/jobs`.
    Report queue and dependency wait separately from job execution. Record
    container initialization, cache restore and save, tool setup, compilation
-   and every verification phase. The workflow rejects differences in CPU
-   model, usable cores, CPU quota, memory capacity, runner kernel, product and
-   native compiler versions, and native library versions. It compares a
-   fingerprint artifact from each completed job. Check the runner image version
-   in each job's `Set up job` log and the resolved checkout and cache action SHAs
-   before comparing samples. Compare each job's
-   cold and warm wall times through the end of verification. Report cache
-   priming and full job times separately, along with published image and cache
-   sizes and the median and range for each cell.
-6. Confirm that the candidate preflight and checks passed with the installed
+   and every verification phase. Fingerprints must match exactly for CPU
+   model, usable cores, CPU quota, cgroup memory limit, runner kernel, product
+   and native compiler versions, and native library versions. The jobs also
+   retain raw physical memory from `MemTotal`. Across the matched identities,
+   the difference between the highest and lowest value must be at most
+   1,024 KiB.
+6. Read each job's `Set up job` log with
+   `gh run view --job <job-id> --log`. Record the version under `Runner Image`
+   for Ubuntu and the resolved checkout and cache action SHAs from the action
+   download lines. Cold controls intentionally skip cache actions. Group
+   results by the exact revisions and report matched baseline and candidate
+   counts for each job profile and cache state. Compare medians from at least three successful
+   samples per variant in a matching group. Keep logs and timings from
+   earlier or mixed groups with their original labels and list their
+   unmatched counts separately. Compare wall times through the end of
+   verification. Report cache priming and full job times separately, along
+   with image and cache sizes and the median and range for each cell.
+7. Confirm that the candidate preflight and checks passed with the installed
    tools. Adopt only if each candidate cold median improves and each candidate
    warm median falls within or below the observed baseline warm range. Retain
    run links and report fails, cache evictions, and material runner differences
