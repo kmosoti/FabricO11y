@@ -143,6 +143,43 @@
           "assumptions": "The caller supplies authenticated origin and completed publication evidence. Transport, Parquet and redb durability require runtime checks."
         }
       ]
+    },
+    {
+      "id": "settings",
+      "title": "Effective settings and headroom",
+      "summary": "Inspect versioned settings, overrides, and the Linux limit behind the automatic hot ring budget.",
+      "scenarios": [
+        {
+          "description": "Inspect the effective collector configuration",
+          "command": "fabric --config /data/fabrico11y/fabric.toml settings --json",
+          "expected": "The report gives resolved fields, each value’s source, and the inputs used for the automatic hot ring budget.",
+          "checks": [
+            "effective-toml-settings"
+          ]
+        }
+      ],
+      "documentation": [
+        "docs/settings.md",
+        "docs/collection.md"
+      ],
+      "proofs": [
+        {
+          "kind": "extracted_rust",
+          "path": "proofs/ExtractedAdmission.lean",
+          "theorem": "admission_kernel.elastic_spendable_contract",
+          "checker": "aeneas",
+          "scope": "The extracted implementation reserves a quarter of a known capacity, rounded up.",
+          "assumptions": "The caller supplies an accurate finite capacity. Linux limit discovery and memory behavior require runtime checks."
+        },
+        {
+          "kind": "extracted_rust",
+          "path": "proofs/ExtractedAdmission.lean",
+          "theorem": "admission_kernel.elastic_lease_return_contract",
+          "checker": "aeneas",
+          "scope": "The extracted implementation returns idle capacity while preserving live charges.",
+          "assumptions": "The caller accounts for ownership, including work still in flight, and applies the decision only to an elastic resource."
+        }
+      ]
     }
   ]
 }
