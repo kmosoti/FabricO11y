@@ -208,4 +208,16 @@ pub struct Health {
     pub source_status: Vec<sources::SourceStatus>,
     pub missed_samples: u64,
     pub process_resident_bytes: u64,
+    /// Local delivery health for the independent self-telemetry lane.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub self_telemetry: Option<SelfTelemetryHealth>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SelfTelemetryHealth {
+    pub accepted: u64,
+    pub confirmed: u64,
+    pub queued: usize,
+    pub dropped: u64,
+    pub blocked: bool,
 }
