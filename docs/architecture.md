@@ -31,7 +31,7 @@ flowchart TD
 
     subgraph QueryAndCLI["Query Engine & Deterministic CLI"]
         FQ["fabric-query (Preserved Projection + DataFusion/Arrow Unified Engine)"]
-        CLI["fabric-cli ('fabric' binary: --json, --arrow, --table, custody)"]
+        CLI["fabric-cli ('fabric' binary: query, custody, projection-ready)"]
         FQ --> FC
         FQ --> FG
         FQ --> FS
@@ -92,7 +92,17 @@ flowchart LR
     QENG -->|"snapshot / query / drift / doctor"| OUT["fabric CLI (--json | --arrow | --table)"]
     GRAPH -->|"lineage / blame"| OUT
     REDB -->|"custody status + server progress"| CUST["fabric custody (--json | --arrow | --table)"]
+    I -->|"origin-qualified exact custody record"| READY["fabric projection-ready --json"]
+    REDB -->|"origin-bound committed frontier"| READY
+    PQ -->|"guarded full-row read and receipt provenance"| READY
 ```
+
+The local projection binds its Spindle origin before staging a contiguous prefix.
+New metrics, logs, and traces carry internal receipt provenance in Parquet. The
+public query schema omits this field. Compaction retains raw provenance and metric
+rollups discard it. The readiness check reads the catalog and the queryable raw
+row within one deadline. Results describe that observation at the time of the
+read. Retention can subsequently remove the evidence.
 
 ## 3. Two-Branch Stacked Development Workflow & Release Gate
 

@@ -9,7 +9,7 @@ use fabric::canonical::{self, Request as CanonicalRequest, Response as Canonical
 use fabric::spindle::{Reply as SpindleReply, Request as SpindleRequest, transport};
 use fabric_collect::{
     CollectedState, DaemonConfig, DaemonRequest, DaemonResponse, IngestEnvelope,
-    SelfPreservationGuard, collect_once, default_spindle_socket, poll_spindle_custody_records,
+    SelfPreservationGuard, collect_once, default_spindle_socket, poll_spindle_projection_records,
     query_running_daemon, run_daemon,
 };
 use fabric_core::arrow_schemas::{
@@ -32,6 +32,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::time::{Duration, Instant};
+
+mod projection_ready;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OutputFormat {
@@ -87,6 +89,8 @@ enum Commands {
     Doctor,
     /// Inspect unified Spindle custody store, Server canonical frontiers, and collector watermark.
     Custody(CustodyArgs),
+    /// Check whether an exact Spindle receipt can be queried from committed local projection.
+    ProjectionReady(projection_ready::Args),
     /// Run the converged telemetry daemon (inside fabrico11y.slice).
     Daemon(DaemonArgs),
 }
@@ -196,6 +200,13 @@ fn resolve_cli_tmp_dir(explicit: Option<&Path>) -> Result<PathBuf, String> {
 
 async fn run() -> Result<(), String> {
     let cli = Cli::parse();
+    if let Commands::ProjectionReady(args) = cli.command {
+        std::process::exit(projection_ready::run(
+            args,
+            cli.data_dir,
+            cli.arrow || cli.table,
+        ));
+    }
     let format = if cli.json {
         OutputFormat::Json
     } else if cli.arrow {
@@ -210,6 +221,7 @@ async fn run() -> Result<(), String> {
     let layout = validated_storage_layout(&cli.data_dir)?;
 
     match &cli.command {
+        Commands::ProjectionReady(_) => unreachable!(),
         Commands::Snapshot => {
             let snap = fetch_snapshot(&layout, &tmp_dir)?;
             match format {
@@ -365,6 +377,7 @@ async fn run() -> Result<(), String> {
                 let olap = fabric_store::OlapParquetStore::new(catalog.layout().clone());
                 let spindle_sock = cli_spindle_sock.or_else(default_spindle_socket);
                 let mut pending_wm: Option<u64> = None;
+                let mut spindle_error = None;
                 let mut spindle_metrics = Vec::new();
                 let mut extra_logs = Vec::new();
                 let mut extra_traces = Vec::new();
@@ -374,34 +387,55 @@ async fn run() -> Result<(), String> {
                         let after_id = catalog.read_watermark("spindle_watermark_id")?.unwrap_or(0);
                         let sock_owned = sock.clone();
                         let host_owned = state.snapshot.hostname.clone();
-                        let records = tokio::task::spawn_blocking(move || {
-                            poll_spindle_custody_records(&sock_owned, after_id, 64, &host_owned)
+                        let catalog_owned = catalog.clone();
+                        let poll = tokio::task::spawn_blocking(move || {
+                            poll_spindle_projection_records(
+                                &sock_owned,
+                                &catalog_owned,
+                                after_id,
+                                64,
+                                &host_owned,
+                            )
                         })
                         .await
-                        .map_err(|e| e.to_string())??;
+                        .map_err(|e| e.to_string())
+                        .and_then(|result| result);
+                        let records = match poll {
+                            Ok(poll) => {
+                                spindle_error = poll.tail_error;
+                                poll.records
+                            }
+                            Err(error) => {
+                                spindle_error = Some(error);
+                                Vec::new()
+                            }
+                        };
                         let now_ms = Utc::now().timestamp_millis();
                         let mut next_wm = after_id;
-                        for (id, env) in records {
-                            next_wm =
-                                admission_kernel::telemetry::watermark_advance(next_wm, id, true);
+                        for (provenance, env) in records {
+                            next_wm = admission_kernel::telemetry::watermark_advance(
+                                next_wm,
+                                provenance.record_id,
+                                true,
+                            );
                             match env {
                                 IngestEnvelope::Metric(mut pt) => {
                                     if pt.timestamp_ms <= 0 {
                                         pt.timestamp_ms = now_ms;
                                     }
-                                    spindle_metrics.push(pt);
+                                    spindle_metrics.push((Some(provenance), pt));
                                 }
                                 IngestEnvelope::Log(mut log) => {
                                     if log.timestamp_ms <= 0 {
                                         log.timestamp_ms = now_ms;
                                     }
-                                    extra_logs.push(log);
+                                    extra_logs.push((Some(provenance), log));
                                 }
                                 IngestEnvelope::Trace(mut span) => {
                                     if span.timestamp_ms <= 0 {
                                         span.timestamp_ms = now_ms;
                                     }
-                                    extra_traces.push(span);
+                                    extra_traces.push((Some(provenance), span));
                                 }
                             }
                         }
@@ -423,7 +457,7 @@ async fn run() -> Result<(), String> {
                     || pending_wm.is_some()
                 {
                     let mut spindle_plan = olap
-                        .plan_flush(&spindle_metrics, &extra_logs, &extra_traces, &[], &[])?
+                        .plan_spindle_flush(&spindle_metrics, &extra_logs, &extra_traces)?
                         .with_spindle_watermark(pending_wm);
                     olap.execute_flush_plan(&mut spindle_plan)?;
                 }
@@ -440,6 +474,9 @@ async fn run() -> Result<(), String> {
                     committed_wm,
                     &std::collections::BTreeSet::new(),
                 )?;
+                if let Some(error) = spindle_error {
+                    return Err(error);
+                }
                 return emit_json("daemon_once", &state.snapshot.self_health);
             }
             let mut daemon_config = DaemonConfig {

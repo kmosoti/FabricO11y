@@ -11,7 +11,7 @@ pub mod parquet_guard;
 pub mod paths;
 pub mod ring;
 
-pub use catalog::{CatalogStore, PersistedLiveState};
+pub use catalog::{CatalogStore, PersistedLiveState, SpindleProjectionFrontier};
 pub use janitor::{JanitorConfig, JanitorStats, RetentionJanitor};
 pub use olap::{
     MAX_SNAPSHOT_METADATA_BYTES, MAX_SNAPSHOT_PARQUET_FILES, OLAP_DOMAINS, OlapFlushPlan,

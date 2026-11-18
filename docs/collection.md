@@ -138,6 +138,29 @@ new SDK process creates a new generation; applications requiring retry across
 process death must persist the complete original envelope themselves. Registry
 descriptors are retained and compared exactly under their registry ID.
 
+## Check receipt projection
+
+Save the receipt JSON returned by Spindle and record the Spindle origin associated
+with the submission. The receipt file can contain the receipt itself or the full
+`result: receipt` reply. Use `--receipt -` for standard input.
+
+```sh
+fabric projection-ready --origin "$SPINDLE_ORIGIN" --receipt receipt.json --wait 30s --json
+```
+
+Exit 0 means the exact observation was read from committed local Parquet. Exit 3
+means custody was verified and the projection frontier was still behind. Exit 4
+means evidence was unavailable, including a wrong origin, mismatched identity,
+legacy projection, unreadable storage, or raw data removed by retention. Exit 2
+indicates invalid arguments or receipt JSON. The result contains the observed
+frontier when readable. Allow up to five minutes with `--wait`, or omit it for a
+single bounded check. The check does not start collection or flush data.
+
+Upgrade local Spindle, the collector, and readers together. Existing files remain
+queryable. Earlier projected observations have no receipt provenance, and older
+readers cannot read files with the new internal provenance field. Keep an existing
+collector data directory bound to its existing Spindle store across the upgrade.
+
 ## Harnesses and adapter
 
 Run `cargo run -p fabric --example agent_harness -- SOCKET [GLOBAL_RUN_UUID]`, or

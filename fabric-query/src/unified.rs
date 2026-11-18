@@ -7,11 +7,12 @@ use arrow::array::{
     StringArray, StringViewArray, UInt32Array, UInt64Array, make_array,
 };
 use arrow::compute::cast;
-use arrow::datatypes::{DataType, FieldRef, Schema, SchemaRef};
+use arrow::datatypes::{DataType, Field, FieldRef, Schema, SchemaRef};
 use arrow::record_batch::{RecordBatch, RecordBatchOptions};
 use datafusion::catalog::{Session, TableProvider};
 use datafusion::common::DataFusionError;
 use datafusion::common::tree_node::TreeNodeRecursion;
+use datafusion::execution::disk_manager::{DiskManagerBuilder, DiskManagerMode};
 use datafusion::execution::memory_pool::{
     GreedyMemoryPool, MemoryConsumer, MemoryPool, MemoryReservation,
 };
@@ -37,14 +38,16 @@ use fabric_core::arrow_schemas::{
 pub use fabric_core::query_spec::{
     QueryDomain, UnifiedQuerySpec, build_unified_sql, parse_duration_ms,
 };
-use fabric_core::{HostSnapshot, MetricPoint};
+use fabric_core::{
+    HostSnapshot, MetricPoint, SPINDLE_PROVENANCE_COLUMN, SpindleProvenance, StorageLayout,
+};
 use fabric_store::parquet_guard::{
     ColumnPageScanStats, PINNED_FOOTER_MIN_BYTES, checked_column_byte_range,
     column_peak_decode_fixed_row_bytes, estimate_arrow_schema_bytes,
     estimate_kv_metadata_clone_bytes, inspect_parquet_footer_bounds, read_parquet_footer_slice,
     scan_column_chunk_page_headers, scan_parquet_thrift_footer_slice,
-    validate_flat_compatible_parquet_schema, validate_non_nested_parquet_file_metadata,
-    validate_parquet_metadata_invariants, validate_projected_row_group_pages,
+    validate_non_nested_parquet_file_metadata, validate_parquet_metadata_invariants,
+    validate_projected_row_group_pages, validate_provenance_compatible_parquet_schema,
 };
 use fabric_store::{
     MAX_SNAPSHOT_METADATA_BYTES, MAX_SNAPSHOT_PARQUET_FILES, OlapParquetStore, PinnedParquetFile,
@@ -68,6 +71,7 @@ use std::sync::{Arc, Mutex};
 const UNIFIED_POOL_BYTES: usize = 64 * 1024 * 1024;
 const MAX_UNIFIED_QUERY_RESULT_BYTES: usize = 32 * 1024 * 1024;
 const UNIFIED_SPILL_BYTES: u64 = 256 * 1024 * 1024;
+const MAX_SPINDLE_PROVENANCE_BYTES: usize = 4 * 1024;
 static NEXT_RESULT_BUDGET_EXPR_ID: AtomicU64 = AtomicU64::new(1);
 
 struct ResultBudgetState {
@@ -274,6 +278,117 @@ pub async fn execute_unified_query(
         }
     }
     Err(last_err.unwrap_or_else(|| "unified query failed".to_owned()))
+}
+
+/// Checks exact Spindle row provenance through the same guarded Parquet reader
+/// as ordinary queries. The caller must separately validate custody and the
+/// committed projection frontier.
+pub async fn probe_spindle_projection(
+    layout: &StorageLayout,
+    domain: QueryDomain,
+    timestamp_ms: i64,
+    key: &SpindleProvenance,
+) -> Result<bool, String> {
+    let (domain, schema) = match domain {
+        QueryDomain::Metrics => ("metrics", METRICS_SCHEMA.clone()),
+        QueryDomain::Logs => ("logs", LOGS_SCHEMA.clone()),
+        QueryDomain::Traces => ("traces", TRACES_SCHEMA.clone()),
+        _ => return Err("unsupported Spindle projection domain".to_owned()),
+    };
+    let olap = OlapParquetStore::new(layout.clone());
+    let pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(UNIFIED_POOL_BYTES));
+    let budget = Arc::new(SnapshotBudgetGuard::new(
+        MemoryConsumer::new("SpindleProjectionSnapshot").register(&pool),
+    ));
+    let context = SessionContext::new_with_config_rt(
+        SessionConfig::new().with_target_partitions(1),
+        RuntimeEnvBuilder::new()
+            .with_memory_pool(pool)
+            .with_disk_manager_builder(
+                DiskManagerBuilder::default().with_mode(DiskManagerMode::Disabled),
+            )
+            .build_arc()
+            .map_err(|err| err.to_string())?,
+    );
+
+    for attempt in 0..3 {
+        let result = probe_spindle_projection_once(
+            &olap,
+            domain,
+            &schema,
+            timestamp_ms,
+            key,
+            &budget,
+            &context,
+        )
+        .await;
+        match result {
+            Err(err) if attempt < 2 && is_missing_file_error(&err) => {
+                tokio::task::yield_now().await;
+            }
+            result => return result,
+        }
+    }
+    unreachable!("the last attempt always returns")
+}
+
+async fn probe_spindle_projection_once(
+    olap: &OlapParquetStore,
+    domain: &str,
+    schema: &SchemaRef,
+    timestamp_ms: i64,
+    key: &SpindleProvenance,
+    budget: &Arc<SnapshotBudgetGuard>,
+    context: &SessionContext,
+) -> Result<bool, String> {
+    // The collector replaces timestamps rounded down to zero before choosing
+    // a partition. Their original Spindle payload cannot identify that day.
+    let files = if timestamp_ms > 0 {
+        budget.try_resize(MAX_SNAPSHOT_METADATA_BYTES)?;
+        olap.snapshot_pinned_parquet_files_for_day(
+            domain,
+            fabric_store::olap::day_from_ms(timestamp_ms),
+            MAX_SNAPSHOT_PARQUET_FILES,
+            MAX_SNAPSHOT_METADATA_BYTES,
+        )?
+    } else {
+        discover_bounded_snapshot(olap, domain, None, budget)?
+    };
+    if files.is_empty() {
+        budget.free();
+        return Ok(false);
+    };
+    let partitions = partition_pinned_files(files, 1, Some(budget))?;
+    let plan = PinnedParquetExec::try_new_inner(
+        Arc::clone(schema),
+        partitions,
+        None,
+        None,
+        Some(Arc::clone(budget)),
+        true,
+    )
+    .map_err(|err| err.to_string())?;
+    let mut stream = plan
+        .execute(0, context.task_ctx())
+        .map_err(|err| err.to_string())?;
+    while let Some(batch) = std::future::poll_fn(|cx| stream.as_mut().poll_next(cx)).await {
+        let batch = batch.map_err(|err| err.to_string())?;
+        let column = batch
+            .column_by_name(SPINDLE_PROVENANCE_COLUMN)
+            .and_then(|column| column.as_any().downcast_ref::<StringArray>())
+            .ok_or("missing Spindle row provenance in guarded batch")?;
+        for raw in column.iter().flatten() {
+            if raw.len() > MAX_SPINDLE_PROVENANCE_BYTES {
+                return Err("Spindle row provenance exceeds its size limit".to_owned());
+            }
+            let provenance = serde_json::from_str::<SpindleProvenance>(raw)
+                .map_err(|err| format!("invalid Spindle row provenance: {err}"))?;
+            if provenance == *key {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
 }
 
 async fn execute_unified_query_once(
@@ -893,6 +1008,7 @@ struct PinnedParquetExec {
     limit: Option<usize>,
     properties: Arc<PlanProperties>,
     snapshot_budget: Option<Arc<SnapshotBudgetGuard>>,
+    spindle_probe: bool,
 }
 
 impl PinnedParquetExec {
@@ -913,8 +1029,38 @@ impl PinnedParquetExec {
         limit: Option<usize>,
         snapshot_budget: Option<Arc<SnapshotBudgetGuard>>,
     ) -> datafusion::common::Result<Self> {
+        Self::try_new_inner(
+            full_schema,
+            partitions,
+            projection,
+            limit,
+            snapshot_budget,
+            false,
+        )
+    }
+
+    fn try_new_inner(
+        full_schema: SchemaRef,
+        partitions: Arc<[Arc<[PinnedParquetFile]>]>,
+        projection: Option<Vec<usize>>,
+        limit: Option<usize>,
+        snapshot_budget: Option<Arc<SnapshotBudgetGuard>>,
+        spindle_probe: bool,
+    ) -> datafusion::common::Result<Self> {
         let projected_schema = match projection.as_ref() {
             Some(indices) => Arc::new(full_schema.project(indices)?),
+            None if spindle_probe => {
+                let mut fields = full_schema.fields().to_vec();
+                fields.push(Arc::new(Field::new(
+                    SPINDLE_PROVENANCE_COLUMN,
+                    DataType::Utf8,
+                    true,
+                )));
+                Arc::new(Schema::new_with_metadata(
+                    fields,
+                    full_schema.metadata().clone(),
+                ))
+            }
             None => Arc::clone(&full_schema),
         };
         let properties = Arc::new(PlanProperties::new(
@@ -931,6 +1077,7 @@ impl PinnedParquetExec {
             limit,
             properties,
             snapshot_budget,
+            spindle_probe,
         })
     }
 }
@@ -1014,6 +1161,7 @@ impl ExecutionPlan for PinnedParquetExec {
         let projection = self.projection.clone();
         let limit = self.limit;
         let snapshot_budget = self.snapshot_budget.clone();
+        let spindle_probe = self.spindle_probe;
 
         let (raw_tx, mut raw_rx) = tokio::sync::mpsc::channel::<
             datafusion::common::Result<(RecordBatch, MemoryReservation)>,
@@ -1062,10 +1210,18 @@ impl ExecutionPlan for PinnedParquetExec {
                 let file = pinned.open_verified().map_err(DataFusionError::Execution)?;
                 let (file_len, footer_len, reader_meta) =
                     load_verified_arrow_reader_metadata(&file, &footer_res)?;
-                validate_flat_compatible_parquet_schema(&reader_meta, &full_schema)
-                    .map_err(DataFusionError::Execution)?;
+                let has_provenance = validate_provenance_compatible_parquet_schema(
+                    &reader_meta,
+                    &full_schema,
+                )
+                .map_err(DataFusionError::Execution)?;
                 validate_parquet_metadata_invariants(&reader_meta, file_len, footer_len)
                     .map_err(DataFusionError::Execution)?;
+                if spindle_probe && !has_provenance {
+                    drop(reader_meta);
+                    footer_res.free();
+                    continue;
+                }
                 let data_section_end = file_len
                     .checked_sub(8_u64.saturating_add(footer_len as u64))
                     .ok_or_else(|| {
@@ -1126,6 +1282,13 @@ impl ExecutionPlan for PinnedParquetExec {
                         );
                         (Some(unique_roots), mask)
                     }
+                    None if has_provenance && !spindle_probe => (
+                        None,
+                        ProjectionMask::roots(
+                            reader_meta.metadata().file_metadata().schema_descr(),
+                            0..full_schema.fields().len(),
+                        ),
+                    ),
                     None => (None, ProjectionMask::all()),
                 };
 
@@ -1330,12 +1493,26 @@ fn register_pinned_parquet_table_with_budget(
     files: Vec<PinnedParquetFile>,
     snapshot_budget: Option<&Arc<SnapshotBudgetGuard>>,
 ) -> Result<(), String> {
-    let mid = files.len().div_ceil(2).max(1);
-    let num_chunks = if files.len() > mid {
-        2
-    } else {
-        usize::from(!files.is_empty())
+    let partitions = partition_pinned_files(files, 2, snapshot_budget)?;
+    let table = PinnedParquetTable {
+        schema,
+        partitions,
+        snapshot_budget: snapshot_budget.map(Arc::clone),
     };
+    ctx.register_table(table_name, Arc::new(table))
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+type PinnedParquetPartitions = Arc<[Arc<[PinnedParquetFile]>]>;
+
+fn partition_pinned_files(
+    files: Vec<PinnedParquetFile>,
+    target_partitions: usize,
+    snapshot_budget: Option<&Arc<SnapshotBudgetGuard>>,
+) -> Result<PinnedParquetPartitions, String> {
+    let mid = files.len().div_ceil(target_partitions).max(1);
+    let num_chunks = files.len().div_ceil(mid);
     if let Some(budget) = snapshot_budget {
         let retained_files_bytes = snapshot_retained_heap_bytes(&files);
         let conversion_peak_bytes = retained_files_bytes
@@ -1374,14 +1551,7 @@ fn register_pinned_parquet_table_with_budget(
             return Err(err);
         }
     }
-    let table = PinnedParquetTable {
-        schema,
-        partitions,
-        snapshot_budget: snapshot_budget.map(Arc::clone),
-    };
-    ctx.register_table(table_name, Arc::new(table))
-        .map_err(|e| e.to_string())?;
-    Ok(())
+    Ok(partitions)
 }
 
 fn register_parquet_or_empty(
@@ -1679,6 +1849,124 @@ mod tests {
             return td;
         }
         tempfile::tempdir_in("/var/tmp").unwrap()
+    }
+
+    #[tokio::test]
+    async fn spindle_receipt_probe_requires_exact_provenance_and_keeps_public_schema() {
+        let dir = non_tmp_dir();
+        let missing_store = dir.path().join("uninitialized");
+        let layout = validated_storage_layout(&missing_store).unwrap();
+        let key = SpindleProvenance {
+            origin: "spindle-a".into(),
+            record_id: 17,
+            producer: "batch-client".into(),
+            generation: "generation-a".into(),
+            sequence: 3,
+        };
+        let timestamp_ms = 1_700_000_000_000;
+        assert!(
+            !probe_spindle_projection(&layout, QueryDomain::Metrics, timestamp_ms, &key)
+                .await
+                .unwrap()
+        );
+        assert!(!missing_store.exists());
+
+        let catalog = fabric_store::CatalogStore::open(dir.path()).unwrap();
+        let layout = catalog.layout();
+        let olap = OlapParquetStore::new(layout.clone());
+        let point = MetricPoint {
+            timestamp_ms,
+            name: "receipt.sensor".into(),
+            value: 12.5,
+            host: "host".into(),
+            slice: "spindle".into(),
+            unit: "test".into(),
+            pid: None,
+            labels_json: serde_json::to_string(&key).unwrap(),
+        };
+        olap.write_metrics(std::slice::from_ref(&point)).unwrap();
+        assert!(
+            !probe_spindle_projection(layout, QueryDomain::Metrics, timestamp_ms, &key)
+                .await
+                .unwrap()
+        );
+        let log_key = SpindleProvenance {
+            record_id: 18,
+            sequence: 4,
+            ..key.clone()
+        };
+        let trace_key = SpindleProvenance {
+            record_id: 19,
+            sequence: 5,
+            ..key.clone()
+        };
+        let mut flush = olap
+            .plan_spindle_flush(
+                &[(Some(key.clone()), point)],
+                &[(
+                    Some(log_key.clone()),
+                    fabric_core::LogRecord {
+                        timestamp_ms,
+                        message: "test receipt log".into(),
+                        ..Default::default()
+                    },
+                )],
+                &[(
+                    Some(trace_key.clone()),
+                    fabric_core::TraceSpanRecord {
+                        timestamp_ms,
+                        span_id: "test receipt span".into(),
+                        ..Default::default()
+                    },
+                )],
+            )
+            .unwrap();
+        olap.execute_flush_plan(&mut flush).unwrap();
+        for (domain, receipt) in [
+            (QueryDomain::Metrics, &key),
+            (QueryDomain::Logs, &log_key),
+            (QueryDomain::Traces, &trace_key),
+        ] {
+            assert!(
+                probe_spindle_projection(layout, domain, timestamp_ms, receipt)
+                    .await
+                    .unwrap()
+            );
+        }
+        let mut other_origin = key.clone();
+        other_origin.origin = "spindle-b".into();
+        assert!(
+            !probe_spindle_projection(layout, QueryDomain::Metrics, timestamp_ms, &other_origin)
+                .await
+                .unwrap()
+        );
+        assert!(
+            !probe_spindle_projection(
+                layout,
+                QueryDomain::Metrics,
+                timestamp_ms + 86_400_000,
+                &key,
+            )
+            .await
+            .unwrap()
+        );
+        assert!(
+            probe_spindle_projection(layout, QueryDomain::Metrics, 0, &key)
+                .await
+                .unwrap()
+        );
+        let query = UnifiedQuerySpec {
+            limit: 10,
+            ..Default::default()
+        };
+        let output = execute_unified_query(layout.data_dir(), &query, &[], None)
+            .await
+            .unwrap();
+        assert_eq!(output.row_count, 2);
+        assert_eq!(output.schema.fields(), METRICS_SCHEMA.fields());
+        assert!(output.rows.iter().all(|row| {
+            row["name"] == "receipt.sensor" && row.get(SPINDLE_PROVENANCE_COLUMN).is_none()
+        }));
     }
 
     #[tokio::test]
