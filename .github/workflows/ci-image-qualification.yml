@@ -36,6 +36,13 @@ jobs:
           status=$(gh api "repos/$GITHUB_REPOSITORY/compare/develop...$revision" --jq .status)
           case "$status" in identical|behind) ;; *) echo "Revision is outside develop history" >&2; exit 1 ;; esac
 
+          # The source revision must have the measured development workflow and cache contract.
+          for path in .github/workflows/development-checks.yml \
+              .github/actions/restore-ci-cache/action.yml .github/actions/save-ci-cache/action.yml; do
+            gh api -H 'Accept: application/vnd.github.raw+json' \
+              "repos/$GITHUB_REPOSITORY/contents/$path?ref=$revision" | cmp - "$path"
+          done
+
           # Inspect the public manifest and config without a registry login or a layer pull.
           DOCKER_CONFIG=$(mktemp -d "$TMPDIR/fabric-qualification-docker.XXXXXXXX")
           export DOCKER_CONFIG
@@ -99,3 +106,21 @@ jobs:
       image: ${{ needs.plan.outputs.candidate }}
       prebuilt: true
       warm: true
+
+  check-environments:
+    needs: [baseline-cold, baseline-warm, candidate-cold, candidate-warm]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      BASELINE_COLD: ${{ needs.baseline-cold.outputs.environment }}
+      BASELINE_WARM: ${{ needs.baseline-warm.outputs.environment }}
+      CANDIDATE_COLD: ${{ needs.candidate-cold.outputs.environment }}
+      CANDIDATE_WARM: ${{ needs.candidate-warm.outputs.environment }}
+    steps:
+      - name: Compare compiler, prerequisite and runner kernel identities
+        run: |
+          set -eu
+          test -n "$BASELINE_COLD"
+          test "$BASELINE_COLD" = "$BASELINE_WARM"
+          test "$BASELINE_COLD" = "$CANDIDATE_COLD"
+          test "$BASELINE_COLD" = "$CANDIDATE_WARM"
