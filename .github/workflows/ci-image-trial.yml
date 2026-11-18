@@ -159,8 +159,8 @@ jobs:
           memory_limit=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || printf unavailable)
           test -n "$cpu_model"
           test -n "$memory_total"
-          hardware=$(printf 'Kernel %s\nCPU %s (%s available cores)\nCPU quota %s\nTotal memory %s KiB\nMemory limit %s\n' \
-            "$kernel" "$cpu_model" "$cores" "$cpu_quota" "$memory_total" "$memory_limit")
+          hardware=$(printf 'Kernel %s\nCPU %s (%s available cores)\nCPU quota %s\n' \
+            "$kernel" "$cpu_model" "$cores" "$cpu_quota")
           compiler=$(rustc -vV)
           cargo=$(cargo -V)
           packages=$(rpm -q gcc glibc openssl-devel)
@@ -171,13 +171,15 @@ jobs:
             cxx_package=$(rpm -q gcc-c++)
             packages=$(printf '%s\n' "$packages" "$cxx_package")
           fi
-          identity=$(printf '%s\n' "$hardware" "$compiler" "$cargo" "$packages")
-          printf '%s\n' "$identity"
-          printf 'Available memory %s KiB\n' "$memory_available"
-          digest=$(printf '%s\n' "$identity" | sha256sum)
+          identity_details=$(printf 'Memory limit %s\n%s\n%s\n%s\n' "$memory_limit" "$compiler" "$cargo" "$packages")
+          printf '%s\nTotal memory %s KiB\n%s\nAvailable memory %s KiB\n' \
+            "$hardware" "$memory_total" "$identity_details" "$memory_available"
+          digest=$(printf '%s\n%s\n' "$hardware" "$identity_details" | sha256sum)
           fingerprint="$RUNNER_TEMP/environment.sha256"
+          memory="$RUNNER_TEMP/memory-total-kib"
           printf '%s\n' "${digest%% *}" > "$fingerprint"
-          printf 'path=%s\n' "$fingerprint" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$memory_total" > "$memory"
+          printf 'path=%s\nmemory=%s\n' "$fingerprint" "$memory" >> "$GITHUB_OUTPUT"
           df -P / "$GITHUB_WORKSPACE"
 
       - name: Initialize candidate workspace
@@ -230,7 +232,9 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ci-image-trial-${{ github.run_attempt }}-${{ inputs.prebuilt && 'candidate' || 'baseline' }}-${{ inputs.warm && 'warm' || 'cold' }}-${{ inputs.sample }}-environment
-          path: ${{ steps.environment.outputs.path }}
+          path: |
+            ${{ steps.environment.outputs.path }}
+            ${{ steps.environment.outputs.memory }}
           if-no-files-found: error
           retention-days: 7
 
