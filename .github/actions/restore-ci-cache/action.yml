@@ -62,7 +62,8 @@ runs:
           checkout=git
           git_config=(git -c "safe.directory=$GITHUB_WORKSPACE")
           [[ "$("${git_config[@]}" rev-parse HEAD)" == "$GITHUB_SHA" ]]
-          [[ -z "$("${git_config[@]}" status --porcelain)" ]]
+          worktree_status=$("${git_config[@]}" status --porcelain)
+          [[ -z "$worktree_status" ]]
         fi
         rustc_identity=$(rustc +1.100.0 -vV)
         cargo_identity=$(cargo +1.100.0 -vV)
@@ -71,7 +72,7 @@ runs:
         if [[ "$PROFILE" == native-acceptance ]]; then
           native_packages+=$'\n'$(rpm -q gcc-c++ gmp-devel)
           native_compilers=$(
-            rustup run 1.99.1 rustc -vV
+            rustup run 1.99.1 rustc -vV &&
             rustup run nightly-2026-09-17 rustc -vV
           )
         fi
@@ -160,7 +161,9 @@ runs:
         if [[ -e .git ]]; then
           git_config=(git -c "safe.directory=$GITHUB_WORKSPACE")
           [[ "$("${git_config[@]}" rev-parse HEAD)" == "$GITHUB_SHA" ]]
-          [[ -z "$("${git_config[@]}" status --porcelain)" ]]
+          worktree_status=$("${git_config[@]}" status --porcelain)
+          [[ -z "$worktree_status" ]]
           "${git_config[@]}" archive --format=tar "$GITHUB_SHA" | tar -xf -
-          [[ -z "$("${git_config[@]}" status --porcelain)" ]]
+          worktree_status=$("${git_config[@]}" status --porcelain)
+          [[ -z "$worktree_status" ]]
         fi
