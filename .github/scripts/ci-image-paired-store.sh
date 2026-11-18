@@ -52,7 +52,14 @@ start_daemon() {
   docker_lane image ls -aq > "$evidence/images-before.txt"
   ctr_lane content ls -q > "$evidence/content-before.txt"
   ctr_lane --namespace moby content ls -q > "$evidence/moby-content-before.txt"
-  ctr_lane --namespace moby snapshots ls -q > "$evidence/moby-snapshots-before.txt"
+  ctr_lane --namespace moby snapshots ls > "$evidence/moby-snapshot-inventory.txt"
+  awk 'NR == 1 {
+    if ($1 != "KEY" || $2 != "PARENT" || $3 != "KIND") exit 1
+    next
+  }
+  NF
+  END { if (NR == 0) exit 1 }
+  ' "$evidence/moby-snapshot-inventory.txt" > "$evidence/moby-snapshots-before.txt"
   [[ ! -s "$evidence/images-before.txt" && ! -s "$evidence/content-before.txt" &&
      ! -s "$evidence/moby-content-before.txt" && ! -s "$evidence/moby-snapshots-before.txt" ]]
   printf 'daemon=%s\ncontainerd=%s\nimages=%s\ncontent=%s\n' \
