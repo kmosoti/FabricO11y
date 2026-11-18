@@ -1,0 +1,6 @@
+{
+  "revision": "0d14f2c517ed1a0a49d2445be77cda9c9e3bf796",
+  "profile": "native-acceptance",
+  "candidate": "ghcr.io/kmosoti/fabrico11y-ci@sha256:170d813a79e72c8a7f0c74bcc8e969b3efa14983c75498dde5f3bbaa5cbb89f0",
+  "samples": 3
+}
