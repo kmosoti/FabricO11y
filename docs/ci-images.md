@@ -1,8 +1,9 @@
 # CI tool image qualification
 
 The `CI tool images` workflow builds common and native Fedora images from trusted
-`develop` revisions that change the image or a tool pin. An explicit dispatch
-on `develop` can retry a build. The workflow verifies installed tools in
+`develop` revisions that change the image or a tool pin. Rerun a failed
+publisher job at its original revision. Dispatch on `develop` is available
+when `main` contains the workflow. The workflow verifies installed tools in
 network-disabled containers before publishing commit-tagged images to GitHub
 Container Registry. The run summary records both immutable digests.
 
@@ -11,7 +12,9 @@ prerequisites. The native image adds Verus and its Z3, Charon and Aeneas,
 Lean and its compiled libraries, cargo-fuzz, and Greptime. Image builds reuse
 the repository's pinned bootstrap scripts. The native image discards upstream
 archives, Cargo downloads, and intermediate native compiler outputs after
-building. Lean libraries and the paths required by the checkers remain installed.
+building. The image downloads precompiled Lean dependencies from the bundled
+Aeneas libraries' import closure. Lake still builds any missing dependencies.
+Compiled Lean libraries and the paths required by the checkers remain installed.
 
 ## Qualify the candidate
 

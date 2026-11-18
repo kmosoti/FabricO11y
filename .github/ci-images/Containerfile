@@ -20,7 +20,8 @@ ENV FABRIC_PROOF_TOOLS=/opt/fabrico11y/proof-tools \
 
 COPY verification/aeneas.opam.lock verification/
 COPY .github/scripts/install-verification-tools.sh .github/scripts/install-engine-tools.sh .github/scripts/
-RUN HOME=/opt/fabrico11y CARGO_HOME=/opt/fabrico11y/.cargo OPAMJOBS=4 sh .github/scripts/install-verification-tools.sh \
+RUN HOME=/opt/fabrico11y CARGO_HOME=/opt/fabrico11y/.cargo OPAMJOBS=4 FABRIC_CI_LEAN_IMPORT_CACHE=1 \
+        sh .github/scripts/install-verification-tools.sh \
     && sh .github/scripts/install-engine-tools.sh \
     && proof_source="$FABRIC_PROOF_TOOLS/aeneas-ab34bd2" \
     && rm -rf "$FABRIC_PROOF_TOOLS/downloads" "$FABRIC_PROOF_TOOLS/opam-root" "$proof_source/_opam" \
@@ -29,6 +30,11 @@ RUN HOME=/opt/fabrico11y CARGO_HOME=/opt/fabrico11y/.cargo OPAMJOBS=4 sh .github
     && find "$charon_target" -mindepth 1 ! -path "$charon_target/release" ! -path "$charon_target/release/charon" ! -path "$charon_target/release/charon-driver" -delete \
     && aeneas_build="$proof_source/src/_build" \
     && find "$aeneas_build" -mindepth 1 ! -path "$aeneas_build/default" ! -path "$aeneas_build/default/main.exe" -delete \
+    && verus_root="$FABRIC_PROOF_TOOLS/verus-0.2026.10.26.d17fbd0/verus-x86-linux" \
+    && rm -rf "$verus_root/.fingerprint" "$verus_root/build" "$verus_root/deps" \
+    && lean_backend="$proof_source/backends/lean/.lake" \
+    && find "$lean_backend" -type d -path '*/.lake/build/ir' -prune -exec rm -rf -- {} + \
+    && rm -rf "$lean_backend/packages/mathlib/.lake/build/bin" \
     && sh .github/scripts/check-ci-image-tools.sh native \
     && dnf clean all
 
