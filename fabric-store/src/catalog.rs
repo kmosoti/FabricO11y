@@ -4,14 +4,17 @@
 use chrono::Utc;
 use fabric_core::{DriftReport, HostSnapshot, SCHEMA_VERSION, StorageLayout};
 use fabric_graph::CausalGraph;
-use redb::{Builder, Database, DatabaseError, ReadableDatabase, TableDefinition};
+use redb::{
+    Builder, Database, DatabaseError, ReadableDatabase, ReadableTable, TableDefinition, TableError,
+};
 use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions};
 use std::io::{ErrorKind, Write};
+use std::os::fd::AsRawFd;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::Path;
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const ENTITIES_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("entities");
 const ADJ_OUT_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("adj_out");
@@ -20,6 +23,10 @@ const UNITS_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("units");
 const WATERMARKS_TABLE: TableDefinition<&str, u64> = TableDefinition::new("watermarks");
 const ANOMALIES_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("anomalies");
 const META_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("meta");
+const SPINDLE_PROJECTION_TABLE: TableDefinition<&str, (&str, u64)> =
+    TableDefinition::new("spindle_projection");
+const SPINDLE_PROJECTION_BINDING: &str = "binding";
+const SPINDLE_WATERMARK: &str = "spindle_watermark_id";
 
 const REDB_CACHE_BYTES: usize = 4 * 1024 * 1024;
 const OPEN_RETRY_ATTEMPTS: usize = 40;
@@ -33,6 +40,43 @@ pub struct PersistedLiveState {
     pub snapshot: HostSnapshot,
     pub drift: DriftReport,
     pub graph: CausalGraph,
+}
+
+/// Durable collector progress and the origin to which future projection commits belong.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SpindleProjectionFrontier {
+    pub origin: Option<String>,
+    /// Records through this ID predate origin binding and lack verified provenance.
+    pub legacy_through: u64,
+    pub record_id: u64,
+}
+
+impl SpindleProjectionFrontier {
+    fn from_binding(record_id: u64, binding: Option<(&str, u64)>) -> Result<Self, String> {
+        let Some((origin, legacy_through)) = binding else {
+            return Ok(Self {
+                origin: None,
+                legacy_through: record_id,
+                record_id,
+            });
+        };
+        validate_spindle_projection_origin(origin)?;
+        if legacy_through > record_id {
+            return Err("Spindle projection watermark precedes its legacy boundary".to_owned());
+        }
+        Ok(Self {
+            origin: Some(origin.to_owned()),
+            legacy_through,
+            record_id,
+        })
+    }
+}
+
+fn validate_spindle_projection_origin(origin: &str) -> Result<(), String> {
+    if origin.is_empty() || origin.len() > 128 || origin.chars().any(char::is_control) {
+        return Err("invalid Spindle projection origin".to_owned());
+    }
+    Ok(())
 }
 
 /// Converged `redb` OLTP + adjacency catalog rooted under a validated non-tmpfs directory.
@@ -409,6 +453,136 @@ impl CatalogStore {
         Ok(value)
     }
 
+    /// Binds the collector to an origin before staging that origin's records.
+    ///
+    /// The caller holds the projection writer lock. The legacy scalar watermark
+    /// is captured with the binding and remains the recovery watermark.
+    pub fn bind_spindle_projection(
+        &self,
+        origin: &str,
+    ) -> Result<SpindleProjectionFrontier, String> {
+        validate_spindle_projection_origin(origin)?;
+        let db = self.open_db_with_retry()?;
+        let txn = db.begin_write().map_err(|e| e.to_string())?;
+        let record_id = {
+            let table = txn
+                .open_table(WATERMARKS_TABLE)
+                .map_err(|e| e.to_string())?;
+            table
+                .get(SPINDLE_WATERMARK)
+                .map_err(|e| e.to_string())?
+                .map_or(0, |value| value.value())
+        };
+        let frontier = {
+            let mut table = txn
+                .open_table(SPINDLE_PROJECTION_TABLE)
+                .map_err(|e| e.to_string())?;
+            let existing = table
+                .get(SPINDLE_PROJECTION_BINDING)
+                .map_err(|e| e.to_string())?
+                .map(|entry| {
+                    let (bound, legacy_through) = entry.value();
+                    (bound.to_owned(), legacy_through)
+                });
+            match existing {
+                Some((bound, _)) if bound != origin => {
+                    return Err(format!(
+                        "Spindle projection origin mismatch: collector bound to {bound}, observed {origin}"
+                    ));
+                }
+                Some((bound, legacy_through)) => {
+                    return SpindleProjectionFrontier::from_binding(
+                        record_id,
+                        Some((&bound, legacy_through)),
+                    );
+                }
+                None => {
+                    table
+                        .insert(SPINDLE_PROJECTION_BINDING, (origin, record_id))
+                        .map_err(|e| e.to_string())?;
+                    SpindleProjectionFrontier::from_binding(record_id, Some((origin, record_id)))?
+                }
+            }
+        };
+        txn.commit().map_err(|e| e.to_string())?;
+        Ok(frontier)
+    }
+
+    /// Reads the binding and watermark from a single read-only catalog snapshot.
+    ///
+    /// A missing catalog has no projection state. An existing but invalid or
+    /// corrupt catalog is an error. A writer may briefly hold the redb lock.
+    pub fn read_spindle_projection_frontier(
+        layout: &StorageLayout,
+        deadline: Instant,
+    ) -> Result<SpindleProjectionFrontier, String> {
+        let mut builder = Builder::new();
+        builder.set_cache_size(REDB_CACHE_BYTES);
+        loop {
+            if Instant::now() >= deadline {
+                return Err("Spindle projection frontier deadline exceeded".to_owned());
+            }
+            let Some(data_fd) = crate::olap::open_anchor_data_dir_if_exists(layout)? else {
+                return Ok(SpindleProjectionFrontier::default());
+            };
+            let Some(state_fd) =
+                crate::olap::open_child_dir_nofollow(&data_fd, "state", "state dir")?
+            else {
+                return Ok(SpindleProjectionFrontier::default());
+            };
+            let Some((file, _)) = crate::olap::open_regular_file_in_dir_nofollow(
+                &state_fd,
+                "catalog.redb",
+                "catalog",
+            )?
+            else {
+                return Ok(SpindleProjectionFrontier::default());
+            };
+            // redb's read-only builder takes a path. Reopen the inode we just
+            // pinned so it cannot follow a replacement at the original path.
+            let pinned_catalog = format!("/proc/self/fd/{}", file.as_raw_fd());
+            let db = match builder.open_read_only(pinned_catalog) {
+                Ok(db) => db,
+                Err(DatabaseError::DatabaseAlreadyOpen) => {
+                    thread::sleep(
+                        deadline
+                            .saturating_duration_since(Instant::now())
+                            .min(OPEN_RETRY_DELAY),
+                    );
+                    continue;
+                }
+                Err(e) => return Err(format!("failed reading Spindle projection frontier: {e}")),
+            };
+            let txn = db.begin_read().map_err(|e| e.to_string())?;
+            let record_id = match txn.open_table(WATERMARKS_TABLE) {
+                Ok(table) => table
+                    .get(SPINDLE_WATERMARK)
+                    .map_err(|e| e.to_string())?
+                    .map_or(0, |value| value.value()),
+                Err(TableError::TableDoesNotExist(_)) => 0,
+                Err(e) => return Err(e.to_string()),
+            };
+            let binding_table = match txn.open_table(SPINDLE_PROJECTION_TABLE) {
+                Ok(table) => Some(table),
+                Err(TableError::TableDoesNotExist(_)) => None,
+                Err(e) => return Err(e.to_string()),
+            };
+            let binding = binding_table
+                .as_ref()
+                .map(|table| table.get(SPINDLE_PROJECTION_BINDING))
+                .transpose()
+                .map_err(|e| e.to_string())?
+                .flatten();
+            if Instant::now() >= deadline {
+                return Err("Spindle projection frontier deadline exceeded".to_owned());
+            }
+            return SpindleProjectionFrontier::from_binding(
+                record_id,
+                binding.as_ref().map(|entry| entry.value()),
+            );
+        }
+    }
+
     /// Reads the latest persisted snapshot, drift report, and causal graph.
     pub fn load_live_state(&self) -> Result<Option<PersistedLiveState>, String> {
         crate::validate_non_tmp_path_on_disk(self.layout.data_dir()).map_err(|e| e.to_string())?;
@@ -589,6 +763,109 @@ mod tests {
             return td;
         }
         tempfile::tempdir_in("/var/tmp").unwrap()
+    }
+
+    #[test]
+    fn projection_frontier_reads_absent_state_without_initializing_storage() {
+        let dir = non_tmp_dir();
+        let layout = StorageLayout::new(dir.path().join("never-created")).unwrap();
+        let read = || {
+            CatalogStore::read_spindle_projection_frontier(
+                &layout,
+                Instant::now() + Duration::from_secs(1),
+            )
+            .unwrap()
+        };
+        assert_eq!(read(), SpindleProjectionFrontier::default());
+        assert!(!layout.data_dir().exists());
+        fs::create_dir_all(layout.state_dir()).unwrap();
+        assert_eq!(read(), SpindleProjectionFrontier::default());
+        assert_eq!(fs::read_dir(layout.state_dir()).unwrap().count(), 0);
+        assert!(!layout.olap_dir().exists());
+    }
+
+    #[test]
+    fn projection_binding_preserves_the_legacy_boundary_across_commits() {
+        let dir = non_tmp_dir();
+        let store = CatalogStore::open(dir.path()).unwrap();
+        let read = || {
+            CatalogStore::read_spindle_projection_frontier(
+                store.layout(),
+                Instant::now() + Duration::from_secs(1),
+            )
+        };
+        store.set_watermark(SPINDLE_WATERMARK, 9).unwrap();
+        assert_eq!(
+            read().unwrap(),
+            SpindleProjectionFrontier {
+                origin: None,
+                legacy_through: 9,
+                record_id: 9,
+            }
+        );
+        let bound = store.bind_spindle_projection("origin-a").unwrap();
+        assert_eq!(bound.origin.as_deref(), Some("origin-a"));
+        assert_eq!(bound.legacy_through, 9);
+        assert_eq!(read().unwrap(), bound);
+
+        store.set_watermark(SPINDLE_WATERMARK, 11).unwrap();
+        assert!(
+            store
+                .bind_spindle_projection("origin-b")
+                .unwrap_err()
+                .contains("origin mismatch")
+        );
+        let before_read = fs::read(store.layout().catalog_redb()).unwrap();
+        let current = read().unwrap();
+        assert_eq!(
+            current,
+            SpindleProjectionFrontier {
+                record_id: 11,
+                ..bound
+            }
+        );
+        assert_eq!(
+            fs::read(store.layout().catalog_redb()).unwrap(),
+            before_read
+        );
+        assert_eq!(store.bind_spindle_projection("origin-a").unwrap(), current);
+
+        store.set_watermark(SPINDLE_WATERMARK, 8).unwrap();
+        assert!(read().unwrap_err().contains("legacy boundary"));
+    }
+
+    #[test]
+    fn projection_frontier_surfaces_catalog_contention_and_corruption() {
+        let dir = non_tmp_dir();
+        let store = CatalogStore::open(dir.path()).unwrap();
+        store.bind_spindle_projection("origin-a").unwrap();
+        let writer = store.open_db_with_retry().unwrap();
+        let deadline = Instant::now() + Duration::from_millis(25);
+        let err =
+            CatalogStore::read_spindle_projection_frontier(store.layout(), deadline).unwrap_err();
+        assert!(err.contains("deadline"), "{err}");
+        assert!(Instant::now() >= deadline);
+        drop(writer);
+
+        let catalog = store.layout().catalog_redb();
+        let displaced = catalog.with_extension("saved");
+        fs::rename(&catalog, &displaced).unwrap();
+        std::os::unix::fs::symlink(&displaced, &catalog).unwrap();
+        let read = || {
+            CatalogStore::read_spindle_projection_frontier(
+                store.layout(),
+                Instant::now() + Duration::from_secs(1),
+            )
+        };
+        assert!(read().unwrap_err().contains("symlink"));
+        fs::remove_file(&catalog).unwrap();
+        fs::write(&catalog, b"not a database").unwrap();
+        let err = read().unwrap_err();
+        assert!(
+            err.contains("failed reading Spindle projection frontier"),
+            "{err}"
+        );
+        assert_eq!(fs::read(&catalog).unwrap(), b"not a database");
     }
 
     #[test]

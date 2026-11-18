@@ -116,9 +116,44 @@ pub fn request(path: &Path, request: &Request, deadline: Instant) -> Result<Repl
 
 /// Reads one original payload without parsing and reserializing its JSON spelling.
 pub fn read_raw(path: &Path, after: u64, deadline: Instant) -> Result<Vec<(u64, Vec<u8>)>, String> {
+    read_raw_request(path, &Request::Read { after, limit: 1 }, deadline)
+}
+
+/// Reads one original payload only from the expected local custody origin.
+pub fn read_raw_for_origin(
+    path: &Path,
+    origin: &str,
+    after: u64,
+    deadline: Instant,
+) -> Result<Vec<(u64, Vec<u8>)>, String> {
+    read_raw_request(
+        path,
+        &Request::ReadForOrigin {
+            expected_origin: origin.to_owned(),
+            after,
+            limit: 1,
+        },
+        deadline,
+    )
+}
+
+/// Returns the persistent origin of the local custody store.
+pub fn read_origin(path: &Path, deadline: Instant) -> Result<String, String> {
+    match request(path, &Request::FabricProgress, deadline)? {
+        Reply::FabricProgress { origin, .. } => Ok(origin),
+        Reply::Error { error } => Err(error),
+        _ => Err("unexpected reply".into()),
+    }
+}
+
+fn read_raw_request(
+    path: &Path,
+    request: &Request,
+    deadline: Instant,
+) -> Result<Vec<(u64, Vec<u8>)>, String> {
     let bytes = exchange_raw(
         path,
-        &serde_json::to_vec(&Request::Read { after, limit: 1 }).map_err(|e| e.to_string())?,
+        &serde_json::to_vec(request).map_err(|e| e.to_string())?,
         deadline,
     )?;
     super::wire::decode_records_raw(&bytes)
