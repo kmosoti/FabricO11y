@@ -22,6 +22,34 @@ pub fn watermark_advance(
     }
 }
 
+/// Advances a projection frontier through one contiguous, published source range.
+/// The caller owns origin authentication and establishes that the whole range was
+/// published. A rejected range leaves the last durable prefix intact.
+pub fn projection_frontier_advance(
+    committed: u64,
+    first: u64,
+    last: u64,
+    origin_matches: bool,
+    flush_succeeded: bool,
+) -> (next: u64)
+    ensures
+        committed <= next,
+        (origin_matches && flush_succeeded && first as int == committed as int + 1 && first <= last)
+            ==> next == last,
+        !(origin_matches && flush_succeeded && first as int == committed as int + 1 && first <= last)
+            ==> next == committed,
+{
+    if origin_matches && flush_succeeded && first > committed && last >= first {
+        if first - committed == 1 {
+            last
+        } else {
+            committed
+        }
+    } else {
+        committed
+    }
+}
+
 /// Permits accepting another unflushed metric sample while preserving at least
 /// 25% (minimum 512 B) headroom below the soft half-ring cap (minimum 2048 B).
 pub fn ring_can_buffer(unflushed_bytes: u64, budget_bytes: u64) -> (ok: bool)
@@ -62,6 +90,62 @@ pub fn rss_shedding_decision(rss_bytes: u64, shed_limit_bytes: u64) -> (shed: bo
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn projection_frontier_matches_independent_wide_range_contract() {
+        let ids = [0, 1, 2, 3, u64::MAX - 1, u64::MAX];
+        for committed in ids {
+            for first in ids {
+                for last in ids {
+                    for origin_matches in [false, true] {
+                        for flush_succeeded in [false, true] {
+                            let expected = if origin_matches
+                                && flush_succeeded
+                                && u128::from(first) == u128::from(committed) + 1
+                                && last >= first
+                            {
+                                last
+                            } else {
+                                committed
+                            };
+                            assert_eq!(
+                                projection_frontier_advance(
+                                    committed,
+                                    first,
+                                    last,
+                                    origin_matches,
+                                    flush_succeeded,
+                                ),
+                                expected,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn projection_frontier_retains_earlier_commit_after_later_failure() {
+        let committed = projection_frontier_advance(5, 6, 8, true, true);
+        assert_eq!(committed, 8);
+        assert_eq!(
+            projection_frontier_advance(committed, 9, 10, true, false),
+            8
+        );
+        assert_eq!(
+            projection_frontier_advance(committed, 11, 12, true, true),
+            8
+        );
+        assert_eq!(
+            projection_frontier_advance(committed, 9, 10, false, true),
+            8
+        );
+        assert_eq!(
+            projection_frontier_advance(committed, 9, 10, true, true),
+            10
+        );
+    }
 
     #[test]
     fn telemetry_predicates_match_wider_arithmetic_at_boundaries() {

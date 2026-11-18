@@ -3,7 +3,7 @@
 `admission-kernel/src/lib.rs` is executable Rust used by the SDK adapter.
 Verus checks its byte arithmetic, slot transitions and FIFO ticket operations.
 Charon extracts that crate, Aeneas translates it to Lean, and
-`ExtractedAdmission.lean` checks twenty named properties of the generated
+`ExtractedAdmission.lean` checks twenty-two named properties of the generated
 definitions. No Lean FFI is used at runtime.
 
 ```sh
@@ -78,9 +78,16 @@ constructor denotes unleased legacy data; rejecting lease-token downgrades remai
 a runtime classification obligation.
 
 `admission-kernel/src/telemetry.rs` adds Verus-specified executable predicates
-(`watermark_advance`, `ring_can_buffer`, `disk_needs_eviction`, and
+(`watermark_advance`, `projection_frontier_advance`, `ring_can_buffer`, `disk_needs_eviction`, and
 `rss_shedding_decision`) extracted through Charon/Aeneas and proved in
-`ExtractedAdmission.lean`. `TelemetrySmt.smt2` (`cargo xtask prove smt`) checks
+`ExtractedAdmission.lean`. The projection frontier accepts a range only when
+its origin matches, publication completed, and its first ID immediately follows
+the previous frontier. A failed range leaves all earlier commits intact. The Rust
+callers establish origin identity, continuity within the range, and successful
+publication. Native checker self-tests remove the publication gate from the
+actual Rust implementation and require Verus to reject the mutant postcondition.
+
+`TelemetrySmt.smt2` (`cargo xtask prove smt`) checks
 64-bit Z3 `QF_BV` ZigZag bijection, modular Gorilla timestamp delta-of-delta
 roundtripping, IEEE-754 XOR zero-trimming, and watermark monotonicity alongside a
 saturating-delta mutant negative control. `Telemetry.lean` (`cargo xtask prove telemetry`)
