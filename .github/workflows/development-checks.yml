@@ -14,6 +14,7 @@ env:
   CARGO_PROFILE_DEV_DEBUG: '0'
   CARGO_PROFILE_TEST_DEBUG: '0'
   LEAN_NUM_THREADS: '4'
+  RUSTUP_AUTO_INSTALL: '0'
   TMPDIR: /var/tmp
   FABRIC_FUZZ_TARGET_DIR: /github/home/.cache/fabrico11y-fuzz-target
 concurrency:
@@ -24,40 +25,87 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 300
     container:
-      image: &stock-image registry.fedoraproject.org/fedora@sha256:d68cae9185777603262e0a7094f792ffed9326b22e1a03e2d2a1731fc3f94733
+      image: &native-ci-image ghcr.io/kmosoti/fabrico11y-ci@sha256:2a609c7c15f4ad58498abd29c0bcb4671fad8d805fb3f8cc0200875c01a1229f
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Install Cargo and Jujutsu
-        run: sh .github/scripts/install-toolchain.sh
+      - name: Trust the checked-out workspace for job Git commands
+        run: &trust-ci-workspace |
+          set -eu
+          config=$(mktemp "$RUNNER_TEMP/fabric-gitconfig.XXXXXXXX")
+          git config --file "$config" --add safe.directory "$GITHUB_WORKSPACE"
+          if [ "$(GIT_CONFIG_GLOBAL="$config" git rev-parse HEAD)" != "$GITHUB_SHA" ]; then
+            printf 'Checkout does not match the tested source revision.\n' >&2
+            exit 1
+          fi
+          printf 'GIT_CONFIG_GLOBAL=%s\n' "$config" >> "$GITHUB_ENV"
+      - name: Check installed native verification tools and source pins
+        env:
+          CI_IMAGE_FLAVOR: native
+        run: &ci-image-preflight |
+          set -eu
+          bootstrap=/opt/fabrico11y/bootstrap
+          set -- rust-toolchain.toml .github/scripts/install-toolchain.sh \
+            .github/scripts/install-schema-tools.sh .github/scripts/check-ci-image-tools.sh
+          if [ "$CI_IMAGE_FLAVOR" = native ]; then
+            set -- "$@" verification/aeneas.opam.lock .github/scripts/install-verification-tools.sh \
+              .github/scripts/install-engine-tools.sh
+          fi
+          reject_image_input() {
+            printf 'CI image input is missing or differs from the checkout: %s\n' "$1" >&2
+            printf 'Use the Fedora bootstrap workflow to review changes to CI tool inputs. See docs/ci-images.md.\n' >&2
+            exit 1
+          }
+          require_image_input() {
+            if [ ! -f "$1" ] || [ ! -f "$2" ] ||
+               ! checkout_hash=$(sha256sum < "$1") ||
+               ! image_hash=$(sha256sum < "$2") ||
+               [ "$checkout_hash" != "$image_hash" ]; then
+              reject_image_input "$1"
+            fi
+          }
+          for path do
+            require_image_input "$path" "$bootstrap/$path"
+          done
+          if [ "$CI_IMAGE_FLAVOR" = common ]; then
+            seed=/opt/fabrico11y/compiler-seed
+            bash .github/scripts/ci-image-paired-seed.sh revision "$seed/provenance/revision" "$CI_IMAGE_SEED_REVISION"
+            if ! (cd "$seed" &&
+                  test -x release-build && test -x registry-rustc && test -x sccache &&
+                  sha256sum --check --strict --status provenance/tools.sha256); then
+              printf 'CI compiler seed image has missing or invalid baked tools.\n' >&2
+              exit 1
+            fi
+          fi
+          product_rust=$(sed -En 's/^channel = "([0-9]+\.[0-9]+\.[0-9]+)"$/\1/p' rust-toolchain.toml)
+          if [ -z "$product_rust" ]; then
+            printf 'rust-toolchain.toml must pin an exact numeric Rust version.\n' >&2
+            exit 1
+          fi
+          actual_rust=$(rustc --version)
+          case "$actual_rust" in
+            "rustc $product_rust "*) printf '%s\n' "$actual_rust" ;;
+            *) printf 'Expected checkout Rust %s, got %s\n' "$product_rust" "$actual_rust" >&2; exit 1 ;;
+          esac
+          sh "$bootstrap/.github/scripts/check-ci-image-tools.sh" "$CI_IMAGE_FLAVOR"
       - uses: ./.github/actions/restore-ci-cache
         id: ci-sources
         with:
           profile: native-acceptance
-          image: *stock-image
+          image: *native-ci-image
           layer: sources
-      - name: Restore pinned verification tool installation
-        id: proof-tools-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: /github/home/.local/share/fabrico11y/proof-tools
-          key: native-fedora44-d68cae91-${{ runner.arch }}-${{ hashFiles('.github/scripts/install-verification-tools.sh', '.github/scripts/install-toolchain.sh', 'verification/aeneas.opam.lock', 'rust-toolchain.toml') }}
-          restore-keys: |
-            native-fedora44-d68cae91-${{ runner.arch }}-
-      - name: Install pinned native verification tools
-        run: sh .github/scripts/install-verification-tools.sh
       - uses: ./.github/actions/restore-ci-cache
         id: ci-cache
         with:
           profile: native-acceptance
-          image: *stock-image
+          image: *native-ci-image
           layer: compiled
       - name: Initialize candidate workspace
         run: jj git init --colocate
       - name: Native architecture, coverage, proofs and fuzz regressions
-        run: /github/home/.cargo/bin/cargo xtask check --group native
+        run: cargo xtask check --group native
       - name: Native engine custody and recovery regressions
         timeout-minutes: 10
         run: sh .github/scripts/check-engine.sh
@@ -65,16 +113,10 @@ jobs:
         if: github.event_name != 'schedule'
         env:
           FABRIC_FUZZ_SMOKE_SECONDS: ${{ github.event_name == 'pull_request' && '15' || '60' }}
-        run: /github/home/.cargo/bin/cargo xtask fuzz smoke /var/tmp/fabric-fuzz-smoke
+        run: cargo xtask fuzz smoke /var/tmp/fabric-fuzz-smoke
       - name: Scheduled fuzz campaigns
         if: github.event_name == 'schedule'
-        run: /github/home/.cargo/bin/cargo xtask fuzz scheduled /var/tmp/fabric-fuzz-scheduled
-      - name: Save trusted verification tool cache
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/develop' && steps.proof-tools-cache.outputs.cache-hit != 'true'
-        with:
-          path: /github/home/.local/share/fabrico11y/proof-tools
-          key: ${{ steps.proof-tools-cache.outputs.cache-primary-key }}
+        run: cargo xtask fuzz scheduled /var/tmp/fabric-fuzz-scheduled
       - name: Save trusted CI cache
         uses: ./.github/actions/save-ci-cache
         if: success() && github.event_name == 'push' && github.ref == 'refs/heads/develop'
@@ -89,40 +131,65 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     container:
-      image: *stock-image
+      image: &common-seeded-ci-image ghcr.io/kmosoti/fabrico11y-ci@sha256:65f2ea4b0e1fa702259853d9d4f9db2b44274e3cda50beb747743de614a9ca4e
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Install checked toolchain and Jujutsu
-        run: sh .github/scripts/install-toolchain.sh
+      - name: Trust the checked-out workspace for job Git commands
+        run: *trust-ci-workspace
+      - name: Check installed workspace tools and source pins
+        env:
+          CI_IMAGE_FLAVOR: common
+          CI_IMAGE_SEED_REVISION: b8f1cddd9831a1b12c41bc58c3287f95823e094d
+        run: *ci-image-preflight
       - uses: ./.github/actions/restore-ci-cache
         id: ci-sources
         with:
           profile: verify
-          image: *stock-image
+          image: *common-seeded-ci-image
           layer: sources
-      - name: Install pinned schema checker
-        run: sh .github/scripts/install-schema-tools.sh
       - uses: ./.github/actions/restore-ci-cache
         id: ci-cache
         with:
           profile: verify
-          image: *stock-image
+          image: *common-seeded-ci-image
           layer: compiled
       - name: Record execution environment
         run: cat /etc/os-release && uname -a
       - name: Shared workspace checks
-        run: /github/home/.cargo/bin/cargo xtask check --group workspace
+        run: cargo xtask check --group workspace
       - name: Build release collection executables
-        run: /github/home/.cargo/bin/cargo build --locked --release --workspace --bins --examples
+        env:
+          # Derive both policy checksums from the source commit that published the qualified digest.
+          CI_IMAGE_SEED_BUILDER_SHA256: 3740bd49e3fda0c564402f8884521d6e7e485529852575bc4f2695e4f96bb357
+          CI_IMAGE_SEED_PACKAGES_SHA256: c365622238c27c049293ec1cf7e1b56bab47d7b184156edc42ff706bf085028b
+        run: |
+          set -eu
+          seed=/opt/fabrico11y/compiler-seed
+          launcher_hash=$(sha256sum < "$seed/release-build")
+          wrapper_hash=$(sha256sum < "$seed/registry-rustc")
+          seed_policy_matches() {
+            if printf '%s  %s\n' "$2" "$1" | sha256sum --check --strict --status; then
+              return 0
+            fi
+            printf 'Compiler seed disabled: checkout policy differs at %s. Building with Cargo.\n' "$1" >&2
+            return 1
+          }
+          if seed_policy_matches .github/ci-images/compiler-seed-release.sh "${launcher_hash%% *}" &&
+             seed_policy_matches .github/ci-images/compiler-seed-registry-rustc.sh "${wrapper_hash%% *}" &&
+             seed_policy_matches .github/ci-images/compiler-seed-build.sh "$CI_IMAGE_SEED_BUILDER_SHA256" &&
+             seed_policy_matches .github/ci-images/compiler-seed-packages.py "$CI_IMAGE_SEED_PACKAGES_SHA256"; then
+            exec "$seed/release-build"
+          fi
+          exec cargo build --locked --release --workspace --bins --examples
       - name: Release SDK and Spindle restart smoke
         timeout-minutes: 2
         run: target/release/xtask collection smoke
       - name: Extended workflow tests
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        run: /github/home/.cargo/bin/cargo xtask check --group workflow
+        run: cargo xtask check --group workflow
       - name: Save trusted CI cache
         uses: ./.github/actions/save-ci-cache
         if: success() && github.event_name == 'push' && github.ref == 'refs/heads/develop'
