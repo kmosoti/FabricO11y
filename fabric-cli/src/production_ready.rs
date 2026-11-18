@@ -7,7 +7,7 @@ use arrow::record_batch::RecordBatch;
 use clap::ArgMatches;
 use fabric::canonical::{self, Request as CanonicalRequest, Response as CanonicalResponse};
 use fabric::spindle::{Reply, Request, transport};
-use fabric_collect::{DaemonRequest, DaemonResponse, default_spindle_socket, query_running_daemon};
+use fabric_collect::{default_spindle_socket, query_running_doctor};
 use fabric_core::arrow_schemas::encode_batches_to_ipc_stream;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -74,6 +74,7 @@ struct Report {
     spindle: Probe,
     canonical: Probe,
     spindle_origin: Option<String>,
+    expected_authority: Option<String>,
     canonical_authority: Option<String>,
     canonical_frontier: Option<u64>,
     scope: &'static str,
@@ -93,6 +94,7 @@ impl Report {
                 Probe::new(Status::NotRequested, "canonical_not_requested")
             },
             spindle_origin: None,
+            expected_authority: None,
             canonical_authority: None,
             canonical_frontier: None,
             scope: SCOPE,
@@ -182,7 +184,7 @@ fn canonical_connection(args: &Args) -> Result<(String, String), &'static str> {
     Ok((endpoint, credential))
 }
 
-fn inspect(cli: &Cli, matches: &ArgMatches, args: &Args) -> Report {
+async fn inspect(cli: &Cli, matches: &ArgMatches, args: &Args) -> Report {
     let mut report = Report::new(args.require_canonical);
     let profile = match super::settings::load_profile(cli.config.as_deref()) {
         Ok((_, profile)) => profile,
@@ -199,26 +201,53 @@ fn inspect(cli: &Cli, matches: &ArgMatches, args: &Args) -> Report {
     };
     let (data_dir, _) = super::settings::data_dir(cli, matches, &profile);
     report.collector = match fabric_store::validated_storage_layout(&data_dir) {
-        Ok(layout) => match query_running_daemon(&layout, &DaemonRequest::Doctor) {
-            Some(DaemonResponse::Doctor(doctor)) if !doctor.daemon_running => {
+        Ok(layout) => match query_running_doctor(&layout).await {
+            Some(doctor) if !doctor.daemon_running => {
                 Probe::new(Status::Unavailable, "collector_not_resident")
             }
-            Some(DaemonResponse::Doctor(doctor)) if doctor.healthy => {
-                Probe::new(Status::Ready, "collector_healthy")
-            }
-            Some(DaemonResponse::Doctor(_)) => Probe::new(Status::NotReady, "collector_unhealthy"),
+            Some(doctor) if doctor.healthy => Probe::new(Status::Ready, "collector_healthy"),
+            Some(_) => Probe::new(Status::NotReady, "collector_unhealthy"),
             _ => Probe::new(Status::Unavailable, "collector_unavailable"),
         },
         Err(_) => Probe::new(Status::Unavailable, "collector_data_dir_invalid"),
     };
     report.spindle = match spindle_socket(args, &profile) {
         Ok(socket) => {
-            match transport::request(&socket, &Request::Status, Instant::now() + PROBE_TIMEOUT) {
-                Ok(Reply::Status { status }) if valid_identity(&status.origin) => {
+            let request = if args.require_canonical {
+                Request::FabricProgress
+            } else {
+                Request::Status
+            };
+            match transport::request(&socket, &request, Instant::now() + PROBE_TIMEOUT) {
+                Ok(Reply::Status { status })
+                    if !args.require_canonical && valid_identity(&status.origin) =>
+                {
                     report.spindle_origin = Some(status.origin);
                     Probe::new(Status::Ready, "spindle_reachable")
                 }
-                Ok(Reply::Status { .. }) => {
+                Ok(Reply::Status { .. }) if !args.require_canonical => {
+                    Probe::new(Status::Unavailable, "spindle_origin_invalid")
+                }
+                Ok(Reply::FabricProgress {
+                    authority, origin, ..
+                }) if args.require_canonical && valid_identity(&origin) => {
+                    report.spindle_origin = Some(origin);
+                    match authority {
+                        Some(authority) if valid_identity(&authority) => {
+                            report.expected_authority = Some(authority)
+                        }
+                        Some(_) => {
+                            report.canonical =
+                                Probe::new(Status::NotReady, "spindle_authority_invalid")
+                        }
+                        None => {
+                            report.canonical =
+                                Probe::new(Status::NotReady, "spindle_authority_unconfigured")
+                        }
+                    }
+                    Probe::new(Status::Ready, "spindle_reachable")
+                }
+                Ok(Reply::FabricProgress { .. }) if args.require_canonical => {
                     Probe::new(Status::Unavailable, "spindle_origin_invalid")
                 }
                 _ => Probe::new(Status::Unavailable, "spindle_unavailable"),
@@ -227,9 +256,13 @@ fn inspect(cli: &Cli, matches: &ArgMatches, args: &Args) -> Report {
         Err(reason) => Probe::new(Status::Unavailable, reason),
     };
     if args.require_canonical {
-        report.canonical = match report.spindle_origin.as_deref() {
-            None => Probe::new(Status::Unavailable, "local_origin_unavailable"),
-            Some(origin) => match canonical_connection(args) {
+        report.canonical = match (
+            report.spindle_origin.as_deref(),
+            report.expected_authority.as_deref(),
+        ) {
+            (None, _) => Probe::new(Status::Unavailable, "local_origin_unavailable"),
+            (Some(_), None) => report.canonical,
+            (Some(origin), Some(expected)) => match canonical_connection(args) {
                 Err(reason) => Probe::new(Status::Unavailable, reason),
                 Ok((endpoint, credential)) => match canonical::exchange(
                     &endpoint,
@@ -241,13 +274,19 @@ fn inspect(cli: &Cli, matches: &ArgMatches, args: &Args) -> Report {
                         authority,
                         frontiers,
                     }) if valid_identity(&authority) => {
+                        let matches_authority = authority == expected;
                         report.canonical_authority = Some(authority);
-                        match frontiers.get(origin) {
-                            Some(frontier) => {
+                        match (matches_authority, frontiers.get(origin)) {
+                            (false, _) => {
+                                Probe::new(Status::NotReady, "canonical_authority_mismatch")
+                            }
+                            (true, Some(frontier)) => {
                                 report.canonical_frontier = Some(*frontier);
                                 Probe::new(Status::Ready, "canonical_origin_present")
                             }
-                            None => Probe::new(Status::NotReady, "canonical_origin_missing"),
+                            (true, None) => {
+                                Probe::new(Status::NotReady, "canonical_origin_missing")
+                            }
                         }
                     }
                     Ok(CanonicalResponse::Progress { .. }) => {
@@ -274,6 +313,7 @@ fn batch(report: &Report) -> Result<RecordBatch, String> {
         Field::new("canonical_status", DataType::Utf8, false),
         Field::new("canonical_reason", DataType::Utf8, false),
         Field::new("spindle_origin", DataType::Utf8, true),
+        Field::new("expected_authority", DataType::Utf8, true),
         Field::new("canonical_authority", DataType::Utf8, true),
         Field::new("canonical_frontier", DataType::UInt64, true),
         Field::new("scope", DataType::Utf8, false),
@@ -293,6 +333,9 @@ fn batch(report: &Report) -> Result<RecordBatch, String> {
             text(report.canonical.reason),
             Arc::new(StringArray::from(vec![report.spindle_origin.as_deref()])),
             Arc::new(StringArray::from(vec![
+                report.expected_authority.as_deref(),
+            ])),
+            Arc::new(StringArray::from(vec![
                 report.canonical_authority.as_deref(),
             ])),
             Arc::new(UInt64Array::from(vec![report.canonical_frontier])),
@@ -302,8 +345,8 @@ fn batch(report: &Report) -> Result<RecordBatch, String> {
     .map_err(|error| error.to_string())
 }
 
-pub(super) fn run(cli: &Cli, matches: &ArgMatches, args: &Args, format: OutputFormat) -> i32 {
-    let report = inspect(cli, matches, args);
+pub(super) async fn run(cli: &Cli, matches: &ArgMatches, args: &Args, format: OutputFormat) -> i32 {
+    let report = inspect(cli, matches, args).await;
     let output = match format {
         OutputFormat::Json => super::emit_json("production-ready", &report),
         OutputFormat::Arrow => batch(&report).and_then(|batch| {
@@ -324,6 +367,9 @@ pub(super) fn run(cli: &Cli, matches: &ArgMatches, args: &Args, format: OutputFo
             }
             if let Some(authority) = &report.canonical_authority {
                 println!("authority    {authority}");
+            }
+            if let Some(authority) = &report.expected_authority {
+                println!("expected     {authority}");
             }
             if let Some(frontier) = report.canonical_frontier {
                 println!("frontier     {frontier}");

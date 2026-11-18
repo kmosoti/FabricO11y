@@ -237,7 +237,7 @@ async fn run() -> Result<(), String> {
         return guide::run(args, format);
     }
     if let Commands::ProductionReady(args) = &cli.command {
-        std::process::exit(production_ready::run(&cli, &matches, args, format));
+        std::process::exit(production_ready::run(&cli, &matches, args, format).await);
     }
     let (profile_path, profile) = settings::load_profile(cli.config.as_deref())?;
     let (data_dir, _) = settings::data_dir(&cli, &matches, &profile);

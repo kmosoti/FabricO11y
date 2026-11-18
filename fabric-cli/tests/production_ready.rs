@@ -135,6 +135,33 @@ fn spindle(path: &Path, origin: &str) -> JoinHandle<()> {
         socket.write_all(&response).unwrap();
     })
 }
+fn spindle_progress(path: &Path, origin: &str, authority: Option<&str>) -> JoinHandle<()> {
+    let origin = origin.to_owned();
+    let authority = authority.map(str::to_owned);
+    unix_peer(path, move |mut socket| {
+        socket
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        let mut header = [0; 4];
+        socket.read_exact(&mut header).unwrap();
+        let mut data = vec![0; u32::from_be_bytes(header) as usize];
+        socket.read_exact(&mut data).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<Value>(&data).unwrap(),
+            serde_json::json!({"command":"fabric_progress"})
+        );
+        let response = serde_json::to_vec(&Reply::FabricProgress {
+            authority,
+            origin,
+            through: 0,
+        })
+        .unwrap();
+        socket
+            .write_all(&(response.len() as u32).to_be_bytes())
+            .unwrap();
+        socket.write_all(&response).unwrap();
+    })
+}
 fn run_local(scratch: &Scratch, healthy: bool, running: bool, extra: &[&str]) -> Output {
     let collector = doctor(&scratch.0.join("daemon.sock"), healthy, running);
     let spool = spindle(&scratch.0.join("spindle.sock"), "origin-local");
@@ -211,7 +238,7 @@ fn standalone_ignores_broken_canonical_hints_and_requires_resident_healthy_docto
     }
 }
 
-fn canonical_peer(origin: &'static str) -> (String, JoinHandle<()>) {
+fn canonical_peer(origin: &'static str, authority: &'static str) -> (String, JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap().to_string();
     listener.set_nonblocking(true).unwrap();
@@ -233,7 +260,7 @@ fn canonical_peer(origin: &'static str) -> (String, JoinHandle<()>) {
         assert_eq!(request.credential, "reader-credential-12345");
         assert!(matches!(request.request, CanonicalRequest::Progress));
         let response = CanonicalResponse::Progress {
-            authority: "authority-test".into(),
+            authority: authority.into(),
             frontiers: BTreeMap::from([(origin.to_owned(), 0)]),
         };
         canonical::write_frame(
@@ -254,8 +281,12 @@ fn canonical_requires_exact_origin_even_if_another_origin_is_present() {
     ] {
         let scratch = Scratch::new();
         let collector = doctor(&scratch.0.join("daemon.sock"), true, true);
-        let spool = spindle(&scratch.0.join("spindle.sock"), "origin-local");
-        let (endpoint, peer) = canonical_peer(response_origin);
+        let spool = spindle_progress(
+            &scratch.0.join("spindle.sock"),
+            "origin-local",
+            Some("authority-test"),
+        );
+        let (endpoint, peer) = canonical_peer(response_origin, "authority-test");
         let credential = scratch.0.join("reader.key");
         fs::OpenOptions::new()
             .create_new(true)
@@ -447,7 +478,11 @@ fn canonical_credentials_require_an_owned_private_nonsymlink_file() {
     let link = scratch.0.join("reader-link.key");
     symlink(&credential, &link).unwrap();
     let collector = doctor(&scratch.0.join("daemon.sock"), true, true);
-    let spool = spindle(&scratch.0.join("spindle.sock"), "origin-local");
+    let spool = spindle_progress(
+        &scratch.0.join("spindle.sock"),
+        "origin-local",
+        Some("authority-test"),
+    );
     let output = scratch
         .command()
         .args(["production-ready", "--spindle-socket"])
@@ -471,4 +506,114 @@ fn canonical_credentials_require_an_owned_private_nonsymlink_file() {
     );
     assert!(!String::from_utf8_lossy(&output.stdout).contains("reader-credential-12345"));
     scratch.assert_no_data();
+}
+
+#[test]
+fn fleet_requires_configured_authority_and_rejects_other_authority_for_same_origin() {
+    for configured in [None, Some("expected-authority")] {
+        let scratch = Scratch::new();
+        let collector = doctor(&scratch.0.join("daemon.sock"), true, true);
+        let spool = spindle_progress(&scratch.0.join("spindle.sock"), "origin-local", configured);
+        let credential = scratch.0.join("reader.key");
+        fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .mode(0o600)
+            .open(&credential)
+            .unwrap()
+            .write_all(b"reader-credential-12345")
+            .unwrap();
+        let (endpoint, peer) = if configured.is_some() {
+            let (address, peer) = canonical_peer("origin-local", "other-authority");
+            (address, Some(peer))
+        } else {
+            ("127.0.0.1:9".to_owned(), None)
+        };
+        let output = scratch
+            .command()
+            .args(["production-ready", "--spindle-socket"])
+            .arg(scratch.0.join("spindle.sock"))
+            .args(["--require-canonical", "--server-endpoint"])
+            .arg(endpoint)
+            .arg("--reader-credential-file")
+            .arg(credential)
+            .arg("--json")
+            .output()
+            .unwrap();
+        collector.join().unwrap();
+        spool.join().unwrap();
+        if let Some(peer) = peer {
+            peer.join().unwrap();
+        }
+        assert_eq!(output.status.code(), Some(2), "{output:?}");
+        let result = json(&output);
+        assert_eq!(
+            result["data"]["canonical"]["reason"],
+            if configured.is_some() {
+                "canonical_authority_mismatch"
+            } else {
+                "spindle_authority_unconfigured"
+            }
+        );
+        assert!(result["data"]["canonical_frontier"].is_null());
+        if configured.is_some() {
+            assert_eq!(result["data"]["expected_authority"], "expected-authority");
+            assert_eq!(result["data"]["canonical_authority"], "other-authority");
+        }
+        scratch.assert_no_data();
+    }
+}
+
+#[test]
+fn incomplete_trickled_and_oversize_doctor_replies_are_bounded() {
+    for kind in ["incomplete", "trickle", "oversize"] {
+        let scratch = Scratch::new();
+        let peer = unix_peer(&scratch.0.join("daemon.sock"), move |mut socket| {
+            socket
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            let mut request = String::new();
+            BufReader::new(socket.try_clone().unwrap())
+                .read_line(&mut request)
+                .unwrap();
+            match kind {
+                "incomplete" => {
+                    socket.write_all(b"{\"kind\":\"doctor\"").unwrap();
+                }
+                "trickle" => {
+                    for _ in 0..30 {
+                        if socket.write_all(b" ").is_err() {
+                            break;
+                        }
+                        thread::sleep(Duration::from_millis(100));
+                    }
+                }
+                "oversize" => {
+                    let mut bytes = vec![b'x'; 64 * 1024 + 1];
+                    bytes.push(b'\n');
+                    let _ = socket.write_all(&bytes);
+                }
+                _ => unreachable!(),
+            }
+        });
+        let spool = spindle(&scratch.0.join("spindle.sock"), "origin-local");
+        let start = Instant::now();
+        let output = scratch
+            .command()
+            .args(["production-ready", "--spindle-socket"])
+            .arg(scratch.0.join("spindle.sock"))
+            .arg("--json")
+            .output()
+            .unwrap();
+        let elapsed = start.elapsed();
+        peer.join().unwrap();
+        spool.join().unwrap();
+        assert_eq!(output.status.code(), Some(3), "{kind}: {output:?}");
+        assert_eq!(
+            json(&output)["data"]["collector"]["reason"],
+            "collector_unavailable"
+        );
+        assert!(elapsed < Duration::from_secs(4), "{kind}: {elapsed:?}");
+        scratch.assert_no_data();
+    }
 }
