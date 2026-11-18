@@ -28,9 +28,9 @@ for ((i=2; i<=$#; i++)); do
       [[ "${!next:-}" == x86_64-unknown-linux-gnu ]] || exec "$@"
       ;;
     --target=*) [[ "${argument#*=}" == x86_64-unknown-linux-gnu ]] || exec "$@" ;;
-    @*) exec "$@" ;;
+    --codegen|--codegen=*|@*) exec "$@" ;;
   esac
-  case "$codegen" in
+  case "${codegen//_/-}" in
     opt-level=3) optimized=true ;;
     opt-level=*) optimized=false ;;
     target-cpu=generic|target-cpu=x86-64) ;;
