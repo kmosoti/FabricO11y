@@ -109,6 +109,8 @@ impl SelfTelemetry {
     }
 }
 
+const RAM_SCRATCH_PATHS: [&str; 3] = ["/tmp", "/dev/shm", "/run/shm"];
+
 fn private_socket_path(path: &Path) -> Result<PathBuf, String> {
     if !path.is_absolute() || path.components().any(|part| part == Component::ParentDir) {
         return Err(
@@ -123,11 +125,10 @@ fn private_socket_path(path: &Path) -> Result<PathBuf, String> {
         .ok_or("missing self-telemetry socket parent")?
         .canonicalize()
         .map_err(|error| format!("resolve self-telemetry socket directory: {error}"))?;
-    if [path, parent.as_path()].into_iter().any(|path| {
-        ["/tmp", "/dev/shm", "/run/shm"]
-            .iter()
-            .any(|base| path.starts_with(base))
-    }) {
+    if [path, parent.as_path()]
+        .into_iter()
+        .any(|path| RAM_SCRATCH_PATHS.iter().any(|base| path.starts_with(base)))
+    {
         return Err("self-telemetry socket directory cannot be a RAM scratch path".into());
     }
     let meta = fs::metadata(&parent).map_err(|error| error.to_string())?;
@@ -155,10 +156,23 @@ mod tests {
     };
 
     fn private_temp() -> tempfile::TempDir {
-        tempfile::Builder::new()
-            .permissions(fs::Permissions::from_mode(0o700))
-            .tempdir()
-            .unwrap()
+        let configured = std::env::var_os("TMPDIR").into_iter().map(PathBuf::from);
+        let fallbacks = ["/data/tmp", "/var/tmp"].map(PathBuf::from);
+        for base in configured.chain(fallbacks) {
+            let Ok(base) = base.canonicalize() else {
+                continue;
+            };
+            if RAM_SCRATCH_PATHS.iter().any(|path| base.starts_with(path)) {
+                continue;
+            }
+            if let Ok(dir) = tempfile::Builder::new()
+                .permissions(fs::Permissions::from_mode(0o700))
+                .tempdir_in(base)
+            {
+                return dir;
+            }
+        }
+        panic!("no writable non-RAM scratch directory for the telemetry fixture");
     }
 
     fn emit_after_contention(telemetry: &SelfTelemetry, data: Data) -> Admission {
