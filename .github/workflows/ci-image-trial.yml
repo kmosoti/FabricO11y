@@ -18,10 +18,12 @@ on:
       warm:
         required: true
         type: boolean
-    outputs:
-      environment:
-        description: Digest of the runner kernel, compilers and native libraries
-        value: ${{ jobs.hosted.outputs.environment }}
+      prime:
+        required: true
+        type: boolean
+      sample:
+        required: true
+        type: number
 
 permissions:
   contents: read
@@ -37,13 +39,12 @@ env:
 
 jobs:
   hosted:
+    name: ${{ inputs.prebuilt && 'candidate' || 'baseline' }}-${{ inputs.warm && 'warm' || 'cold' }}-${{ inputs.sample }}
     if: github.repository == 'kmosoti/FabricO11y' && github.event_name == 'push' && startsWith(github.ref, 'refs/heads/ci/tool-image-qualification/')
     runs-on: ubuntu-24.04
     timeout-minutes: ${{ inputs.profile == 'verify' && 45 || 300 }}
     container:
       image: ${{ inputs.image }}
-    outputs:
-      environment: ${{ steps.environment.outputs.digest }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -59,10 +60,14 @@ jobs:
           RUNNER_ARCH: ${{ runner.arch }}
           PREBUILT: ${{ inputs.prebuilt }}
           WARM: ${{ inputs.warm }}
+          PRIME: ${{ inputs.prime }}
           BUILD_INPUTS: ${{ hashFiles('rust-toolchain.toml', '.cargo/config.toml', 'Cargo.lock', 'fuzz/Cargo.lock', '.github/scripts/*.sh', 'verification/aeneas.opam.lock') }}
         run: |
           set -eu
           test "$RUNNER_ARCH" = "X64"
+          if [ "$WARM" = true ]; then
+            test "$PRIME" = false
+          fi
           # The base Fedora image has no Git yet, so checkout uses the pinned REST archive there.
           if [ "$PREBUILT" = true ]; then
             test "$(git rev-parse HEAD)" = "$EXPECTED_REVISION"
@@ -95,7 +100,7 @@ jobs:
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ steps.trial.outputs.application_paths }}
-          key: ${{ steps.trial.outputs.key }}
+          key: ${{ steps.trial.outputs.key }}-application
           fail-on-cache-miss: true
 
       - name: Install baseline Cargo and Jujutsu
@@ -156,7 +161,9 @@ jobs:
           identity=$(printf '%s\n' "$kernel" "$compiler" "$cargo" "$packages")
           printf '%s\n' "$identity"
           digest=$(printf '%s\n' "$identity" | sha256sum)
-          printf 'digest=%s\n' "${digest%% *}" >> "$GITHUB_OUTPUT"
+          fingerprint="$RUNNER_TEMP/environment.sha256"
+          printf '%s\n' "${digest%% *}" > "$fingerprint"
+          printf 'path=%s\n' "$fingerprint" >> "$GITHUB_OUTPUT"
           df -P / "$GITHUB_WORKSPACE"
 
       - name: Initialize candidate workspace
@@ -192,18 +199,26 @@ jobs:
         run: target/release/xtask collection smoke
 
       - name: Save baseline proof tool cache for the warm trial
-        if: ${{ !inputs.warm && !inputs.prebuilt && inputs.profile == 'native-acceptance' }}
+        if: ${{ inputs.prime && !inputs.prebuilt && inputs.profile == 'native-acceptance' }}
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: /github/home/.local/share/fabrico11y/proof-tools
           key: ${{ steps.trial.outputs.key }}-proof
 
       - name: Save application cache for the warm trial
-        if: ${{ !inputs.warm }}
+        if: inputs.prime
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ steps.trial.outputs.application_paths }}
-          key: ${{ steps.trial.outputs.key }}
+          key: ${{ steps.trial.outputs.key }}-application
+
+      - name: Retain environment fingerprint
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ci-image-trial-${{ github.run_attempt }}-${{ inputs.prebuilt && 'candidate' || 'baseline' }}-${{ inputs.warm && 'warm' || 'cold' }}-${{ inputs.sample }}-environment
+          path: ${{ steps.environment.outputs.path }}
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Record final disk headroom
         if: always()
