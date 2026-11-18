@@ -1444,6 +1444,49 @@ mod tests {
     }
 
     #[test]
+    fn metric_rollup_drops_raw_spindle_provenance() {
+        use fabric_core::{SPINDLE_PROVENANCE_COLUMN, SpindleProvenance};
+
+        let dir = non_tmp_dir();
+        let catalog = crate::CatalogStore::open(dir.path()).unwrap();
+        let olap = OlapParquetStore::new(catalog.layout().clone());
+        let metric = MetricPoint {
+            timestamp_ms: (Utc::now() - Duration::days(10)).timestamp_millis(),
+            name: "spindle.receipt-test".into(),
+            value: 1.0,
+            host: "host".into(),
+            slice: "spindle".into(),
+            unit: "items".into(),
+            pid: None,
+            labels_json: r#"{"sequence":4}"#.into(),
+        };
+        let provenance = SpindleProvenance {
+            origin: "local-origin".into(),
+            record_id: 9,
+            producer: "receipt".into(),
+            generation: "boot".into(),
+            sequence: 4,
+        };
+        let mut plan = olap
+            .plan_spindle_flush(&[(Some(provenance), metric)], &[], &[])
+            .unwrap();
+        olap.execute_flush_plan(&mut plan).unwrap();
+        let janitor = RetentionJanitor::new(olap.clone(), JanitorConfig::default());
+        let stats = janitor.run_pass(None).unwrap();
+        assert_eq!(stats.downsampled_partitions, 1);
+        let files = olap.list_parquet_files("metrics", None).unwrap();
+        assert_eq!(files.len(), 1);
+        let reader =
+            ParquetRecordBatchReaderBuilder::try_new(File::open(&files[0]).unwrap()).unwrap();
+        assert!(
+            reader
+                .schema()
+                .field_with_name(SPINDLE_PROVENANCE_COLUMN)
+                .is_err()
+        );
+    }
+
+    #[test]
     fn compacts_downsamples_and_evicts_over_quota() {
         let dir = non_tmp_dir();
         let catalog = crate::CatalogStore::open(dir.path()).unwrap();

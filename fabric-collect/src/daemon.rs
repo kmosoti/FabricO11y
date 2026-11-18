@@ -8,7 +8,7 @@ use crate::host::{
 };
 use crate::self_guard::{SelfPreservationGuard, build_doctor_report_from_summary};
 use crate::spindle_bridge::{
-    IngestEnvelope, poll_spindle_custody_records, read_bounded_line,
+    IngestEnvelope, poll_spindle_projection_records, read_bounded_line,
     serve_ingest_socket_until_shutdown,
 };
 use crate::systemd::collect_unit_records;
@@ -16,7 +16,7 @@ use chrono::Utc;
 use fabric_core::{
     BlameReport, BlameResource, DDSketch, DEFAULT_TMP_DIR, DriftContext, DriftReport,
     EwmaMadDetector, FsEventRecord, HostSnapshot, LogRecord, MetricPoint, PillarKind,
-    SCHEMA_VERSION, StorageLayout, TraceSpanRecord, evaluate_five_pillars,
+    SCHEMA_VERSION, SpindleProvenance, StorageLayout, TraceSpanRecord, evaluate_five_pillars,
 };
 use fabric_graph::{CausalGraph, Direction, LineageSubgraph};
 use fabric_store::{
@@ -188,12 +188,24 @@ fn envelope_approx_bytes(env: &IngestEnvelope) -> usize {
 }
 
 type PendingOlapPlan = (fabric_store::OlapFlushPlan, Option<u64>, usize, usize);
+type SpindleRow<T> = (Option<SpindleProvenance>, T);
+
+fn spindle_provenance_bytes(provenance: &Option<SpindleProvenance>) -> usize {
+    std::mem::size_of::<Option<SpindleProvenance>>()
+        + provenance.as_ref().map_or(0, |key| {
+            let allocated =
+                key.origin.capacity() + key.producer.capacity() + key.generation.capacity();
+            let text_bytes = key.origin.len() + key.producer.len() + key.generation.len();
+            // Arrow conversion includes JSON field names, two u64s, and escaped text.
+            allocated.max(128 + 6 * text_bytes)
+        })
+}
 
 #[derive(Default)]
 struct SpindleStaging {
-    metrics: Vec<MetricPoint>,
-    logs: Vec<LogRecord>,
-    traces: Vec<TraceSpanRecord>,
+    metrics: Vec<SpindleRow<MetricPoint>>,
+    logs: Vec<SpindleRow<LogRecord>>,
+    traces: Vec<SpindleRow<TraceSpanRecord>>,
     max_accepted_id: Option<u64>,
     pending_plan: Option<PendingOlapPlan>,
     pending_volatile_plan: Option<fabric_store::OlapFlushPlan>,
@@ -231,9 +243,21 @@ impl SpindleStaging {
     }
 
     fn recompute_bytes(&mut self) {
-        self.staged_bytes = self.metrics.iter().map(metric_approx_bytes).sum::<usize>()
-            + self.logs.iter().map(log_approx_bytes).sum::<usize>()
-            + self.traces.iter().map(trace_approx_bytes).sum::<usize>();
+        self.staged_bytes = self
+            .metrics
+            .iter()
+            .map(|(key, row)| spindle_provenance_bytes(key) + metric_approx_bytes(row))
+            .sum::<usize>()
+            + self
+                .logs
+                .iter()
+                .map(|(key, row)| spindle_provenance_bytes(key) + log_approx_bytes(row))
+                .sum::<usize>()
+            + self
+                .traces
+                .iter()
+                .map(|(key, row)| spindle_provenance_bytes(key) + trace_approx_bytes(row))
+                .sum::<usize>();
     }
 
     fn take_pending_plan(&mut self) -> Option<PendingOlapPlan> {
@@ -284,9 +308,15 @@ impl SpindleStaging {
     }
 }
 
-fn enqueue_spindle_record(id: u64, env: IngestEnvelope, runtime: &DaemonRuntime) -> bool {
+fn enqueue_spindle_record(
+    key: SpindleProvenance,
+    env: IngestEnvelope,
+    runtime: &DaemonRuntime,
+) -> bool {
+    let id = key.record_id;
+    let provenance = Some(key);
     let now_ms = Utc::now().timestamp_millis();
-    let item_bytes = envelope_approx_bytes(&env);
+    let item_bytes = envelope_approx_bytes(&env) + spindle_provenance_bytes(&provenance);
     let mut hot_metric: Option<MetricPoint> = None;
     {
         let mut staging = runtime.spindle_staging.lock();
@@ -309,19 +339,19 @@ fn enqueue_spindle_record(id: u64, env: IngestEnvelope, runtime: &DaemonRuntime)
                     pt.timestamp_ms = now_ms;
                 }
                 hot_metric = Some(pt.clone());
-                staging.metrics.push(pt);
+                staging.metrics.push((provenance, pt));
             }
             IngestEnvelope::Log(mut log) => {
                 if log.timestamp_ms <= 0 {
                     log.timestamp_ms = now_ms;
                 }
-                staging.logs.push(log);
+                staging.logs.push((provenance, log));
             }
             IngestEnvelope::Trace(mut span) => {
                 if span.timestamp_ms <= 0 {
                     span.timestamp_ms = now_ms;
                 }
-                staging.traces.push(span);
+                staging.traces.push((provenance, span));
             }
         }
         staging.staged_bytes = staging.staged_bytes.saturating_add(item_bytes);
@@ -334,6 +364,21 @@ fn enqueue_spindle_record(id: u64, env: IngestEnvelope, runtime: &DaemonRuntime)
             .push_hot_only(std::slice::from_ref(&pt));
     }
     true
+}
+
+#[cfg(test)]
+fn enqueue_test_spindle_record(id: u64, env: IngestEnvelope, runtime: &DaemonRuntime) -> bool {
+    enqueue_spindle_record(
+        SpindleProvenance {
+            origin: "test-origin".into(),
+            record_id: id,
+            producer: "test-producer".into(),
+            generation: "test-generation".into(),
+            sequence: id,
+        },
+        env,
+        runtime,
+    )
 }
 
 fn runtime_socket_path(layout: &StorageLayout, name: &str) -> PathBuf {
@@ -741,7 +786,7 @@ impl DaemonRuntime {
             if staged_items > 0 || watermark.is_some() {
                 match self
                     .olap
-                    .plan_flush(&staged.metrics, &staged.logs, &staged.traces, &[], &[])
+                    .plan_spindle_flush(&staged.metrics, &staged.logs, &staged.traces)
                 {
                     Ok(plan) => {
                         let mut splan = plan.with_spindle_watermark(watermark);
@@ -1206,17 +1251,19 @@ pub async fn run_daemon(mut config: DaemonConfig) -> Result<(), String> {
                     let after_id = runtime.polled_spindle_cursor.load(Ordering::Acquire);
                     let sock = spindle_sock.clone();
                     let host = ingest_host.clone();
+                    let catalog = runtime.catalog.clone();
                     match tokio::task::spawn_blocking(move || {
-                        poll_spindle_custody_records(&sock, after_id, 64, &host)
+                        poll_spindle_projection_records(&sock, &catalog, after_id, 64, &host)
                     })
                     .await
                     {
-                        Ok(Ok(records)) => {
-                            *runtime.last_spindle_error.write() = None;
+                        Ok(Ok(poll)) => {
+                            *runtime.last_spindle_error.write() = poll.tail_error;
                             let mut accepted_cursor = after_id;
-                            for (id, env) in records {
-                                if enqueue_spindle_record(id, env, &runtime) {
-                                    accepted_cursor = accepted_cursor.max(id);
+                            for (key, env) in poll.records {
+                                let id = key.record_id;
+                                if enqueue_spindle_record(key, env, &runtime) {
+                                    accepted_cursor = id;
                                 } else {
                                     spindle_backpressure = true;
                                     break;
@@ -1407,7 +1454,7 @@ mod tests {
 
         // Stage metric, log, and trace Spindle records with IDs 1..=6.
         for id in 1..=2 {
-            assert!(enqueue_spindle_record(
+            assert!(enqueue_test_spindle_record(
                 id,
                 IngestEnvelope::Metric(MetricPoint {
                     timestamp_ms: 0,
@@ -1423,7 +1470,7 @@ mod tests {
             ));
         }
         for id in 3..=4 {
-            assert!(enqueue_spindle_record(
+            assert!(enqueue_test_spindle_record(
                 id,
                 IngestEnvelope::Log(LogRecord {
                     timestamp_ms: 0,
@@ -1437,7 +1484,7 @@ mod tests {
             ));
         }
         for id in 5..=6 {
-            assert!(enqueue_spindle_record(
+            assert!(enqueue_test_spindle_record(
                 id,
                 IngestEnvelope::Trace(TraceSpanRecord {
                     timestamp_ms: 0,
@@ -1584,7 +1631,7 @@ mod tests {
         // 1. Inflight items count against MAX_SPINDLE_STAGED_ITEMS so restore never exceeds cap.
         runtime.spindle_staging.lock().inflight_items = MAX_SPINDLE_STAGED_ITEMS - 2;
         for id in 1..=5 {
-            let accepted = enqueue_spindle_record(
+            let accepted = enqueue_test_spindle_record(
                 id,
                 IngestEnvelope::Log(LogRecord {
                     timestamp_ms: 0,
@@ -1603,7 +1650,7 @@ mod tests {
 
         // 2. If OLAP write succeeds and catalog watermark persistence fails transiently,
         // deferred_watermark is preserved and committed on the next flush even with 0 new records.
-        assert!(enqueue_spindle_record(
+        assert!(enqueue_test_spindle_record(
             42,
             IngestEnvelope::Log(LogRecord {
                 timestamp_ms: 0,
@@ -1704,7 +1751,7 @@ mod tests {
         let big_payload = "x".repeat(900 * 1024);
         let mut accepted = 0usize;
         for id in 1..=8_u64 {
-            if enqueue_spindle_record(
+            if enqueue_test_spindle_record(
                 id,
                 IngestEnvelope::Log(LogRecord {
                     timestamp_ms: 1_700_000_000_000,
@@ -1728,7 +1775,7 @@ mod tests {
 
         // 2. Intra-domain multi-day partial OLAP failure (day1 succeeds, day2 fails):
         // persisted dt=day1 must not duplicate and watermark remains withheld until day2 & logs flush.
-        assert!(enqueue_spindle_record(
+        assert!(enqueue_test_spindle_record(
             10,
             IngestEnvelope::Metric(MetricPoint {
                 timestamp_ms: 1_700_000_000_100, // 2023-11-14
@@ -1742,7 +1789,7 @@ mod tests {
             }),
             &runtime,
         ));
-        assert!(enqueue_spindle_record(
+        assert!(enqueue_test_spindle_record(
             11,
             IngestEnvelope::Metric(MetricPoint {
                 timestamp_ms: 1_700_086_400_100, // 2023-11-15
@@ -1756,7 +1803,7 @@ mod tests {
             }),
             &runtime,
         ));
-        assert!(enqueue_spindle_record(
+        assert!(enqueue_test_spindle_record(
             12,
             IngestEnvelope::Log(LogRecord {
                 timestamp_ms: 1_700_000_000_200,
@@ -1974,7 +2021,7 @@ mod tests {
             guard,
         };
 
-        assert!(enqueue_spindle_record(
+        assert!(enqueue_test_spindle_record(
             10,
             IngestEnvelope::Metric(MetricPoint {
                 timestamp_ms: 1_700_000_000_100, // 2023-11-14
@@ -1988,7 +2035,7 @@ mod tests {
             }),
             &runtime,
         ));
-        assert!(enqueue_spindle_record(
+        assert!(enqueue_test_spindle_record(
             11,
             IngestEnvelope::Metric(MetricPoint {
                 timestamp_ms: 1_700_086_400_100, // 2023-11-15
@@ -2364,7 +2411,7 @@ mod tests {
             message: "volatile log".into(),
             attributes_json: "{}".into(),
         });
-        assert!(enqueue_spindle_record(
+        assert!(enqueue_test_spindle_record(
             77,
             IngestEnvelope::Metric(MetricPoint {
                 timestamp_ms: ts_ms,
@@ -2378,7 +2425,7 @@ mod tests {
             }),
             &runtime,
         ));
-        assert!(enqueue_spindle_record(
+        assert!(enqueue_test_spindle_record(
             77,
             IngestEnvelope::Log(LogRecord {
                 timestamp_ms: ts_ms,
@@ -2504,7 +2551,7 @@ mod tests {
 
         // 1. Fail Spindle batch id=50 on day1 (2023-07-22) so it parks in pending_plan.
         let day1_ms = 1_690_000_000_000i64;
-        assert!(enqueue_spindle_record(
+        assert!(enqueue_test_spindle_record(
             50,
             IngestEnvelope::Metric(MetricPoint {
                 timestamp_ms: day1_ms,
@@ -2528,7 +2575,7 @@ mod tests {
         // even though newly staged day2 fails execute_flush_plan.
         fs::remove_file(&day1_part).expect("unblock day1");
         let day2_ms = 1_700_000_000_000i64;
-        assert!(enqueue_spindle_record(
+        assert!(enqueue_test_spindle_record(
             60,
             IngestEnvelope::Metric(MetricPoint {
                 timestamp_ms: day2_ms,

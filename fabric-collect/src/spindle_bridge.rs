@@ -5,8 +5,9 @@
 use crate::channel::BoundedTelemetryQueue;
 use chrono::Utc;
 use fabric::observation::{Data, Level, MetricType, Outcome, StoredObservation, decode_versioned};
-use fabric::spindle::transport::read_raw;
-use fabric_core::{LogRecord, MetricPoint, TraceSpanRecord};
+use fabric::spindle::transport::{read_origin, read_raw, read_raw_for_origin};
+use fabric_core::{LogRecord, MetricPoint, SpindleProvenance, TraceSpanRecord};
+use fabric_store::CatalogStore;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
@@ -325,6 +326,102 @@ pub fn parse_ingest_line(line: &str, default_host: &str) -> Result<IngestEnvelop
     }
     let obs = decode_versioned(trimmed.as_bytes())?;
     Ok(observation_to_telemetry(&obs, default_host))
+}
+
+/// A contiguous verified prefix and an optional failure at its next record.
+#[derive(Debug)]
+pub struct SpindleProjectionPoll {
+    pub records: Vec<(SpindleProvenance, IngestEnvelope)>,
+    pub tail_error: Option<String>,
+}
+
+/// Polls a single origin and binds it under the caller's existing OLAP writer lock.
+pub fn poll_spindle_projection_records(
+    spindle_sock: &Path,
+    catalog: &CatalogStore,
+    after_id: u64,
+    max_records: usize,
+    default_host: &str,
+) -> Result<SpindleProjectionPoll, String> {
+    let deadline = Instant::now() + Duration::from_millis(250);
+    let origin = read_origin(spindle_sock, deadline)?;
+    poll_spindle_projection_records_with(
+        &origin,
+        after_id,
+        max_records,
+        default_host,
+        deadline,
+        |cursor, deadline| read_raw_for_origin(spindle_sock, &origin, cursor, deadline),
+        || catalog.bind_spindle_projection(&origin).map(|_| ()),
+    )
+}
+
+fn poll_spindle_projection_records_with(
+    origin: &str,
+    mut cursor: u64,
+    max_records: usize,
+    default_host: &str,
+    deadline: Instant,
+    mut read_batch: impl FnMut(u64, Instant) -> Result<Vec<(u64, Vec<u8>)>, String>,
+    bind: impl FnOnce() -> Result<(), String>,
+) -> Result<SpindleProjectionPoll, String> {
+    let mut records = Vec::new();
+    let mut bind = Some(bind);
+    let mut tail_error = None;
+    while records.len() < max_records {
+        if Instant::now() >= deadline {
+            if records.is_empty() {
+                return Err(
+                    "Spindle projection poll deadline expired before the first read".into(),
+                );
+            }
+            break;
+        }
+        let next = read_batch(cursor, deadline).and_then(|mut page| {
+            if page.len() > 1 {
+                return Err("Spindle returned more than one record in a bounded read".into());
+            }
+            let Some((id, raw)) = page.pop() else {
+                return Ok(None);
+            };
+            if cursor.checked_add(1) != Some(id) {
+                return Err(format!("non-contiguous Spindle record {id} after {cursor}"));
+            }
+            let observation = decode_versioned(&raw)
+                .map_err(|error| format!("cannot decode Spindle record {id}: {error}"))?;
+            let identity = observation.identity();
+            let key = SpindleProvenance {
+                origin: origin.to_owned(),
+                record_id: id,
+                producer: identity.producer.clone(),
+                generation: identity.generation.clone(),
+                sequence: identity.sequence,
+            };
+            Ok(Some((
+                key,
+                observation_to_telemetry(&observation, default_host),
+            )))
+        });
+        match next {
+            Ok(next) => {
+                if let Some(bind) = bind.take() {
+                    bind()?;
+                }
+                let Some((key, envelope)) = next else { break };
+                cursor = key.record_id;
+                records.push((key, envelope));
+            }
+            Err(error) if records.is_empty() => return Err(error),
+            Err(error) => {
+                tail_error = Some(error);
+                break;
+            }
+        }
+    }
+    Ok(SpindleProjectionPoll {
+        records,
+        tail_error,
+    })
 }
 
 /// Incrementally polls committed custody `(id, envelope)` records from `spindle.sock`
@@ -683,6 +780,82 @@ mod tests {
             }
             other => panic!("expected decode error log, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn projection_poll_preserves_exact_prefix_and_reports_a_later_gap() {
+        let mut bound = false;
+        let result = poll_spindle_projection_records_with(
+            "origin-a",
+            4,
+            64,
+            "host",
+            Instant::now() + Duration::from_secs(1),
+            |cursor, _| match cursor {
+                4 => Ok(vec![(5, sample_obs_bytes(11))]),
+                5 => Ok(vec![(7, sample_obs_bytes(12))]),
+                _ => panic!("polled beyond the contiguous prefix"),
+            },
+            || {
+                bound = true;
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert!(bound);
+        assert_eq!(result.records.len(), 1);
+        assert_eq!(result.records[0].0.origin, "origin-a");
+        assert_eq!(result.records[0].0.record_id, 5);
+        assert_eq!(result.records[0].0.sequence, 11);
+        assert_eq!(
+            result.tail_error.as_deref(),
+            Some("non-contiguous Spindle record 7 after 5")
+        );
+    }
+
+    #[test]
+    fn projection_poll_does_not_bind_after_failed_or_invalid_first_page() {
+        let cases = [
+            Err("Spindle origin mismatch".to_owned()),
+            Ok(vec![(1, b"not a stored observation".to_vec())]),
+            Ok(vec![(2, sample_obs_bytes(1))]),
+        ];
+        for page in cases {
+            let mut page = Some(page);
+            assert!(
+                poll_spindle_projection_records_with(
+                    "origin-a",
+                    0,
+                    64,
+                    "host",
+                    Instant::now() + Duration::from_secs(1),
+                    |_, _| page.take().expect("exactly one read"),
+                    || panic!("bound before the first verified response"),
+                )
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn projection_poll_binds_an_empty_store_after_verified_response() {
+        let mut bound = false;
+        let result = poll_spindle_projection_records_with(
+            "origin-a",
+            0,
+            64,
+            "host",
+            Instant::now() + Duration::from_secs(1),
+            |_, _| Ok(Vec::new()),
+            || {
+                bound = true;
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert!(bound);
+        assert!(result.records.is_empty());
+        assert!(result.tail_error.is_none());
     }
 
     #[tokio::test]

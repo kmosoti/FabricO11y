@@ -1,5 +1,5 @@
 use super::{
-    Config, Health, Reply, Request,
+    Config, Health, READ_ORIGIN_MISMATCH, Reply, Request,
     custody::Store,
     sources::{self, FileSource, HostSource, JournalSource},
 };
@@ -306,6 +306,16 @@ impl Daemon {
         }
         self.health.clone()
     }
+    fn check_read_origin(&self, request: &Request) -> Result<(), String> {
+        if let Request::ReadForOrigin {
+            expected_origin, ..
+        } = request
+            && expected_origin != self.store.origin()
+        {
+            return Err(READ_ORIGIN_MISMATCH.to_owned());
+        }
+        Ok(())
+    }
     fn prepare_remote(
         &mut self,
         bytes: &[u8],
@@ -313,7 +323,11 @@ impl Daemon {
         observation::check_json(bytes, observation::MAX_FRAME)?;
         let value: serde_json::Value = serde_json::from_slice(bytes).map_err(err)?;
         if value.get("command").is_some() {
-            if let Request::Read { after, limit } = serde_json::from_value(value).map_err(err)? {
+            let request = serde_json::from_value(value).map_err(err)?;
+            self.check_read_origin(&request)?;
+            if let Request::Read { after, limit } | Request::ReadForOrigin { after, limit, .. } =
+                request
+            {
                 return self.store.prepare_remote_read(after, limit);
             }
             Ok(None)
@@ -334,8 +348,14 @@ impl Daemon {
                 Ok(Request::Status) => Reply::Status {
                     status: self.health(),
                 },
-                Ok(Request::Read { after, limit }) => {
-                    match self.store.read_raw(after, limit.min(1)) {
+                Ok(
+                    request @ (Request::Read { after, limit }
+                    | Request::ReadForOrigin { after, limit, .. }),
+                ) => {
+                    match self
+                        .check_read_origin(&request)
+                        .and_then(|()| self.store.read_raw(after, limit.min(1)))
+                    {
                         Ok(records) => return super::wire::encode_records(&records),
                         Err(error) => Reply::Error { error },
                     }
@@ -828,6 +848,30 @@ mod shadow_reclamation_tests {
         assert_eq!(daemon.store.read_raw(0, 1).unwrap()[0].1, raw);
         assert_eq!(retained.lock().unwrap()[&1].raw.as_bytes(), raw);
         let origin = daemon.store.origin().to_owned();
+        let expected_read = |origin: &str| {
+            serde_json::to_vec(&Request::ReadForOrigin {
+                expected_origin: origin.to_owned(),
+                after: 0,
+                limit: 1,
+            })
+            .unwrap()
+        };
+        assert!(
+            daemon
+                .prepare_remote(&expected_read(&origin))
+                .unwrap()
+                .is_none()
+        );
+        let local = daemon.handle(&expected_read(&origin)).unwrap();
+        assert_eq!(
+            super::super::wire::decode_records_raw(&local).unwrap()[0].1,
+            raw
+        );
+        let wrong_local = daemon.handle(&expected_read("other-store")).unwrap();
+        assert_eq!(
+            super::super::wire::decode_records_raw(&wrong_local).unwrap_err(),
+            READ_ORIGIN_MISMATCH,
+        );
         drop(daemon);
         let mut shadow = Daemon::open(config.clone()).unwrap();
         assert_eq!(shadow.store.origin(), origin);
@@ -851,8 +895,19 @@ mod shadow_reclamation_tests {
         assert_eq!(enabled.store.reclaimed().unwrap(), 1);
         assert_eq!(enabled.store.highest_record_id().unwrap(), 1);
         let socket = config.socket.clone();
+        let actual_origin = origin.clone();
         let read = std::thread::spawn(move || {
-            super::super::transport::read_raw(&socket, 0, Instant::now() + Duration::from_secs(2))
+            use super::super::transport;
+            let deadline = Instant::now() + Duration::from_secs(2);
+            assert_eq!(
+                transport::read_origin(&socket, deadline).unwrap(),
+                actual_origin
+            );
+            assert_eq!(
+                transport::read_raw_for_origin(&socket, "other-store", 0, deadline).unwrap_err(),
+                READ_ORIGIN_MISMATCH,
+            );
+            transport::read_raw_for_origin(&socket, &actual_origin, 0, deadline)
         });
         let end = Instant::now() + Duration::from_secs(3);
         while !read.is_finished() {

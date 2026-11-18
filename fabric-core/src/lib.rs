@@ -25,8 +25,8 @@ pub use model::{
     AgentSessionRecord, BlameEntry, BlameReport, BlameResource, CgroupSample, CliEnvelope,
     DoctorCheck, DoctorReport, FsChurnEntry, FsEventRecord, GpuDeviceStats, GraphEdgeRecord,
     HostSnapshot, LogRecord, MemorySnapshot, MetricPoint, MountUsage, ProcessSample, PsiMetrics,
-    PsiResource, SCHEMA_VERSION, SelfHealthSummary, SliceSummary, TraceSpanRecord, UnitRecord,
-    ZramStats,
+    PsiResource, SCHEMA_VERSION, SPINDLE_PROVENANCE_COLUMN, SelfHealthSummary, SliceSummary,
+    SpindleProvenance, TraceSpanRecord, UnitRecord, ZramStats,
 };
 pub use paths::{
     DEFAULT_DATA_DIR, DEFAULT_TMP_DIR, PathPolicyError, StorageLayout, normalize_lexical_path,
