@@ -219,6 +219,10 @@ fn unknown_inflight_write_and_gateway_death_preserve_pending_binding() {
         fs::write(&path, value).unwrap();
         fs::set_permissions(path, fs::Permissions::from_mode(0o600)).unwrap();
     }
+    let raw2 = RAW.replace(
+        "18446744073709551615},\"timestamp_ns\"",
+        "2},\"timestamp_ns\"",
+    );
     let mut config = Config {
         listen: "127.0.0.1:0".into(),
         storage: root.path().join("control"),
@@ -230,6 +234,7 @@ fn unknown_inflight_write_and_gateway_death_preserve_pending_binding() {
             origin: "owned-fault-origin".into(),
             credential_file: root.path().join("node"),
         }],
+        node_quota_bytes: [("owned-fault-origin".into(), (RAW.len() + raw2.len()) as u64)].into(),
         engine_endpoint: Some(proxy.endpoint.clone()),
         max_connections: 16,
     };
@@ -303,10 +308,6 @@ fn unknown_inflight_write_and_gateway_death_preserve_pending_binding() {
     let mut proxy = Proxy::start(&engine);
     config.engine_endpoint = Some(proxy.endpoint.clone());
     let mut gateway = Gateway::start(&config, &root.path().join("server2.json"));
-    let raw2 = RAW.replace(
-        "18446744073709551615},\"timestamp_ns\"",
-        "2},\"timestamp_ns\"",
-    );
     let second_raw = raw2.clone();
     let address = gateway.endpoint.clone();
     let writer = thread::spawn(move || {
@@ -382,6 +383,27 @@ fn unknown_inflight_write_and_gateway_death_preserve_pending_binding() {
     assert_eq!(rows[0].canonical_id, canonical_id);
     assert_eq!(rows[1].raw, raw2);
     assert_eq!(rows[1].canonical_id, canonical_id + 1);
+    assert!(matches!(
+        gateway.call(
+            node,
+            Request::Ingest {
+                origin: "owned-fault-origin".into(),
+                records: vec![record(1, RAW), record(2, &raw2)],
+            },
+        ),
+        Response::Committed { through: 2, .. }
+    ));
+    let raw3 = raw2.replace("2},\"timestamp_ns\"", "3},\"timestamp_ns\"");
+    assert!(matches!(
+        gateway.call(
+            node,
+            Request::Ingest {
+                origin: "owned-fault-origin".into(),
+                records: vec![record(3, &raw3)],
+            },
+        ),
+        Response::Error { error } if error.contains("node payload quota exhausted")
+    ));
     drop(gateway);
     let ledger =
         Ledger::open_with_engine(&config.storage, config.quota_bytes, Some(&engine)).unwrap();

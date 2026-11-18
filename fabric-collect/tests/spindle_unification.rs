@@ -264,6 +264,7 @@ fn spindle_forwards_to_server_and_unifies_into_collector_olap() {
             origin: origin.clone(),
             credential_file: node_cred.clone(),
         }],
+        node_quota_bytes: Default::default(),
         engine_endpoint: None,
         max_connections: 16,
     })

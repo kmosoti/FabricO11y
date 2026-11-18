@@ -42,6 +42,7 @@ fn pressure_child(root: &Path) {
             origin: "alpha".into(),
             credential_file: key(root, "alpha"),
         }],
+        node_quota_bytes: Default::default(),
         engine_endpoint: None,
         max_connections: 4,
     })
