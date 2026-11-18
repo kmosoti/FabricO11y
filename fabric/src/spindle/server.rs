@@ -318,7 +318,9 @@ impl Daemon {
                                 + Duration::from_millis(self.config.client_timeout_ms),
                         });
                     }
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                    // Yield to existing connections so their replies or deadlines
+                    // can return descriptors before the next accept attempt.
+                    Err(e) if transient_accept_pressure(&e) => break,
                     Err(e) => return Err(err(e)),
                 }
             }
@@ -781,6 +783,34 @@ impl Connection {
         }
         Ok(ConnectionProgress::Pending)
     }
+}
+
+fn transient_accept_pressure(error: &std::io::Error) -> bool {
+    use rustix::io::Errno;
+    matches!(
+        error.kind(),
+        std::io::ErrorKind::WouldBlock
+            | std::io::ErrorKind::Interrupted
+            | std::io::ErrorKind::ConnectionAborted
+    ) || [Errno::MFILE, Errno::NFILE, Errno::NOBUFS, Errno::NOMEM]
+        .iter()
+        .any(|errno| error.raw_os_error() == Some(errno.raw_os_error()))
+}
+
+#[cfg(test)]
+#[test]
+fn retryable_admission_pressure_preserves_listener_progress() {
+    use rustix::io::Errno;
+    for errno in [
+        Errno::AGAIN,
+        Errno::MFILE,
+        Errno::NFILE,
+        Errno::NOBUFS,
+        Errno::NOMEM,
+    ] {
+        assert!(transient_accept_pressure(&errno.into()));
+    }
+    assert!(!transient_accept_pressure(&Errno::BADF.into()));
 }
 
 fn err(e: impl std::fmt::Display) -> String {
