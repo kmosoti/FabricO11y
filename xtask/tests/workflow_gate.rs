@@ -97,3 +97,36 @@ fn main_human_gate_and_ci_workflows_enforce_promotion_invariants() {
         );
     }
 }
+
+#[test]
+fn development_jobs_partition_checks_and_install_only_their_required_tools() {
+    let workflow = fs::read_to_string(repo_root().join(".github/workflows/development-checks.yml"))
+        .expect("read development-checks.yml");
+    let (native, verify) = workflow
+        .split_once("\n  native-acceptance:\n")
+        .and_then(|(_, jobs)| jobs.split_once("\n  verify:\n"))
+        .expect("both required jobs are present");
+
+    assert!(!workflow.contains("xtask check --tier"));
+    assert_eq!(workflow.matches("xtask check --group workspace").count(), 1);
+    assert_eq!(workflow.matches("xtask check --group native").count(), 1);
+    assert_eq!(workflow.matches("xtask check --group workflow").count(), 1);
+
+    assert!(native.contains("xtask check --group native"));
+    assert!(native.contains("jj git init --colocate"));
+    assert!(native.contains("install-verification-tools.sh"));
+    assert!(native.contains("check-engine.sh"));
+    assert!(native.contains("xtask fuzz smoke"));
+    assert!(native.contains("xtask fuzz scheduled"));
+    assert!(!native.contains("install-schema-tools.sh"));
+
+    assert!(verify.contains("install-schema-tools.sh"));
+    assert!(verify.contains("xtask check --group workspace"));
+    assert!(verify.contains("cargo build --locked --release --workspace --bins --examples"));
+    assert!(verify.contains("xtask collection smoke"));
+    assert!(verify.contains(
+        "if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'\n        run: /github/home/.cargo/bin/cargo xtask check --group workflow"
+    ));
+    assert!(!verify.contains("jj git init --colocate"));
+    assert!(!verify.contains("install-verification-tools.sh"));
+}
