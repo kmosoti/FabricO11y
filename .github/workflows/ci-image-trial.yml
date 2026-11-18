@@ -148,6 +148,16 @@ jobs:
         run: |
           set -eu
           kernel=$(uname -r)
+          cpu_model=$(awk -F ':[[:space:]]*' '/^model name[[:space:]]*:/ {print $2; exit}' /proc/cpuinfo)
+          cores=$(nproc)
+          memory_total=$(awk '/^MemTotal:/ {print $2; exit}' /proc/meminfo)
+          memory_available=$(awk '/^MemAvailable:/ {print $2; exit}' /proc/meminfo)
+          cpu_quota=$(cat /sys/fs/cgroup/cpu.max 2>/dev/null || printf unavailable)
+          memory_limit=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || printf unavailable)
+          test -n "$cpu_model"
+          test -n "$memory_total"
+          hardware=$(printf 'Kernel %s\nCPU %s (%s available cores)\nCPU quota %s\nTotal memory %s KiB\nMemory limit %s\n' \
+            "$kernel" "$cpu_model" "$cores" "$cpu_quota" "$memory_total" "$memory_limit")
           compiler=$(rustc -vV)
           cargo=$(cargo -V)
           packages=$(rpm -q gcc glibc openssl-devel)
@@ -158,8 +168,9 @@ jobs:
             cxx_package=$(rpm -q gcc-c++)
             packages=$(printf '%s\n' "$packages" "$cxx_package")
           fi
-          identity=$(printf '%s\n' "$kernel" "$compiler" "$cargo" "$packages")
+          identity=$(printf '%s\n' "$hardware" "$compiler" "$cargo" "$packages")
           printf '%s\n' "$identity"
+          printf 'Available memory %s KiB\n' "$memory_available"
           digest=$(printf '%s\n' "$identity" | sha256sum)
           fingerprint="$RUNNER_TEMP/environment.sha256"
           printf '%s\n' "${digest%% *}" > "$fingerprint"

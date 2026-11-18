@@ -30,9 +30,10 @@ preserves the native engine binary checksum and version checks.
    containing these workflow files, add `.github/ci-images/qualification.json`
    and push. Use `verify` with the common digest and `native-acceptance` with
    the native digest. The plan requires the source SHA to be on `develop`
-   and in the public image's OCI source label. The measured revision must
-   have the same Development checks workflow and cache actions as the trial
-   branch. Use `"samples": 1` for a pilot and `"samples": 3` for a
+   and in the public image's OCI source label. The digest must match the
+   published `common-<revision>` or `native-<revision>` tag for the profile.
+   The measured revision must have the same Development checks workflow and
+   cache actions as the trial branch. Use `"samples": 1` for a pilot and `"samples": 3` for a
    qualification cohort. Omitting the field starts a pilot.
 
    ```json
@@ -63,10 +64,12 @@ preserves the native engine binary checksum and version checks.
    `gh api --paginate repos/kmosoti/FabricO11y/actions/runs/<run-id>/attempts/<attempt>/jobs`.
    Report queue and dependency wait separately from job execution. Record
    container initialization, cache restore and save, tool setup, compilation
-   and every verification phase. The workflow rejects differences in runner
-   kernel, product Rust and Cargo versions, and native compiler and library
-   package versions using a fingerprint artifact from each completed job.
-   Check the runner image and resolved checkout and cache action SHAs in the logs across runs before comparing samples. Compare each job's
+   and every verification phase. The workflow rejects differences in CPU
+   model, usable cores, CPU quota, memory capacity, runner kernel, product and
+   native compiler versions, and native library versions. It compares a
+   fingerprint artifact from each completed job. Check the runner image version
+   in each job's `Set up job` log and the resolved checkout and cache action SHAs
+   before comparing samples. Compare each job's
    cold and warm wall times through the end of verification. Report cache
    priming and full job times separately, along with published image and cache
    sizes and the median and range for each cell.
