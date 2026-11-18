@@ -2,11 +2,47 @@ use super::evidence;
 use std::{path::Path, process::Command};
 const VERUS: &str = "verus-0.2026.10.26.d17fbd0/verus-x86-linux";
 
+fn verus_binary() -> std::path::PathBuf {
+    evidence::binary("FABRIC_VERUS", &format!("{VERUS}/verus"))
+}
+
+pub(super) fn lean_binary() -> std::path::PathBuf {
+    evidence::binary("FABRIC_LEAN", "lean-4.35.0-linux/bin/lean")
+}
+
+pub(super) fn checker_binaries() -> Result<[(&'static str, std::path::PathBuf); 5], String> {
+    let verus = verus_binary();
+    let parent = verus.parent().ok_or("invalid Verus path")?;
+    let z3 = parent.join("z3");
+    let cargo_verus = parent.join("cargo-verus");
+    let lean = lean_binary();
+    let lake = lean.parent().ok_or("missing Lean directory")?.join("lake");
+    Ok([
+        ("lean", lean),
+        ("lake", lake),
+        ("verus", verus),
+        ("z3", z3),
+        ("cargo-verus", cargo_verus),
+    ])
+}
+
+pub(super) fn guide_checker(checker: &str, path: &str) -> bool {
+    matches!(
+        (checker, path),
+        ("aeneas", "proofs/ExtractedAdmission.lean")
+            | ("lean", "proofs/Admission.lean")
+            | ("custody", "proofs/Custody.lean")
+            | ("collection", "proofs/Collection.lean")
+            | ("distributed", "proofs/Distributed.lean")
+            | ("telemetry", "proofs/Telemetry.lean")
+    )
+}
+
 pub fn check(which: &str, root: &Path) -> Result<(), String> {
     match which {
         "selftest" => negative_controls(root),
         "verus" => {
-            let verus = evidence::binary("FABRIC_VERUS", &format!("{VERUS}/verus"));
+            let verus = verus_binary();
             let parent = verus.parent().ok_or("invalid Verus path")?;
             let version =
                 super::output(verus.to_str().ok_or("non-UTF8 path")?, &["--version"], root)?;
@@ -47,7 +83,7 @@ pub fn check(which: &str, root: &Path) -> Result<(), String> {
             Ok(())
         }
         "lean" => {
-            let lean = evidence::binary("FABRIC_LEAN", "lean-4.35.0-linux/bin/lean");
+            let lean = lean_binary();
             let lean = lean.to_str().ok_or("non-UTF8 path")?;
             if !super::output(lean, &["--version"], root)?.starts_with("Lean (version 4.35.0,") {
                 return Err("unexpected Lean version".into());
@@ -87,8 +123,8 @@ pub fn check(which: &str, root: &Path) -> Result<(), String> {
 
 fn negative_controls(root: &Path) -> Result<(), String> {
     let work = evidence::non_tmp_tempdir()?;
-    let verus = evidence::binary("FABRIC_VERUS", &format!("{VERUS}/verus"));
-    let lean = evidence::binary("FABRIC_LEAN", "lean-4.35.0-linux/bin/lean");
+    let verus = verus_binary();
+    let lean = lean_binary();
     let cases = [
         (
             &verus,
@@ -210,7 +246,7 @@ fn negative_controls(root: &Path) -> Result<(), String> {
 }
 
 fn collection(root: &Path) -> Result<(), String> {
-    let lean = evidence::binary("FABRIC_LEAN", "lean-4.35.0-linux/bin/lean");
+    let lean = lean_binary();
     let executable = lean.to_str().ok_or("non-UTF8 path")?;
     if !super::output(executable, &["--version"], root)?.starts_with("Lean (version 4.35.0,") {
         return Err("unexpected Lean version".into());
@@ -267,7 +303,7 @@ fn collection(root: &Path) -> Result<(), String> {
     let dir = evidence::non_tmp_tempdir()?;
     let file = dir.path().join("delivery_mutant.rs");
     std::fs::write(&file, mutant).map_err(|e| e.to_string())?;
-    let verus = evidence::binary("FABRIC_VERUS", &format!("{VERUS}/verus"));
+    let verus = verus_binary();
     let output = Command::new("timeout")
         .arg("120")
         .arg(verus)
@@ -293,7 +329,7 @@ fn collection(root: &Path) -> Result<(), String> {
 }
 
 fn distributed(root: &Path) -> Result<(), String> {
-    let lean = evidence::binary("FABRIC_LEAN", "lean-4.35.0-linux/bin/lean");
+    let lean = lean_binary();
     let executable = lean.to_str().ok_or("non-UTF8 checker")?;
     if !super::output(executable, &["--version"], root)?.starts_with("Lean (version 4.35.0,") {
         return Err("unexpected Lean".into());
@@ -375,7 +411,7 @@ fn distributed(root: &Path) -> Result<(), String> {
 }
 
 fn custody(root: &Path) -> Result<(), String> {
-    let lean = evidence::binary("FABRIC_LEAN", "lean-4.35.0-linux/bin/lean");
+    let lean = lean_binary();
     let executable = lean.to_str().ok_or("non-UTF8 checker")?;
     if !super::output(executable, &["--version"], root)?.starts_with("Lean (version 4.35.0,") {
         return Err("unexpected Lean".into());
@@ -505,7 +541,7 @@ end Custody
 }
 
 fn smt(root: &Path) -> Result<(), String> {
-    let verus = evidence::binary("FABRIC_VERUS", &format!("{VERUS}/verus"));
+    let verus = verus_binary();
     let parent = verus.parent().ok_or("invalid Verus path")?;
     let z3 = parent.join("z3");
     let z3_str = z3.to_str().ok_or("non-UTF8 Z3 path")?;
@@ -554,7 +590,7 @@ fn smt(root: &Path) -> Result<(), String> {
 }
 
 fn telemetry(root: &Path) -> Result<(), String> {
-    let lean = evidence::binary("FABRIC_LEAN", "lean-4.35.0-linux/bin/lean");
+    let lean = lean_binary();
     let executable = lean.to_str().ok_or("non-UTF8 checker")?;
     if !super::output(executable, &["--version"], root)?.starts_with("Lean (version 4.35.0,") {
         return Err("unexpected Lean version".into());
