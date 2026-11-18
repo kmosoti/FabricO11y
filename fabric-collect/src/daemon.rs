@@ -1365,10 +1365,10 @@ async fn run_daemon_mode(mut config: DaemonConfig, spindle_only: bool) -> Result
                     || force_shed
                     || spindle_backpressure
                     || last_flush.elapsed() >= Duration::from_secs(60);
-                if scheduled || cgroup_pressure {
-                    if let Err(err) = runtime.flush_to_olap() {
-                        *runtime.last_spindle_error.write() = Some(format!("olap flush failed: {err}"));
-                    }
+                if (scheduled || cgroup_pressure)
+                    && let Err(err) = runtime.flush_to_olap()
+                {
+                    *runtime.last_spindle_error.write() = Some(format!("olap flush failed: {err}"));
                 }
                 if scheduled {
                     let _ = runtime.run_janitor_pass();
