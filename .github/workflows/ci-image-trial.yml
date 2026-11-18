@@ -147,8 +147,11 @@ jobs:
           cargo=$(cargo -V)
           packages=$(rpm -q gcc glibc openssl-devel)
           if [ "$PROFILE" = native-acceptance ]; then
-            packages="$packages
-          $(rpm -q gcc-c++)"
+            verus_compiler=$(rustup run 1.99.1 rustc -vV)
+            extraction_compiler=$(rustup run nightly-2026-09-17 rustc -vV)
+            compiler=$(printf '%s\n' "$compiler" "$verus_compiler" "$extraction_compiler")
+            cxx_package=$(rpm -q gcc-c++)
+            packages=$(printf '%s\n' "$packages" "$cxx_package")
           fi
           identity=$(printf '%s\n' "$kernel" "$compiler" "$cargo" "$packages")
           printf '%s\n' "$identity"
