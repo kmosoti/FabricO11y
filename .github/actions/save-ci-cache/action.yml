@@ -1,20 +1,43 @@
 name: Save trusted CI cache
 description: Save only from successful develop pushes; PRs never publish executable caches.
 inputs:
+  sources-key:
+    required: true
+    description: Dependency source key from restore-ci-cache
+  sources-hit:
+    required: false
+    description: Whether the exact dependency source key was restored
   key:
     required: true
-    description: Exact key from restore-ci-cache
+    description: Exact Cargo artifact key from restore-ci-cache
+  hit:
+    required: false
+    description: Whether the exact Cargo artifact key was restored
+  fuzz-key:
+    required: false
+    description: Exact fuzz artifact key from restore-ci-cache
+  fuzz-hit:
+    required: false
+    description: Whether the exact fuzz artifact key was restored
 runs:
   using: composite
   steps:
     - uses: actions/cache/save@v4
-      if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+      if: github.event_name == 'push' && github.ref == 'refs/heads/develop' && inputs.sources-hit != 'true'
       with:
         path: |
           /github/home/.cargo/registry
           /github/home/.cargo/git/db
           /github/home/.local/share/fabrico11y/schema-tools
           /github/home/.local/share/fabrico11y/engine-tools
-          target
-          /github/home/.cache/fabrico11y-fuzz-target
+        key: ${{ inputs.sources-key }}
+    - uses: actions/cache/save@v4
+      if: github.event_name == 'push' && github.ref == 'refs/heads/develop' && inputs.hit != 'true'
+      with:
+        path: target
         key: ${{ inputs.key }}
+    - uses: actions/cache/save@v4
+      if: github.event_name == 'push' && github.ref == 'refs/heads/develop' && inputs.fuzz-key != '' && inputs.fuzz-hit != 'true'
+      with:
+        path: /github/home/.cache/fabrico11y-fuzz-target
+        key: ${{ inputs.fuzz-key }}
