@@ -202,6 +202,9 @@ pub struct Health {
     pub highest_record_id: u64,
     pub custody_bytes: u64,
     pub active_connections: usize,
+    /// Start-up admission cap after reserving descriptor headroom.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connection_limit: Option<usize>,
     pub queue_bytes: usize,
     pub last_commit_latency_ns: u64,
     pub uptime_ms: u64,
