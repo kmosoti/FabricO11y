@@ -135,6 +135,7 @@ impl Receiver {
                     credential_file: key(root, origin),
                 })
                 .collect(),
+            node_quota_bytes: Default::default(),
             engine_endpoint: None,
             max_connections: 16,
         };
@@ -187,6 +188,129 @@ impl Drop for Receiver {
         self.shutdown()
     }
 }
+#[test]
+fn node_payload_quota_preserves_retries_and_other_origins() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut receiver = Receiver::new(dir.path(), &["telemetry", "other-telemetry", "workload"]);
+    let ingest = |receiver: &Receiver, origin: &str, ids: &[u64]| {
+        receiver.call(
+            origin,
+            Request::Ingest {
+                origin: origin.into(),
+                records: ids.iter().map(|&id| row(id, raw(id))).collect(),
+            },
+        )
+    };
+
+    // Install quotas on an existing ledger. Earlier retained bytes count.
+    assert!(matches!(
+        ingest(&receiver, "telemetry", &[1]),
+        Response::Committed { through: 1, .. }
+    ));
+    receiver.shutdown();
+    let mut config = receiver.config.clone();
+    let payload_bytes = raw(1).len() as u64;
+    config.node_quota_bytes = [
+        ("telemetry".into(), 2 * payload_bytes),
+        ("other-telemetry".into(), payload_bytes),
+    ]
+    .into();
+    let mut receiver = Receiver::start(config.clone());
+
+    thread::scope(|scope| {
+        let rejected = scope.spawn(|| ingest(&receiver, "telemetry", &[2, 3]));
+        let workload = scope.spawn(|| ingest(&receiver, "workload", &[1, 2]));
+        let other = scope.spawn(|| ingest(&receiver, "other-telemetry", &[1]));
+        assert!(matches!(
+            rejected.join().unwrap(),
+            Response::Error { error } if error.contains("node payload quota exhausted")
+        ));
+        assert!(matches!(
+            workload.join().unwrap(),
+            Response::Committed { through: 2, .. }
+        ));
+        assert!(matches!(
+            other.join().unwrap(),
+            Response::Committed { through: 1, .. }
+        ));
+    });
+
+    // A new source ID cannot reuse an existing observation identity. This
+    // failure occurs after accounting was staged in the SQL transaction.
+    assert!(matches!(
+        receiver.call(
+            "telemetry",
+            Request::Ingest {
+                origin: "telemetry".into(),
+                records: vec![row(2, raw(1))],
+            }
+        ),
+        Response::Error { error } if error.contains("UNIQUE")
+    ));
+
+    // Neither rejected batch spent quota. Retrying 1 with a new record spends
+    // only the new record's bytes.
+    assert!(matches!(
+        ingest(&receiver, "telemetry", &[1, 2]),
+        Response::Committed { through: 2, .. }
+    ));
+    receiver.shutdown();
+    let mut receiver = Receiver::start(config.clone());
+    assert!(matches!(
+        ingest(&receiver, "telemetry", &[1, 2]),
+        Response::Committed { through: 2, .. }
+    ));
+    assert!(matches!(
+        ingest(&receiver, "telemetry", &[3]),
+        Response::Error { error } if error.contains("node payload quota exhausted")
+    ));
+    let Response::Rows { rows } = receiver.call(
+        "reader",
+        Request::Read {
+            origin: "telemetry".into(),
+            after: 0,
+            through: 2,
+            limit: 2,
+        },
+    ) else {
+        panic!("accepted telemetry history is unavailable");
+    };
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].raw, raw(1));
+    assert_eq!(rows[1].raw, raw(2));
+
+    // The account also catches up after a write made with quotas disabled.
+    receiver.shutdown();
+    let mut unlimited = config.clone();
+    unlimited.node_quota_bytes.clear();
+    let mut receiver = Receiver::start(unlimited);
+    assert!(matches!(
+        ingest(&receiver, "telemetry", &[3]),
+        Response::Committed { through: 3, .. }
+    ));
+    receiver.shutdown();
+    *config.node_quota_bytes.get_mut("telemetry").unwrap() = 3 * payload_bytes;
+    let receiver = Receiver::start(config);
+    assert!(matches!(
+        ingest(&receiver, "telemetry", &[4]),
+        Response::Error { error } if error.contains("node payload quota exhausted")
+    ));
+}
+
+#[test]
+fn node_quotas_require_configured_origins_and_workload_headroom() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut receiver = Receiver::new(dir.path(), &["alpha", "beta"]);
+    receiver.shutdown();
+    let mut config = receiver.config.clone();
+    config.node_quota_bytes = [("unconfigured".into(), 1)].into();
+    assert!(matches!(Server::open(config.clone()), Err(e) if e.contains("configured origin")));
+    config.node_quota_bytes = [("alpha".into(), config.quota_bytes / 4), ("beta".into(), 1)].into();
+    assert!(matches!(Server::open(config.clone()), Err(e) if e.contains("one quarter")));
+    config.node_quota_bytes = [("alpha".into(), 0)].into();
+    assert!(matches!(Server::open(config), Err(e) if e.contains("positive")));
+}
+
 fn query(scope: Vec<String>) -> QueryRequest {
     QueryRequest {
         version: 1,
