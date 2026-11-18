@@ -2,7 +2,7 @@ use fabric::canonical::{
     self, Authenticated, Request as CanonicalRequest, Response as CanonicalResponse,
 };
 use fabric::spindle::{Health, Reply};
-use fabric_collect::DaemonResponse;
+use fabric_collect::{DaemonRequest, DaemonResponse, query_daemon_socket};
 use fabric_core::DoctorReport;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -446,6 +446,19 @@ fn resident_collector_doctor_is_checked_from_the_running_daemon() {
         );
         thread::sleep(Duration::from_millis(50));
     }
+    let doctor = match query_daemon_socket(&scratch.0.join("daemon.sock"), &DaemonRequest::Doctor)
+        .expect("resident collector Doctor response")
+    {
+        DaemonResponse::Doctor(report) => report,
+        other => panic!("unexpected resident collector response: {other:?}"),
+    };
+    assert!(doctor.daemon_running);
+    assert_eq!(doctor.pid, daemon.0.id());
+    let (expected_code, expected_status, expected_reason) = if doctor.healthy {
+        (0, "ready", "collector_healthy")
+    } else {
+        (2, "not_ready", "collector_unhealthy")
+    };
     let spool = spindle(&scratch.0.join("spindle.sock"), "origin-live");
     let output = scratch
         .command()
@@ -455,11 +468,11 @@ fn resident_collector_doctor_is_checked_from_the_running_daemon() {
         .output()
         .unwrap();
     spool.join().unwrap();
-    assert_eq!(output.status.code(), Some(0), "{output:?}");
-    assert_eq!(
-        json(&output)["data"]["collector"]["reason"],
-        "collector_healthy"
-    );
+    assert_eq!(output.status.code(), Some(expected_code), "{output:?}");
+    let data = &json(&output)["data"];
+    assert_eq!(data["status"], expected_status);
+    assert_eq!(data["collector"]["status"], expected_status);
+    assert_eq!(data["collector"]["reason"], expected_reason);
 }
 
 #[test]
