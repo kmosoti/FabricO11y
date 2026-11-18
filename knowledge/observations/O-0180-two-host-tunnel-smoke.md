@@ -141,3 +141,9 @@ separate measurements.
 
 The rerun log SHA-256 is
 `2fbc52e78e7e1ece0583443cf19e281277c6a944be17b86ac33a75e35c80442c`.
+
+A second confined run built the fixture and all three executables from
+`8eb1f2e31c8a16bb2d6a0d94db75a98a587ba591`. The fixture executable
+had SHA-256 `00b352436e541b8f62df23f7a9afd374fe03969f64fa914c46ab3cf3a79b3928`. It passed in 81.09 seconds with a
+25.3 MiB unit peak, zero swap, and a matched canonical telemetry prefix
+through source ID 59.
