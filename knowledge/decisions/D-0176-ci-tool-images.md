@@ -23,10 +23,11 @@ can be shared across branch cache scopes. A hosted runner still has to pull
 image layers. Adopt digest-locked images only after measuring pulls and
 end-to-end runs against equivalent cold and warm baselines.
 
-Use a dedicated same-repository trial branch to run one paired sample per job
-profile. The workflow can run before the experiment reaches the default
-branch. A warm sample is valid only with exact cache hits from its corresponding
-cold sample. Repository cache pressure can invalidate a sample and can also
-evict existing development caches.
+Use a dedicated same-repository trial branch per job profile. The workflow can
+run before the experiment reaches the default branch. Seed one immutable cache
+per variant, run the other independent cold samples without a cache, and
+require every warm sample to restore its variant's exact seed. This reduces
+cache writes and separates runner variation from variation in cache contents.
+Repository cache pressure can invalidate a sample and evict development caches.
 
 See [CI image qualification](../../docs/ci-images.md).

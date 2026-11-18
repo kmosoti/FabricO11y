@@ -18,6 +18,7 @@ jobs:
       revision: ${{ steps.plan.outputs.revision }}
       profile: ${{ steps.plan.outputs.profile }}
       candidate: ${{ steps.plan.outputs.candidate }}
+      samples: ${{ steps.plan.outputs.samples }}
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
@@ -33,6 +34,7 @@ jobs:
           revision=$(jq -er '.revision | select(test("^[0-9a-f]{40}$"))' "$plan")
           profile=$(jq -er '.profile | select(. == "verify" or . == "native-acceptance")' "$plan")
           candidate=$(jq -er '.candidate | select(test("^ghcr[.]io/kmosoti/fabrico11y-ci@sha256:[0-9a-f]{64}$"))' "$plan")
+          samples=$(jq -er 'if has("samples") then .samples else 1 end | select(. == 1 or . == 3)' "$plan")
           status=$(gh api "repos/$GITHUB_REPOSITORY/compare/develop...$revision" --jq .status)
           case "$status" in identical|behind) ;; *) echo "Revision is outside develop history" >&2; exit 1 ;; esac
 
@@ -59,12 +61,13 @@ jobs:
           compressed_bytes=$(docker buildx imagetools inspect "$candidate" --raw |
             jq -er '.layers | map(.size) | add | select(. > 0)')
           {
-            printf 'revision=%s\nprofile=%s\ncandidate=%s\n' "$revision" "$profile" "$candidate"
+            printf 'revision=%s\nprofile=%s\ncandidate=%s\nsamples=%s\n' "$revision" "$profile" "$candidate" "$samples"
           } >> "$GITHUB_OUTPUT"
           {
             printf '## CI image qualification\n\n'
             printf -- '- Check profile: `%s`\n- Product revision: `%s`\n' "$profile" "$revision"
             printf -- '- Candidate: `%s` (%s compressed layer bytes)\n' "$candidate" "$compressed_bytes"
+            printf -- '- Samples per variant and cache state: `%s`\n' "$samples"
           } >> "$GITHUB_STEP_SUMMARY"
 
   baseline-cold:
@@ -76,16 +79,8 @@ jobs:
       image: registry.fedoraproject.org/fedora@sha256:d68cae9185777603262e0a7094f792ffed9326b22e1a03e2d2a1731fc3f94733
       prebuilt: false
       warm: false
-
-  baseline-warm:
-    needs: [plan, baseline-cold]
-    uses: ./.github/workflows/ci-image-trial.yml
-    with:
-      revision: ${{ needs.plan.outputs.revision }}
-      profile: ${{ needs.plan.outputs.profile }}
-      image: registry.fedoraproject.org/fedora@sha256:d68cae9185777603262e0a7094f792ffed9326b22e1a03e2d2a1731fc3f94733
-      prebuilt: false
-      warm: true
+      prime: true
+      sample: 1
 
   candidate-cold:
     needs: plan
@@ -96,9 +91,51 @@ jobs:
       image: ${{ needs.plan.outputs.candidate }}
       prebuilt: true
       warm: false
+      prime: true
+      sample: 1
+
+  cold-controls:
+    needs: plan
+    if: needs.plan.outputs.samples == '3'
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [baseline, candidate]
+        sample: [2, 3]
+    uses: ./.github/workflows/ci-image-trial.yml
+    with:
+      revision: ${{ needs.plan.outputs.revision }}
+      profile: ${{ needs.plan.outputs.profile }}
+      image: ${{ matrix.variant == 'candidate' && needs.plan.outputs.candidate || 'registry.fedoraproject.org/fedora@sha256:d68cae9185777603262e0a7094f792ffed9326b22e1a03e2d2a1731fc3f94733' }}
+      prebuilt: ${{ matrix.variant == 'candidate' }}
+      warm: false
+      prime: false
+      sample: ${{ matrix.sample }}
+
+  baseline-warm:
+    needs: [plan, baseline-cold]
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        sample: ${{ fromJSON(needs.plan.outputs.samples == '3' && '[1,2,3]' || '[1]') }}
+    uses: ./.github/workflows/ci-image-trial.yml
+    with:
+      revision: ${{ needs.plan.outputs.revision }}
+      profile: ${{ needs.plan.outputs.profile }}
+      image: registry.fedoraproject.org/fedora@sha256:d68cae9185777603262e0a7094f792ffed9326b22e1a03e2d2a1731fc3f94733
+      prebuilt: false
+      warm: true
+      prime: false
+      sample: ${{ matrix.sample }}
 
   candidate-warm:
     needs: [plan, candidate-cold]
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        sample: ${{ fromJSON(needs.plan.outputs.samples == '3' && '[1,2,3]' || '[1]') }}
     uses: ./.github/workflows/ci-image-trial.yml
     with:
       revision: ${{ needs.plan.outputs.revision }}
@@ -106,21 +143,43 @@ jobs:
       image: ${{ needs.plan.outputs.candidate }}
       prebuilt: true
       warm: true
+      prime: false
+      sample: ${{ matrix.sample }}
 
   check-environments:
-    needs: [baseline-cold, baseline-warm, candidate-cold, candidate-warm]
+    needs: [plan, baseline-cold, candidate-cold, cold-controls, baseline-warm, candidate-warm]
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
-      BASELINE_COLD: ${{ needs.baseline-cold.outputs.environment }}
-      BASELINE_WARM: ${{ needs.baseline-warm.outputs.environment }}
-      CANDIDATE_COLD: ${{ needs.candidate-cold.outputs.environment }}
-      CANDIDATE_WARM: ${{ needs.candidate-warm.outputs.environment }}
+      SAMPLES: ${{ needs.plan.outputs.samples }}
     steps:
-      - name: Compare compiler, prerequisite and runner kernel identities
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: ci-image-trial-${{ github.run_attempt }}-*-environment
+          path: ${{ runner.temp }}/ci-image-trial-environments
+      - name: Compare every compiler, prerequisite and runner kernel identity
         run: |
-          set -eu
-          test -n "$BASELINE_COLD"
-          test "$BASELINE_COLD" = "$BASELINE_WARM"
-          test "$BASELINE_COLD" = "$CANDIDATE_COLD"
-          test "$BASELINE_COLD" = "$CANDIDATE_WARM"
+          set -euo pipefail
+          fingerprint_root="$RUNNER_TEMP/ci-image-trial-environments"
+          expected=''
+          for variant in baseline candidate; do
+            for state in cold warm; do
+              for ((sample=1; sample <= SAMPLES; sample++)); do
+                name="$variant-$state-$sample"
+                path="$fingerprint_root/ci-image-trial-$GITHUB_RUN_ATTEMPT-$name-environment/environment.sha256"
+                if [[ ! -f "$path" ]]; then
+                  printf 'No environment fingerprint for %s\n' "$name" >&2
+                  exit 1
+                fi
+                fingerprint=$(<"$path")
+                [[ "$fingerprint" =~ ^[0-9a-f]{64}$ ]]
+                printf '%s %s\n' "$name" "$fingerprint"
+                expected=${expected:-$fingerprint}
+                if [[ "$fingerprint" != "$expected" ]]; then
+                  printf 'Environment differs from baseline-cold-1 for %s\n' "$name" >&2
+                  exit 1
+                fi
+              done
+            done
+          done

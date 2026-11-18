@@ -216,8 +216,8 @@ flowchart LR
     Warm --> Review["Review adoption in development checks"]
 ```
 
-The qualification workflow runs isolated cold and warm pairs for both required
-job profiles. The development jobs continue to use their current Fedora image
+The qualification workflow runs isolated cold and warm samples for both required
+job profiles. Warm samples reuse their variant’s immutable cache seed. The development jobs continue to use their current Fedora image
 until the candidate digests pass hosted qualification. See
 [CI image qualification](ci-images.md) for the comparison and adoption procedure.
 
