@@ -4,7 +4,7 @@ on:
   push:
     branches: [develop]
     paths:
-      - '.github/ci-images/**'
+      - '.github/ci-images/Containerfile'
       - '.github/scripts/check-ci-image-tools.sh'
       - '.github/scripts/install-*-tools.sh'
       - '.github/scripts/install-toolchain.sh'
@@ -12,6 +12,12 @@ on:
       - 'rust-toolchain.toml'
       - 'verification/aeneas.opam.lock'
   workflow_dispatch:
+    inputs:
+      variant:
+        description: Image set to build, verify, and publish from develop
+        type: choice
+        options: [standard, common-seeded, all]
+        default: standard
 
 permissions:
   contents: read
@@ -30,31 +36,47 @@ jobs:
       packages: write
     env:
       IMAGE: ghcr.io/kmosoti/fabrico11y-ci
+      PUBLISH_VARIANT: ${{ github.event_name == 'push' && 'standard' || inputs.variant }}
       TMPDIR: /var/tmp
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Build common and native tool images
+      - name: Prepare the trusted source context
+        id: context
         run: |
           set -euo pipefail
-          context=$(mktemp -d "$TMPDIR/fabrico11y-ci-images.XXXXXXXX")
-          trap 'rm -rf -- "$context"' EXIT
-          git archive HEAD -- .github/ci-images/Containerfile \
-            .github/scripts/check-ci-image-tools.sh \
-            .github/scripts/install-engine-tools.sh \
-            .github/scripts/install-schema-tools.sh \
-            .github/scripts/install-toolchain.sh \
-            .github/scripts/install-verification-tools.sh \
-            rust-toolchain.toml verification/aeneas.opam.lock | tar -x -C "$context"
+          [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
+          case "$PUBLISH_VARIANT" in standard|common-seeded|all) ;; *) exit 1 ;; esac
+          context=$(mktemp -d "$RUNNER_TEMP/fabrico11y-ci-images.XXXXXXXX")
+          printf 'root=%s\n' "$context" >> "$GITHUB_OUTPUT"
+          paths=()
+          if [[ "$PUBLISH_VARIANT" == standard ]]; then
+            paths=(.github/ci-images/Containerfile
+              .github/scripts/check-ci-image-tools.sh
+              .github/scripts/install-engine-tools.sh
+              .github/scripts/install-schema-tools.sh
+              .github/scripts/install-toolchain.sh
+              .github/scripts/install-verification-tools.sh
+              rust-toolchain.toml verification/aeneas.opam.lock)
+          fi
+          git archive "$GITHUB_SHA" -- "${paths[@]}" | tar -x -C "$context"
+      - name: Build common and native tool images
+        if: env.PUBLISH_VARIANT != 'common-seeded'
+        env:
+          CONTEXT: ${{ steps.context.outputs.root }}
+        run: |
+          set -euo pipefail
           for target in common native; do
             docker buildx build --platform linux/amd64 --load --target "$target" \
-              --file "$context/.github/ci-images/Containerfile" \
+              --file "$CONTEXT/.github/ci-images/Containerfile" \
               --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
               --label "org.opencontainers.image.revision=$GITHUB_SHA" \
-              --tag "$IMAGE:$target-$GITHUB_SHA" "$context"
+              --tag "$IMAGE:$target-$GITHUB_SHA" "$CONTEXT"
           done
       - name: Verify the installed tools offline
+        if: env.PUBLISH_VARIANT != 'common-seeded'
         run: |
           set -euo pipefail
           for target in common native; do
@@ -62,17 +84,22 @@ jobs:
               sh /opt/fabrico11y/bootstrap/.github/scripts/check-ci-image-tools.sh "$target"
           done
       - name: Publish verified images and record their digests
+        if: env.PUBLISH_VARIANT != 'common-seeded'
         env:
           GHCR_TOKEN: ${{ github.token }}
-        run: |
+          TARGETS: common native
+        run: &publish-verified-images |
           set -euo pipefail
-          docker_config=$(mktemp -d "$TMPDIR/fabrico11y-docker-config.XXXXXXXX")
+          docker_config=$(mktemp -d "$RUNNER_TEMP/fabrico11y-docker-config.XXXXXXXX")
           export DOCKER_CONFIG="$docker_config"
           trap 'rm -rf -- "$docker_config"' EXIT
           printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          read -ra targets <<< "$TARGETS"
           {
-            printf '## FabricO11y CI tool images\n\nSource commit `%s`\n\n' "$GITHUB_SHA"
-            for target in common native; do
+            if [[ "$TARGETS" == 'common native' || "$PUBLISH_VARIANT" == common-seeded ]]; then
+              printf '## FabricO11y CI tool images\n\nSource commit `%s`\n\n' "$GITHUB_SHA"
+            fi
+            for target in "${targets[@]}"; do
               tagged="$IMAGE:$target-$GITHUB_SHA"
               docker push "$tagged" >&2
               digest=$(docker image inspect "$tagged" --format '{{range .RepoDigests}}{{println .}}{{end}}' | grep -E "^$IMAGE@sha256:[0-9a-f]{64}$")
@@ -80,3 +107,45 @@ jobs:
               printf -- '- %s: `%s` (%s uncompressed bytes)\n' "$target" "$digest" "$size"
             done
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Build the common image with a release compiler seed
+        if: env.PUBLISH_VARIANT != 'standard'
+        env:
+          CONTEXT: ${{ steps.context.outputs.root }}
+        run: |
+          set -euo pipefail
+          docker buildx build --platform linux/amd64 --load --target common-seeded \
+            --file "$CONTEXT/.github/ci-images/Containerfile" \
+            --build-arg "SOURCE_REVISION=$GITHUB_SHA" \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --label "io.fabrico11y.ci.variant=common-seeded" \
+            --tag "$IMAGE:common-seeded-$GITHUB_SHA" "$CONTEXT"
+      - name: Verify the seeded release preflight offline
+        if: env.PUBLISH_VARIANT != 'standard'
+        env:
+          CONTEXT: ${{ steps.context.outputs.root }}
+        run: |
+          set -euo pipefail
+          workspace=/__w/FabricO11y/FabricO11y
+          probe="$RUNNER_TEMP/seeded-image-preflight.log"
+          docker run --rm --network none \
+            --mount "type=bind,src=$CONTEXT,dst=$workspace,readonly" --workdir "$workspace" \
+            --env HOME=/github/home --env CARGO_BUILD_JOBS=4 --env CARGO_INCREMENTAL=0 \
+            --env CARGO_PROFILE_DEV_DEBUG=0 --env CARGO_PROFILE_TEST_DEBUG=0 \
+            "$IMAGE:common-seeded-$GITHUB_SHA" \
+            sh -ec '
+              sh /opt/fabrico11y/bootstrap/.github/scripts/check-ci-image-tools.sh common
+              exec /opt/fabrico11y/compiler-seed/release-build --preflight
+            ' | tee "$probe"
+          grep -Fxq 'compiler-seed ready' "$probe"
+      - name: Publish the verified common compiler-seed image
+        if: env.PUBLISH_VARIANT != 'standard'
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+          TARGETS: common-seeded
+        run: *publish-verified-images
+      - name: Clean up the source context
+        if: always() && steps.context.outputs.root != ''
+        env:
+          CONTEXT: ${{ steps.context.outputs.root }}
+        run: rm -rf -- "$CONTEXT"

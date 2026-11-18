@@ -4,6 +4,7 @@ set -euo pipefail
 run_root="$RUNNER_TEMP/fabric-ci-pair"
 workspace=/__w/FabricO11y/FabricO11y
 product_root="$GITHUB_WORKSPACE/.paired-product"
+seeded_release=/opt/fabrico11y/compiler-seed/release-build
 baseline=registry.fedoraproject.org/fedora@sha256:d68cae9185777603262e0a7094f792ffed9326b22e1a03e2d2a1731fc3f94733
 timeout_seconds=2700
 if [[ "$PAIR_PROFILE" == native-acceptance ]]; then
@@ -56,7 +57,10 @@ measure() {
 
 prepare() {
   [[ "$PAIR_ARCH" == X64 ]]
-  [[ "$PAIR_PROFILE" == verify || "$PAIR_PROFILE" == native-acceptance ]]
+  case "$PAIR_PROFILE:$PAIR_VARIANT" in
+    verify:common|verify:common-seeded|native-acceptance:native) ;;
+    *) printf 'Unexpected profile and variant: %s:%s\n' "$PAIR_PROFILE" "$PAIR_VARIANT" >&2; return 1 ;;
+  esac
   [[ "$PAIR_REVISION" =~ ^[0-9a-f]{40}$ ]]
   [[ "$PAIR_SAMPLE" =~ ^[123]$ ]]
   [[ "$PAIR_WARM" == true || "$PAIR_WARM" == false ]]
@@ -76,7 +80,7 @@ prepare() {
   fi
   printf 'first=%s\nsecond=%s\n' "$first" "$second" >> "$GITHUB_OUTPUT"
   jq -n --arg revision "$PAIR_REVISION" --arg profile "$PAIR_PROFILE" --arg candidate "$PAIR_CANDIDATE" \
-    --arg baseline "$baseline" --arg first "$first" --arg second "$second" \
+    --arg variant "$PAIR_VARIANT" --arg baseline "$baseline" --arg first "$first" --arg second "$second" \
     --arg image_os "${ImageOS:?Hosted runner did not expose ImageOS}" \
     --arg image_version "${ImageVersion:?Hosted runner did not expose ImageVersion}" \
     --argjson number "$PAIR_SAMPLE" --argjson warm "$PAIR_WARM" --argjson smoke "$PAIR_SMOKE" \
@@ -193,6 +197,25 @@ toolchain() {
   fi
 }
 
+check_compiler_seed() {
+  in_container 0 "$seeded_release" --preflight | tee "$evidence/compiler-seed-preflight.log"
+  grep -Fxq 'compiler-seed ready' "$evidence/compiler-seed-preflight.log"
+}
+
+measure_seeded_release() {
+  local stats_name=compiler-seed-stats.json
+  in_container 0 env "FABRIC_CI_SEED_STATS=/__w/_temp/$stats_name" "$seeded_release"
+  # The container writes its statistics as root and the runner owns the artifact.
+  # shellcheck disable=SC2024
+  sudo -n cat -- "$host_temp/$stats_name" > "$evidence/$stats_name"
+  jq -e --argjson warm "$PAIR_WARM" '
+    .version == "0.19.0" and .effective_cache_mode == "ReadOnly" and
+    .stats.cache_writes == 0 and
+    ((.stats.cache_errors.counts | type == "object" and length == 0)) and
+    ((.stats.cache_hits.counts.Rust // 0) | type == "number" and . >= 0 and ($warm or . > 0))
+  ' "$evidence/$stats_name"
+}
+
 verification() {
   if [[ "$PAIR_WARM" == true && "$PAIR_ROLE" == baseline && "$PAIR_PROFILE" == native-acceptance ]]; then
     if [[ "$PROOF_HIT" != true ]]; then
@@ -209,6 +232,9 @@ verification() {
         "$host_workspace/verification/aeneas.opam.lock"
     fi
     printf 'true\n' > "$evidence/proof-hit"
+  fi
+  if [[ "$PAIR_ROLE:$PAIR_VARIANT" == candidate:common-seeded ]]; then
+    measure compiler_seed_preflight check_compiler_seed
   fi
   if [[ "$PAIR_SMOKE" == true ]]; then
     measure smoke_fixture in_container 0 sh -s "$PAIR_WARM" "$PAIR_PROFILE" "$PAIR_ROLE" \
@@ -243,7 +269,11 @@ verification() {
         cargo xtask fuzz smoke /var/tmp/fabric-fuzz-smoke
     else
       measure workspace_checks in_container 0 cargo xtask check --group workspace
-      measure release_build in_container 0 cargo build --locked --release --workspace --bins --examples
+      if [[ "$PAIR_ROLE:$PAIR_VARIANT" == candidate:common-seeded ]]; then
+        measure release_build measure_seeded_release
+      else
+        measure release_build in_container 0 cargo build --locked --release --workspace --bins --examples
+      fi
       measure restart_smoke in_container 120 target/release/xtask collection smoke
     fi
   fi
