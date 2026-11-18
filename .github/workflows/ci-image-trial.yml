@@ -18,6 +18,10 @@ on:
       warm:
         required: true
         type: boolean
+    outputs:
+      environment:
+        description: Digest of the runner kernel, compilers and native libraries
+        value: ${{ jobs.hosted.outputs.environment }}
 
 permissions:
   contents: read
@@ -38,8 +42,10 @@ jobs:
     timeout-minutes: ${{ inputs.profile == 'verify' && 45 || 300 }}
     container:
       image: ${{ inputs.image }}
+    outputs:
+      environment: ${{ steps.environment.outputs.digest }}
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.revision }}
           persist-credentials: false
@@ -131,10 +137,23 @@ jobs:
         run: sh .github/scripts/check-ci-image-tools.sh ${{ inputs.profile == 'verify' && 'common' || 'native' }}
 
       - name: Record compiler identity and disk headroom
+        id: environment
+        env:
+          PROFILE: ${{ inputs.profile }}
         run: |
-          rustc -vV
-          cargo -V
-          rpm -q gcc glibc openssl-devel
+          set -eu
+          kernel=$(uname -r)
+          compiler=$(rustc -vV)
+          cargo=$(cargo -V)
+          packages=$(rpm -q gcc glibc openssl-devel)
+          if [ "$PROFILE" = native-acceptance ]; then
+            packages="$packages
+          $(rpm -q gcc-c++)"
+          fi
+          identity=$(printf '%s\n' "$kernel" "$compiler" "$cargo" "$packages")
+          printf '%s\n' "$identity"
+          digest=$(printf '%s\n' "$identity" | sha256sum)
+          printf 'digest=%s\n' "${digest%% *}" >> "$GITHUB_OUTPUT"
           df -P / "$GITHUB_WORKSPACE"
 
       - name: Initialize candidate workspace

@@ -30,7 +30,9 @@ preserves the native engine binary checksum and version checks.
    containing these workflow files, add `.github/ci-images/qualification.json`
    and push. Use `verify` with the common digest and `native-acceptance` with
    the native digest. The plan requires the source SHA to be on `develop`
-   and in the public image's OCI source label.
+   and in the public image's OCI source label. The measured revision must
+   have the same Development checks workflow and cache actions as the trial
+   branch.
 
    ```json
    {
@@ -58,8 +60,10 @@ preserves the native engine binary checksum and version checks.
    `gh api --paginate repos/kmosoti/FabricO11y/actions/runs/<run-id>/attempts/<attempt>/jobs`.
    Report queue and dependency wait separately from job execution. Record
    container initialization, cache restore and save, tool setup, compilation
-   and every verification phase. Match runner image and installed compiler
-   identities across the pair and record any differences. Compare each job's
+   and every verification phase. The workflow rejects differences in runner
+   kernel, product Rust and Cargo versions, and native compiler and library
+   package versions. Check the runner image and resolved checkout and cache
+   action SHAs in the logs across runs before comparing samples. Compare each job's
    cold and warm wall times through the end of verification. Report cache
    priming and full job times separately, along with published image and cache
    sizes and the median and range for each cell.
@@ -68,6 +72,15 @@ preserves the native engine binary checksum and version checks.
    warm median falls within or below the observed baseline warm range. Retain
    run links and report fails, cache evictions, and material runner differences
    alongside the timings.
+
+After recording a pair's results and cache sizes, reclaim only its trial caches.
+List by its exact branch ref and filter keys by the run ID. Review the list
+and delete each matching cache by ID with `gh cache delete <cache-id>`.
+
+```sh
+gh cache list --ref "refs/heads/ci/tool-image-qualification/<trial>" \
+  --key "ci-image-trial-v1-<run-id>-" --json id,key,ref,sizeInBytes
+```
 
 ## Adopt or revert
 
