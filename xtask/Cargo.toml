@@ -24,3 +24,8 @@ rustix = { version = "1", features = ["time", "process"] }
 
 [features]
 allocation-metrics = []
+deployment-qualification = []
+
+[[test]]
+name = "deployment_profiles"
+required-features = ["deployment-qualification"]
