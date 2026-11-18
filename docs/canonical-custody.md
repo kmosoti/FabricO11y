@@ -171,3 +171,22 @@ the local service log. The exporter does not retry in the server's request
 handling or projection worker, and telemetry failure does not invalidate
 canonical custody. The usual canonical retention and quota rules apply to
 accepted telemetry records.
+
+## Check a receipt at the canonical receiver
+
+A Spindle receipt records local custody. Save the origin at submission and use
+its exact receipt to check the committed analytical projection at the receiver.
+
+```sh
+fabric projection-ready --target canonical --authority "$FABRIC_AUTHORITY" \
+  --origin "$SPINDLE_ORIGIN" --receipt receipt.json --wait 30s --json
+```
+
+Set the receiver address and private reader credential file with
+`--server-endpoint` and `--reader-credential-file`, or use the existing custody
+configuration defaults. Across hosts, use the local endpoint of an authenticated
+tunnel. JSON distinguishes the per-origin custody frontier from the projection
+frontier. Exit 0 requires a matching committed Parquet row. Exit 3 indicates
+canonical custody with a projection still behind. Exit 4 indicates unavailable
+evidence, including an unknown authority or origin, a receipt the receiver
+cannot resolve, or a native engine backend without a separate Parquet witness.

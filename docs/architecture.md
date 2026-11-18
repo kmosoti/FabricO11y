@@ -112,6 +112,21 @@ new batches without blocking collection. Local projection advances over exported
 copies for the configured node because its existing observations already cover
 those host signals.
 
+A canonical receipt check authenticates a reader and binds the expected authority and
+origin. The receiver reports custody and analytical frontiers separately.
+
+```mermaid
+flowchart LR
+    CLI["fabric projection-ready --target canonical"] -->|"reader credential and expected authority"| API["Fabric Server"]
+    API -->|"exact origin, source ID, and observation identity"| LEDGER["Canonical custody"]
+    API -->|"same origin and committed source frontier"| PROJ["Canonical Parquet manifest"]
+    PROJ -->|"verified full query row"| API
+```
+
+The canonical probe reuses the bounded analytical worker. It confirms the full
+projected row from the committed Parquet segment within the request budget. Native
+engine mode reports unavailable when it has no independent Parquet witness.
+
 ## 3. Two-Branch Stacked Development Workflow & Release Gate
 
 Following the repository workflow anchored in [`knowledge/decisions/D-0001-development-workflow.md`](../knowledge/decisions/D-0001-development-workflow.md):
