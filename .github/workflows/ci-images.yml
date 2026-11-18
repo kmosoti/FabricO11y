@@ -134,9 +134,11 @@ jobs:
             --env CARGO_PROFILE_DEV_DEBUG=0 --env CARGO_PROFILE_TEST_DEBUG=0 \
             "$IMAGE:common-seeded-$GITHUB_SHA" \
             sh -ec '
+              bash .github/scripts/ci-image-paired-seed.sh revision \
+                /opt/fabrico11y/compiler-seed/provenance/revision "$1"
               sh /opt/fabrico11y/bootstrap/.github/scripts/check-ci-image-tools.sh common
               exec /opt/fabrico11y/compiler-seed/release-build --preflight
-            ' | tee "$probe"
+            ' preflight "$GITHUB_SHA" | tee "$probe"
           grep -Fxq 'compiler-seed ready' "$probe"
       - name: Publish the verified common compiler-seed image
         if: env.PUBLISH_VARIANT != 'standard'
