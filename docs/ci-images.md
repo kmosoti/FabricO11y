@@ -15,21 +15,59 @@ building. Lean libraries and the paths required by the checkers remain installed
 
 ## Qualify the candidate
 
-1. Confirm both digests can be pulled by the required job's credential policy.
-   Public repositories need anonymously readable packages for fork PRs.
-2. Compare the existing workflow and the candidate digests on equivalent
-   `ubuntu-24.04` x86-64 hosted runs. Use the same product revision, checks,
-   compiler flags, and fuzz budget. In the candidate workflow, replace the
-   container references and run `check-ci-image-tools.sh common` or `native`
-   in place of the tool installation steps. Use isolated cache keys for cold
-   runs and repeat the same keys for warm runs. Collect at least three samples
-   for each configuration.
-3. Compare queue time separately. Record container initialization and pull,
-   cache transfer, tooling setup, compilation, and each verification phase.
-   Record published image and cache sizes, median wall time, and variation.
-4. Confirm the candidate uses the installed tools without per-job upstream
-   tool downloads. Both required jobs must pass. Adopt only when median cold
-   wall time improves and warm results stay within baseline variation.
+The `CI image qualification` workflow runs one paired sample for one job
+profile. The baseline uses the Fedora image and installers from Development
+checks. The candidate uses an immutable tool image and checks the installed
+tool identities. Each variant runs once cold and once warm on fresh
+`ubuntu-24.04` x86-64 runners with the same source SHA, compiler settings,
+checks, and 60-second fuzz budget used by a `develop` push. The workflow
+preserves the native engine binary checksum and version checks.
+
+1. Wait for the publisher on `develop` and record its source SHA and both
+   digests from the run summary. Confirm the GHCR package is publicly readable
+   so a fork PR can start a required job without registry credentials.
+2. On a same-repository branch named `ci/tool-image-qualification/<trial>`
+   containing these workflow files, add `.github/ci-images/qualification.json`
+   and push. Use `verify` with the common digest and `native-acceptance` with
+   the native digest. The plan requires the source SHA to be on `develop`
+   and in the public image's OCI source label.
+
+   ```json
+   {
+     "revision": "<publisher develop commit SHA>",
+     "profile": "verify",
+     "candidate": "ghcr.io/kmosoti/fabrico11y-ci@sha256:<common image digest>"
+   }
+   ```
+
+3. Start with one pair per job and check the native image fits on the hosted
+   Docker filesystem. The plan logs Docker storage on its runner, and each
+   trial logs its own free space after container initialization, after cache
+   restore and setup, and at job end. Retain container initialization failures
+   as qualification evidence. Run at least three complete pairs per profile,
+   on trial branches with the same product revision and corresponding digests.
+   Start a new sample or rerun all jobs when a pair fails.
+4. Cold jobs skip cache restore and save fresh, run-attempt-scoped caches.
+   Each warm job requires an exact application cache hit from its cold job
+   and, for baseline native, an exact proof-tool cache hit. A missing or evicted
+   cache invalidates that warm sample. Run one pair at a time when repository
+   cache capacity is tight. Qualification caches share that capacity with
+   development caches. Capture their sizes promptly with `gh cache list --ref
+   refs/heads/ci/tool-image-qualification/<trial>`.
+5. Capture job and step timestamps with
+   `gh api --paginate repos/kmosoti/FabricO11y/actions/runs/<run-id>/attempts/<attempt>/jobs`.
+   Report queue and dependency wait separately from job execution. Record
+   container initialization, cache restore and save, tool setup, compilation
+   and every verification phase. Match runner image and installed compiler
+   identities across the pair and record any differences. Compare each job's
+   cold and warm wall times through the end of verification. Report cache
+   priming and full job times separately, along with published image and cache
+   sizes and the median and range for each cell.
+6. Confirm that the candidate preflight and checks passed with the installed
+   tools. Adopt only if each candidate cold median improves and each candidate
+   warm median falls within or below the observed baseline warm range. Retain
+   run links and report fails, cache evictions, and material runner differences
+   alongside the timings.
 
 ## Adopt or revert
 
