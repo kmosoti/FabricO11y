@@ -98,3 +98,5 @@ Unbounded `Int` proofs in `Telemetry.lean` model `align_rollup_bucket_ms` for
 `i64`; `[i64::MIN, -9_223_372_036_854_600_001]` saturates to `i64::MIN`).
 Filesystem `fsync`/atomic rename durability and kernel `/proc`/cgroup sampling
 accuracy remain explicit runtime assumptions.
+
+See the [Hax backend qualification](../knowledge/research/R-0173-hax-backend-qualification.md) for a comparison against these pinned extraction tools.
