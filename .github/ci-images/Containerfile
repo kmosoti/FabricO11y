@@ -25,8 +25,10 @@ RUN HOME=/opt/fabrico11y CARGO_HOME=/opt/fabrico11y/.cargo OPAMJOBS=4 sh .github
     && proof_source="$FABRIC_PROOF_TOOLS/aeneas-ab34bd2" \
     && rm -rf "$FABRIC_PROOF_TOOLS/downloads" "$FABRIC_PROOF_TOOLS/opam-root" "$proof_source/_opam" \
         /opt/fabrico11y/.cargo/registry /opt/fabrico11y/.cargo/git /opt/fabrico11y/.cache \
-    && find "$proof_source/charon/charon/target" -mindepth 1 ! -path '*/release' ! -path '*/release/charon' ! -path '*/release/charon-driver' -delete \
-    && find "$proof_source/src/_build" -mindepth 1 ! -path '*/default' ! -path '*/default/main.exe' -delete \
+    && charon_target="$proof_source/charon/charon/target" \
+    && find "$charon_target" -mindepth 1 ! -path "$charon_target/release" ! -path "$charon_target/release/charon" ! -path "$charon_target/release/charon-driver" -delete \
+    && aeneas_build="$proof_source/src/_build" \
+    && find "$aeneas_build" -mindepth 1 ! -path "$aeneas_build/default" ! -path "$aeneas_build/default/main.exe" -delete \
     && sh .github/scripts/check-ci-image-tools.sh native \
     && dnf clean all
 
