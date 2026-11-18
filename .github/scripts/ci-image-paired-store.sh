@@ -58,7 +58,7 @@ start_daemon() {
   printf 'daemon=%s\ncontainerd=%s\nimages=%s\ncontent=%s\n' \
     "$daemon_root/d.sock" "$daemon_root/c.sock" "$daemon_root/images" "$daemon_root/content" \
     > "$evidence/empty-store.txt"
-  df -PK "$daemon_root" "$host_workspace" > "$evidence/disk-before.tsv"
+  df -Pk "$daemon_root" "$host_workspace" > "$evidence/disk-before.tsv"
 }
 
 wait_until_ready() {
