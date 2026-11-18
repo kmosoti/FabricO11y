@@ -352,9 +352,10 @@ fn deliver(shared: Arc<Shared>) {
                 state.retries = state.retries.saturating_add(1);
                 assert!(buffer.credit.retry());
                 state.ready.push_front(buffer);
+                // New admissions notify the worker but must not accelerate a retry.
                 let _ = shared
                     .changed
-                    .wait_timeout(state, Duration::from_millis(100));
+                    .wait_timeout_while(state, Duration::from_millis(100), |s| !s.closed);
             }
         }
     }

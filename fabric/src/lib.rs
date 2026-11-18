@@ -7,4 +7,5 @@ pub mod observation;
 pub mod query;
 pub mod run;
 pub mod sdk;
+pub mod self_telemetry;
 pub mod spindle;
