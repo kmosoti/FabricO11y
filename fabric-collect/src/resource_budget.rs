@@ -27,6 +27,18 @@ fn number(path: &Path) -> Option<u64> {
     fs::read_to_string(path).ok()?.trim().parse().ok()
 }
 
+// Inactive file pages can be reclaimed by the kernel under pressure.
+fn inactive_file_bytes(directory: &Path) -> u64 {
+    fs::read_to_string(directory.join("memory.stat"))
+        .ok()
+        .and_then(|stat| {
+            stat.lines()
+                .find_map(|line| line.strip_prefix("inactive_file "))
+                .and_then(|bytes| bytes.trim().parse().ok())
+        })
+        .unwrap_or(0)
+}
+
 fn memory_inputs(root: &Path, membership: &str) -> MemoryInputs {
     let Some(path) = membership.lines().find_map(|line| line.strip_prefix("0::")) else {
         return MemoryInputs::default();
@@ -51,7 +63,8 @@ fn memory_inputs(root: &Path, membership: &str) -> MemoryInputs {
         if let Some(limit) = limit {
             inputs.limit = Some(inputs.limit.map_or(limit, |prior| prior.min(limit)));
             if let Some(current) = number(&directory.join("memory.current")) {
-                inputs.pressured |= current > 0 && current >= elastic_spendable(limit);
+                let working_set = current.saturating_sub(inactive_file_bytes(&directory));
+                inputs.pressured |= working_set > 0 && working_set >= elastic_spendable(limit);
             }
         }
     }
@@ -107,6 +120,13 @@ mod tests {
         assert_eq!(inputs.limit, Some(64 * 1024 * 1024));
         assert_eq!(ring_budget(inputs.limit).budget_bytes, 6 * 1024 * 1024);
         fs::write(root.join("slice/memory.current"), "50331647").unwrap();
+        assert!(!memory_inputs(root, "0::/slice/service").pressured);
+        fs::write(root.join("slice/memory.current"), "65000000").unwrap();
+        fs::write(
+            root.join("slice/memory.stat"),
+            "anon 8388608\ninactive_file 40000000\n",
+        )
+        .unwrap();
         assert!(!memory_inputs(root, "0::/slice/service").pressured);
         assert_eq!(memory_inputs(root, "0::/../slice").limit, None);
     }
