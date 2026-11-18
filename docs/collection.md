@@ -335,3 +335,9 @@ existing ownership and recovery rules. The released cache may need to warm
 again once pressure clears. The cgroup headroom formula is a policy for the
 collector's optional work. It cannot reserve kernel memory for competing
 processes.
+
+On transient accept pressure, Spindle services its existing connections
+before trying to accept again. Replies and deadlines release the occupied
+descriptors. Receiver admission and projection already retry transient
+descriptor pressure. Neither mechanism changes custody collection rights or
+advances a durable frontier before its normal commit.
