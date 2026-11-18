@@ -19,6 +19,8 @@ fabric-core = { path = "../fabric-core" }
 fabric-graph = { path = "../fabric-graph" }
 fabric-query = { path = "../fabric-query" }
 fabric-store = { path = "../fabric-store" }
+rustix = { version = "1", features = ["fs"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

@@ -3,6 +3,7 @@
 
 pub mod anomaly;
 pub mod arrow_schemas;
+pub mod guide;
 pub mod model;
 pub mod paths;
 pub mod query_spec;

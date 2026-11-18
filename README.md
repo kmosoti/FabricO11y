@@ -21,6 +21,7 @@ fabric lineage /data/tmp/fabric-synth-load --direction both --json
 fabric drift --pillar lineage --json
 fabric custody --json
 fabric doctor --json
+fabric guide fleet --json
 fabric daemon --interval-ms 2000
 
 # Repository verification & coupled production user-stack install
@@ -31,6 +32,6 @@ TMPDIR=/data/tmp CARGO_BUILD_TARGET_DIR=/data/cargo-target cargo xtask fuzz smok
 TMPDIR=/data/tmp CARGO_BUILD_TARGET_DIR=/data/cargo-target cargo xtask collection install-stack --bin-dir /data/cargo-target/release --data-dir /data/fabrico11y --tmp-dir /data/tmp --listen 127.0.0.1:17440
 ```
 
-See [architecture](docs/architecture.md), [product direction](docs/direction.md), [linked knowledge](knowledge/README.md), [contributing](CONTRIBUTING.md), [local collection setup](docs/collection.md), [canonical custody](docs/canonical-custody.md), and [typed investigations](docs/investigation.md).
+See [architecture](docs/architecture.md), [product direction](docs/direction.md), [linked knowledge](knowledge/README.md), [contributing](CONTRIBUTING.md), [local collection setup](docs/collection.md), [canonical custody](docs/canonical-custody.md), [typed investigations](docs/investigation.md), and the [offline guide](docs/guide.md).
 
 Requires Jujutsu 0.46.0 with a Git backend and Rust 1.100.0, pinned in [`rust-toolchain.toml`](rust-toolchain.toml).
