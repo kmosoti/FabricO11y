@@ -23,6 +23,7 @@ jobs:
       profile: ${{ steps.plan.outputs.profile }}
       candidate: ${{ steps.plan.outputs.candidate }}
       mode: ${{ steps.plan.outputs.mode }}
+      variant: ${{ steps.plan.outputs.variant }}
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
@@ -44,6 +45,7 @@ jobs:
       revision: ${{ needs.plan.outputs.revision }}
       profile: ${{ needs.plan.outputs.profile }}
       candidate: ${{ needs.plan.outputs.candidate }}
+      variant: ${{ needs.plan.outputs.variant }}
       smoke: ${{ needs.plan.outputs.mode == 'smoke' }}
       warm: false
       sample: ${{ matrix.sample }}
@@ -60,6 +62,7 @@ jobs:
       revision: ${{ needs.plan.outputs.revision }}
       profile: ${{ needs.plan.outputs.profile }}
       candidate: ${{ needs.plan.outputs.candidate }}
+      variant: ${{ needs.plan.outputs.variant }}
       smoke: ${{ needs.plan.outputs.mode == 'smoke' }}
       warm: true
       sample: ${{ matrix.sample }}
@@ -73,6 +76,7 @@ jobs:
       PROFILE: ${{ needs.plan.outputs.profile }}
       REVISION: ${{ needs.plan.outputs.revision }}
       CANDIDATE: ${{ needs.plan.outputs.candidate }}
+      VARIANT: ${{ needs.plan.outputs.variant }}
       MODE: ${{ needs.plan.outputs.mode }}
       COLD_RESULT: ${{ needs.cold.result }}
       WARM_RESULT: ${{ needs.warm.result }}

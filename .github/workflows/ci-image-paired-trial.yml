@@ -12,6 +12,9 @@ on:
       candidate:
         required: true
         type: string
+      variant:
+        required: true
+        type: string
       smoke:
         required: true
         type: boolean
@@ -35,6 +38,7 @@ jobs:
       PAIR_REVISION: ${{ inputs.revision }}
       PAIR_PROFILE: ${{ inputs.profile }}
       PAIR_CANDIDATE: ${{ inputs.candidate }}
+      PAIR_VARIANT: ${{ inputs.variant }}
       PAIR_SMOKE: ${{ inputs.smoke }}
       PAIR_WARM: ${{ inputs.warm }}
       PAIR_SAMPLE: ${{ inputs.sample }}

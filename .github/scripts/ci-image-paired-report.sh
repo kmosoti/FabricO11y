@@ -35,7 +35,7 @@ assert_pull() {
 }
 
 {
-  printf '## %s paired CI image %s\n\n' "$PROFILE" "$MODE"
+  printf '## %s paired CI image %s (%s)\n\n' "$PROFILE" "$MODE" "$VARIANT"
   printf '| State | Pair | First role | Hosted image | Baseline (ms) | Candidate (ms) | Candidate − baseline (ms) |\n'
   printf '| --- | ---: | --- | --- | ---: | ---: | ---: |\n'
 } >> "$GITHUB_STEP_SUMMARY"
@@ -54,9 +54,9 @@ for state in cold warm; do
       second=baseline
     fi
     jq -e --arg revision "$REVISION" --arg candidate "$CANDIDATE" --arg profile "$PROFILE" \
-      --arg run "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT" --arg first "$first" --arg second "$second" \
+      --arg variant "$VARIANT" --arg run "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT" --arg first "$first" --arg second "$second" \
       --argjson warm "$warm" --argjson sample "$sample" --argjson smoke "$smoke" '
-      .revision == $revision and .candidate == $candidate and .profile == $profile and
+      .revision == $revision and .candidate == $candidate and .profile == $profile and .variant == $variant and
       .run_id == $run and .attempt == $attempt and .first == $first and .second == $second and
       .warm == $warm and .smoke == $smoke and .number == $sample and
       (.image_os | length > 0) and (.image_version | length > 0)
@@ -83,6 +83,15 @@ for state in cold warm; do
         fi
       fi
     done
+    if [[ "$VARIANT" == common-seeded ]]; then
+      grep -Fxq 'compiler-seed ready' "$entry/candidate/compiler-seed-preflight.log"
+      time_ms "$entry/candidate" compiler_seed_preflight >/dev/null
+      if [[ "$smoke" == false ]]; then
+        hits=$(jq -er '(.stats.cache_hits.counts.Rust // 0) | select(type == "number" and . >= 0)' \
+          "$entry/candidate/compiler-seed-stats.json")
+        printf '%s pair %s candidate Rust compiler cache hits: %s\n' "$state" "$sample" "$hits"
+      fi
+    fi
     baseline_ms=$(time_ms "$entry/baseline" workload)
     candidate_ms=$(time_ms "$entry/candidate" workload)
     printf '| %s | %s | %s | %s | %s | %s | %+d |\n' \
