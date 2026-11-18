@@ -152,6 +152,13 @@ sequenceDiagram
     Gate-->>Main: Human explicitly approves main-human-approval & merges
 ```
 
+The development workflow runs the common workspace validation and release
+restart smoke in `verify`. The parallel `native-acceptance` job exercises
+exact coverage selectors, native proof and falsification checks, engine
+recovery, and fuzzing. Scheduled and manual runs add the workflow-specific
+tests without repeating the common group. Local candidate verification runs
+the full acceptance tier.
+
 ## 4. Single-Host and Distributed Deployment
 
 `cargo xtask collection install-stack` provisions a co-located rootless user service stack confined inside `fabrico11y.slice` (`MemoryHigh=256M`, `MemoryMax=512M`, `CPUQuota=15%`, `IOWeight=30`, `TasksMax=64`) with explicit `TMPDIR=/data/tmp` and `KillMode=control-group`. Its units omit rootless namespace mounts (`PrivateTmp` and `ProtectSystem=strict`) that fail under SELinux user managers.
