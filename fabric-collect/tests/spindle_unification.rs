@@ -1,13 +1,15 @@
 use fabric::canonical::{self, Request as CanonicalRequest, Response as CanonicalResponse};
-use fabric::observation::{Data, MetricType, Outcome};
+use fabric::observation::{Data, MetricType, Outcome, decode_versioned};
 use fabric::sdk::{Admission, Client, Config as SdkConfig};
 use fabric::spindle::{self, ForwardConfig, Reply, Request, transport};
 use fabric_collect::{
     DaemonConfig, DaemonRequest, DaemonResponse, SelfPreservationGuard, query_daemon_socket,
     run_daemon,
 };
+use fabric_core::SpindleProvenance;
+use fabric_query::probe_spindle_projection;
 use fabric_query::unified::{QueryDomain, UnifiedQuerySpec, execute_unified_query};
-use fabric_store::{CatalogStore, validate_non_tmp_path_on_disk};
+use fabric_store::{CatalogStore, validate_non_tmp_path_on_disk, validated_storage_layout};
 use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -399,6 +401,15 @@ fn spindle_forwards_to_server_and_unifies_into_collector_olap() {
         other => panic!("unexpected server response: {other:?}"),
     }
 
+    let layout = validated_storage_layout(&collector_data).expect("validate collector path");
+    let frontier = CatalogStore::read_spindle_projection_frontier(
+        &layout,
+        Instant::now() + Duration::from_secs(1),
+    )
+    .expect("read empty projection frontier");
+    assert_eq!(frontier.record_id, 0);
+    assert!(!collector_data.exists(), "read created collector state");
+
     // Pass 1: flush records 1..=2 and advance watermark to 2.
     rt.block_on(async {
         run_daemon(DaemonConfig {
@@ -423,6 +434,14 @@ fn spindle_forwards_to_server_and_unifies_into_collector_olap() {
                 .expect("read spindle watermark"),
             Some(2)
         );
+        let frontier = CatalogStore::read_spindle_projection_frontier(
+            catalog.layout(),
+            Instant::now() + Duration::from_secs(1),
+        )
+        .expect("read bound projection frontier");
+        assert_eq!(frontier.origin.as_deref(), Some(origin.as_str()));
+        assert_eq!(frontier.legacy_through, 0);
+        assert_eq!(frontier.record_id, 2);
     }
 
     // Submit 3rd observation: Data::Metric with custom labels.
@@ -473,6 +492,25 @@ fn spindle_forwards_to_server_and_unifies_into_collector_olap() {
         raw_after_2.len(),
         1,
         "expected record 3 readable raw from spindle after watermark 2, got {raw_after_2:?}"
+    );
+    let observation = decode_versioned(&raw_after_2[0].1).expect("decode metric");
+    let identity = observation.identity();
+    let metric_key = SpindleProvenance {
+        origin: origin.clone(),
+        record_id: raw_after_2[0].0,
+        producer: identity.producer.clone(),
+        generation: identity.generation.clone(),
+        sequence: identity.sequence,
+    };
+    let metric_timestamp = (observation.timestamp_ns() / 1_000_000) as i64;
+    assert!(
+        !rt.block_on(probe_spindle_projection(
+            &layout,
+            QueryDomain::Metrics,
+            metric_timestamp,
+            &metric_key,
+        ))
+        .expect("probe before collector projects the metric")
     );
 
     // Pass 2: verify hot ring label preservation & Doctor health over daemon.sock while alive.
@@ -556,6 +594,23 @@ fn spindle_forwards_to_server_and_unifies_into_collector_olap() {
     }
 
     rt.block_on(async {
+        assert!(
+            probe_spindle_projection(&layout, QueryDomain::Metrics, metric_timestamp, &metric_key)
+                .await
+                .expect("probe exact projection after collector restart")
+        );
+        let mut wrong_origin = metric_key.clone();
+        wrong_origin.origin = "other-origin".into();
+        assert!(
+            !probe_spindle_projection(
+                &layout,
+                QueryDomain::Metrics,
+                metric_timestamp,
+                &wrong_origin,
+            )
+            .await
+            .expect("probe conflicting source")
+        );
         let qres = execute_unified_query(
             &collector_data,
             &UnifiedQuerySpec {

@@ -5,6 +5,7 @@ use arrow::compute::can_cast_types;
 use arrow::datatypes::{DataType, Field, IntervalUnit, Schema, SchemaRef};
 use arrow::error::ArrowError;
 use arrow::record_batch::{RecordBatch, RecordBatchReader};
+use fabric_core::{LOGS_SCHEMA, METRICS_SCHEMA, SPINDLE_PROVENANCE_COLUMN, TRACES_SCHEMA};
 use parquet::arrow::arrow_reader::{
     ArrowReaderMetadata, ParquetRecordBatchReader, ParquetRecordBatchReaderBuilder,
 };
@@ -2172,6 +2173,34 @@ pub fn validate_flat_compatible_parquet_schema(
     Ok(())
 }
 
+/// Recognizes the optional internal provenance suffix on raw telemetry files.
+pub fn validate_provenance_compatible_parquet_schema(
+    reader_meta: &ArrowReaderMetadata,
+    expected: &SchemaRef,
+) -> Result<bool, String> {
+    let expected_width = expected.fields().len();
+    if [&*METRICS_SCHEMA, &*LOGS_SCHEMA, &*TRACES_SCHEMA].contains(&expected)
+        && reader_meta.schema().fields().len() == expected_width + 1
+    {
+        let field = reader_meta.schema().field(expected_width);
+        if field.name() == SPINDLE_PROVENANCE_COLUMN
+            && field.data_type() == &DataType::Utf8
+            && field.is_nullable()
+        {
+            let mut fields = expected.fields().to_vec();
+            fields.push(Arc::new(field.clone()));
+            let extended = Arc::new(Schema::new_with_metadata(
+                fields,
+                expected.metadata().clone(),
+            ));
+            validate_flat_compatible_parquet_schema(reader_meta, &extended)?;
+            return Ok(true);
+        }
+    }
+    validate_flat_compatible_parquet_schema(reader_meta, expected)?;
+    Ok(false)
+}
+
 /// Validates negative-free column chunk offsets and verifies both `dictionary_page_offset` and
 /// `data_page_offset` reside inside the column chunk's data-section byte range.
 pub fn checked_column_byte_range(
@@ -3665,7 +3694,9 @@ fn finish_verified_maintenance_metadata(
         ));
     }
     match expected_schema {
-        Some(expected) => validate_flat_compatible_parquet_schema(&reader_meta, expected)?,
+        Some(expected) => {
+            validate_provenance_compatible_parquet_schema(&reader_meta, expected)?;
+        }
         None => validate_non_nested_parquet_schema(&reader_meta)?,
     }
     validate_parquet_metadata_invariants(&reader_meta, file_len, footer_len)?;

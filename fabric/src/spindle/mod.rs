@@ -143,11 +143,25 @@ impl Config {
 #[serde(tag = "command", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Request {
     Status,
-    Read { after: u64, limit: usize },
+    Read {
+        after: u64,
+        limit: usize,
+    },
+    ReadForOrigin {
+        expected_origin: String,
+        after: u64,
+        limit: usize,
+    },
     Stop,
-    Lease { producer: String },
+    Lease {
+        producer: String,
+    },
     FabricProgress,
 }
+
+/// Returned when a qualified read reaches a different local custody store.
+pub const READ_ORIGIN_MISMATCH: &str = "spindle origin mismatch";
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "result", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Reply {

@@ -33,6 +33,7 @@ use std::{
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+pub use unified::probe_spindle_projection;
 type Result<T> = std::result::Result<T, String>;
 const MANIFEST: &str = "manifest.json";
 const MAX_MANIFEST_BYTES: usize = 16 * 1024 * 1024;

@@ -234,6 +234,20 @@ pub struct HostSnapshot {
     pub self_health: SelfHealthSummary,
 }
 
+/// Internal Parquet field reserved for provenance supplied by the Spindle collector.
+pub const SPINDLE_PROVENANCE_COLUMN: &str = "_spindle_provenance";
+
+/// Source identity attached to an individual raw Spindle projection row.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct SpindleProvenance {
+    pub origin: String,
+    pub record_id: u64,
+    pub producer: String,
+    pub generation: String,
+    pub sequence: u64,
+}
+
 /// OLAP time-series metric sample.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct MetricPoint {

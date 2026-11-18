@@ -3,7 +3,10 @@
 use crate::parquet_guard::{
     MAX_PARQUET_FOOTER_SERIALIZED_BYTES, VerifiedParquetBatchReader,
     load_verified_parquet_metadata_from_file, open_verified_parquet_batch_reader_from_file,
+    validate_provenance_compatible_parquet_schema,
 };
+use arrow::array::StringArray;
+use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use arrow::record_batch::RecordBatch;
 use chrono::{DateTime, NaiveDate, Utc};
 use fabric_core::arrow_schemas::{
@@ -11,7 +14,8 @@ use fabric_core::arrow_schemas::{
     metrics_to_record_batch, traces_to_record_batch,
 };
 use fabric_core::{
-    FsEventRecord, GraphEdgeRecord, LogRecord, MetricPoint, StorageLayout, TraceSpanRecord,
+    FsEventRecord, GraphEdgeRecord, LOGS_SCHEMA, LogRecord, METRICS_SCHEMA, MetricPoint,
+    SPINDLE_PROVENANCE_COLUMN, SpindleProvenance, StorageLayout, TRACES_SCHEMA, TraceSpanRecord,
 };
 use parquet::arrow::ArrowWriter;
 use parquet::basic::{Compression, ZstdLevel};
@@ -2938,6 +2942,35 @@ where
     Ok(out)
 }
 
+fn append_spindle_provenance(
+    batch: RecordBatch,
+    provenance: StringArray,
+) -> Result<RecordBatch, String> {
+    let schema = batch.schema();
+    let mut fields = schema.fields().to_vec();
+    fields.push(Arc::new(Field::new(
+        SPINDLE_PROVENANCE_COLUMN,
+        DataType::Utf8,
+        true,
+    )));
+    let mut columns = batch.columns().to_vec();
+    columns.push(Arc::new(provenance));
+    RecordBatch::try_new(
+        Arc::new(Schema::new_with_metadata(fields, schema.metadata().clone())),
+        columns,
+    )
+    .map_err(|e| e.to_string())
+}
+
+fn spindle_projection_schema(domain: &str) -> Option<&'static SchemaRef> {
+    match domain {
+        "metrics" => Some(&METRICS_SCHEMA),
+        "logs" => Some(&LOGS_SCHEMA),
+        "traces" => Some(&TRACES_SCHEMA),
+        _ => None,
+    }
+}
+
 /// Atomic ZSTD Parquet writer & date-partitioned locator.
 #[derive(Debug, Clone)]
 pub struct OlapParquetStore {
@@ -3002,6 +3035,35 @@ impl OlapParquetStore {
             });
         }
         Ok(())
+    }
+
+    fn push_planned_spindle_domain<T: Clone>(
+        pending: &mut VecDeque<PlannedPartitionWrite>,
+        domain: &'static str,
+        rows: &[(Option<SpindleProvenance>, T)],
+        timestamp_fn: impl Fn(&T) -> i64,
+        to_batch: impl Fn(&[T]) -> Result<RecordBatch, String>,
+    ) -> Result<(), String> {
+        let rows: Vec<_> = rows.iter().map(|(key, row)| (key.as_ref(), row)).collect();
+        Self::push_planned_domain(
+            pending,
+            domain,
+            &rows,
+            |(_, row)| timestamp_fn(row),
+            |group| {
+                let rows: Vec<_> = group.iter().map(|(_, row)| (*row).clone()).collect();
+                let batch = to_batch(&rows)?;
+                if group.iter().all(|(key, _)| key.is_none()) {
+                    return Ok(batch);
+                }
+                let keys = group
+                    .iter()
+                    .map(|(key, _)| key.map(serde_json::to_string).transpose())
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|e| e.to_string())?;
+                append_spindle_provenance(batch, StringArray::from(keys))
+            },
+        )
     }
 
     /// Writes `MetricPoint` rows grouped by UTC date (`dt=YYYY-MM-DD`) in ZSTD Parquet.
@@ -3084,18 +3146,54 @@ impl OlapParquetStore {
             |r| r.timestamp_ms,
             graph_edges_to_record_batch,
         )?;
+        Ok(Self::finish_flush_plan(pending))
+    }
+
+    /// Plans a Spindle-only raw flush with provenance kept outside user data columns.
+    pub fn plan_spindle_flush(
+        &self,
+        metrics: &[(Option<SpindleProvenance>, MetricPoint)],
+        logs: &[(Option<SpindleProvenance>, LogRecord)],
+        traces: &[(Option<SpindleProvenance>, TraceSpanRecord)],
+    ) -> Result<OlapFlushPlan, String> {
+        let mut pending = VecDeque::new();
+        Self::push_planned_spindle_domain(
+            &mut pending,
+            "metrics",
+            metrics,
+            |r| r.timestamp_ms,
+            metrics_to_record_batch,
+        )?;
+        Self::push_planned_spindle_domain(
+            &mut pending,
+            "logs",
+            logs,
+            |r| r.timestamp_ms,
+            logs_to_record_batch,
+        )?;
+        Self::push_planned_spindle_domain(
+            &mut pending,
+            "traces",
+            traces,
+            |r| r.timestamp_ms,
+            traces_to_record_batch,
+        )?;
+        Ok(Self::finish_flush_plan(pending))
+    }
+
+    fn finish_flush_plan(pending: VecDeque<PlannedPartitionWrite>) -> OlapFlushPlan {
         let uncommitted = pending.iter().map(|p| (p.domain, p.day)).collect();
         let planned_files = pending
             .iter()
             .map(|p| (p.domain, p.day, p.final_name.clone()))
             .collect();
-        Ok(OlapFlushPlan {
+        OlapFlushPlan {
             pending,
             uncommitted,
             spindle_watermark: None,
             planned_files,
             uncommitted_lock: None,
-        })
+        }
     }
 
     /// Executes pending `(domain, day)` writes, popping each entry only after durable publish.
@@ -3736,7 +3834,13 @@ impl OlapParquetStore {
                     display_path.display()
                 )
             })?;
-        let raw_rows = reader_meta.metadata().file_metadata().num_rows();
+        Self::verified_metadata_num_rows(
+            reader_meta.metadata().file_metadata().num_rows(),
+            display_path,
+        )
+    }
+
+    fn verified_metadata_num_rows(raw_rows: i64, display_path: &Path) -> Result<usize, String> {
         if raw_rows < 0 {
             return Err(format!(
                 "invalid negative parquet row count {raw_rows} in {}",
@@ -3751,9 +3855,33 @@ impl OlapParquetStore {
         })
     }
 
-    fn pinned_parquet_num_rows(pinned: &PinnedParquetFile) -> Result<usize, String> {
+    fn pinned_parquet_compaction_info(
+        pinned: &PinnedParquetFile,
+        projected_schema: Option<&SchemaRef>,
+    ) -> Result<(usize, bool), String> {
         let file = pinned.open_verified()?;
-        Self::verified_file_num_rows(&file, pinned.display_path())
+        let (_, _, reader_meta) =
+            load_verified_parquet_metadata_from_file(&file, None).map_err(|e| {
+                format!(
+                    "failed reading parquet metadata for {}: {e}",
+                    pinned.display_path().display()
+                )
+            })?;
+        let rows = Self::verified_metadata_num_rows(
+            reader_meta.metadata().file_metadata().num_rows(),
+            pinned.display_path(),
+        )?;
+        let has_provenance = if let Some(expected) = projected_schema
+            && reader_meta
+                .schema()
+                .field_with_name(SPINDLE_PROVENANCE_COLUMN)
+                .is_ok()
+        {
+            validate_provenance_compatible_parquet_schema(&reader_meta, expected)?
+        } else {
+            false
+        };
+        Ok((rows, has_provenance))
     }
 
     pub(crate) fn compact_parquet_files_unlocked(
@@ -3833,6 +3961,7 @@ impl OlapParquetStore {
         let mut queue: VecDeque<PathBuf> = inputs.iter().cloned().collect();
         let mut last_out = None;
         let mut fan_in_cap = MAX_REPLACE_FAN_IN_FILES;
+        let projected_schema = spindle_projection_schema(domain);
         while queue.len() >= 2 {
             reconcile_partition_intent_on_fd(&part_fd, &part_dir, maint)?;
             let peek_count = queue.len().min(fan_in_cap).min(MAX_REPLACE_FAN_IN_FILES);
@@ -3842,12 +3971,15 @@ impl OlapParquetStore {
             let mut take_count = 0usize;
             let mut chunk_rows = 0usize;
             let mut chunk_bytes = 0u64;
+            let mut keep_provenance = false;
             for (idx, pinned) in validated_candidates.iter().enumerate() {
-                let rows = Self::pinned_parquet_num_rows(pinned)?;
+                let (rows, has_provenance) =
+                    Self::pinned_parquet_compaction_info(pinned, projected_schema)?;
                 if idx == 0 {
                     take_count = 1;
                     chunk_rows = rows;
                     chunk_bytes = pinned.inner.len;
+                    keep_provenance = has_provenance;
                     if rows >= max_file_rows || pinned.inner.len >= max_sealed_bytes {
                         break;
                     }
@@ -3857,6 +3989,7 @@ impl OlapParquetStore {
                     chunk_rows = chunk_rows.saturating_add(rows);
                     chunk_bytes = chunk_bytes.saturating_add(pinned.inner.len);
                     take_count += 1;
+                    keep_provenance |= has_provenance;
                 } else {
                     break;
                 }
@@ -3868,7 +4001,20 @@ impl OlapParquetStore {
             }
             drop(queue.drain(..take_count));
             let validated_inputs = &validated_candidates[..take_count];
-            let batch_iter = StreamingParquetBatches::new(validated_inputs, 4096);
+            let batch_iter = StreamingParquetBatches::new(validated_inputs, 4096).map(|batch| {
+                let batch = batch?;
+                if keep_provenance
+                    && batch
+                        .schema()
+                        .field_with_name(SPINDLE_PROVENANCE_COLUMN)
+                        .is_err()
+                {
+                    let row_count = batch.num_rows();
+                    append_spindle_provenance(batch, StringArray::new_null(row_count))
+                } else {
+                    Ok(batch)
+                }
+            });
             match self.replace_batches_in_partition_with_validated_capped(
                 domain,
                 day,
@@ -4475,6 +4621,34 @@ impl OlapParquetStore {
         max_files: usize,
         max_bytes: usize,
     ) -> Result<Vec<PinnedParquetFile>, String> {
+        self.snapshot_selected_parquet_files(
+            domain,
+            since_ms.map(day_from_ms),
+            None,
+            max_files,
+            max_bytes,
+        )
+    }
+
+    /// Pins a bounded snapshot of just one known UTC date partition.
+    pub fn snapshot_pinned_parquet_files_for_day(
+        &self,
+        domain: &str,
+        day: NaiveDate,
+        max_files: usize,
+        max_bytes: usize,
+    ) -> Result<Vec<PinnedParquetFile>, String> {
+        self.snapshot_selected_parquet_files(domain, None, Some(day), max_files, max_bytes)
+    }
+
+    fn snapshot_selected_parquet_files(
+        &self,
+        domain: &str,
+        min_day: Option<NaiveDate>,
+        exact_day: Option<NaiveDate>,
+        max_files: usize,
+        max_bytes: usize,
+    ) -> Result<Vec<PinnedParquetFile>, String> {
         let domain = validate_olap_domain(domain)?;
         let Some(data_fd) = open_anchor_data_dir_if_exists(&self.layout)? else {
             return Ok(Vec::new());
@@ -4494,35 +4668,18 @@ impl OlapParquetStore {
         drop(olap_fd);
         drop(data_fd);
         let domain_fd = Arc::new(domain_fd);
-        let min_day = since_ms.map(day_from_ms);
         let domain_dir = self.layout.olap_domain_dir(domain);
         let mut files = Vec::new();
         let mut total_bytes = 0_usize;
         let mut non_empty_partitions = 0_usize;
 
-        for dir_res in fs::read_dir(proc_fd_dir_path(&domain_fd)).map_err(|e| e.to_string())? {
-            let dir_entry = dir_res.map_err(|e| e.to_string())?;
-            let dir_name_os = dir_entry.file_name();
-            let Some(name) = dir_name_os.to_str() else {
-                continue;
-            };
-            let Some(date_str) = name.strip_prefix("dt=") else {
-                continue;
-            };
-            let Ok(day) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") else {
-                continue;
-            };
+        let mut append_partition = |name: &str| -> Result<(), String> {
             let part_fd = match open_child_dir_nofollow(&domain_fd, name, "partition dir") {
                 Ok(Some(fd)) => fd,
-                Ok(None) => continue,
-                Err(e) if e.starts_with("non-directory ") => continue,
+                Ok(None) => return Ok(()),
+                Err(e) if e.starts_with("non-directory ") => return Ok(()),
                 Err(e) => return Err(e),
             };
-            if let Some(cutoff) = min_day
-                && day < cutoff
-            {
-                continue;
-            }
             let part_meta = part_fd
                 .metadata()
                 .map_err(|e| format!("failed inspecting partition dir {name}: {e}"))?;
@@ -4553,6 +4710,24 @@ impl OlapParquetStore {
                 non_empty_partitions = non_empty_partitions.saturating_add(1);
                 total_bytes = total_bytes.saturating_add(partition_bytes);
                 files.append(&mut partition_files);
+            }
+            Ok(())
+        };
+        if let Some(day) = exact_day {
+            append_partition(&format!("dt={}", day.format("%Y-%m-%d")))?;
+        } else {
+            for entry in fs::read_dir(proc_fd_dir_path(&domain_fd)).map_err(|e| e.to_string())? {
+                let name = entry.map_err(|e| e.to_string())?.file_name();
+                let Some(name) = name.to_str() else { continue };
+                let Some(date) = name.strip_prefix("dt=") else {
+                    continue;
+                };
+                let Ok(day) = NaiveDate::parse_from_str(date, "%Y-%m-%d") else {
+                    continue;
+                };
+                if min_day.is_none_or(|cutoff| day >= cutoff) {
+                    append_partition(name)?;
+                }
             }
         }
         files.sort_by(|a, b| a.inner.display_path.cmp(&b.inner.display_path));
@@ -5252,6 +5427,73 @@ mod tests {
     use parquet::file::metadata::ParquetMetaDataReader;
     use std::os::unix::fs::symlink;
     use tempfile::TempDir;
+
+    #[test]
+    fn spindle_provenance_survives_mixed_legacy_compaction() {
+        use arrow::array::Array;
+
+        let dir = non_tmp_dir();
+        let catalog = crate::CatalogStore::open(dir.path()).unwrap();
+        let store = OlapParquetStore::new(catalog.layout().clone());
+        let row = LogRecord {
+            timestamp_ms: Utc::now().timestamp_millis(),
+            level: "info".into(),
+            source: "receipt".into(),
+            unit: "test".into(),
+            message: "observation".into(),
+            attributes_json: r#"{"_spindle_provenance":"lookalike"}"#.into(),
+        };
+        let old_files = store.write_logs(std::slice::from_ref(&row)).unwrap();
+        let key = SpindleProvenance {
+            origin: "local-origin".into(),
+            record_id: 9,
+            producer: "receipt".into(),
+            generation: "boot".into(),
+            sequence: 4,
+        };
+        let mut plan = store
+            .plan_spindle_flush(&[], &[(Some(key.clone()), row.clone())], &[])
+            .unwrap();
+        store.execute_flush_plan(&mut plan).unwrap();
+        let day = day_from_ms(row.timestamp_ms);
+        let pinned = store
+            .snapshot_pinned_parquet_files_for_day("logs", day, 2, MAX_SNAPSHOT_METADATA_BYTES)
+            .unwrap();
+        let projected = pinned
+            .iter()
+            .find(|file| file.display_path() != old_files[0])
+            .unwrap();
+        let compacted = store
+            .compact_parquet_files(
+                "logs",
+                day,
+                &[old_files[0].clone(), projected.display_path().to_owned()],
+            )
+            .unwrap()
+            .unwrap();
+        let reader = open_verified_parquet_batch_reader_from_file(
+            File::open(compacted).unwrap(),
+            Some(&LOGS_SCHEMA),
+            1,
+        )
+        .unwrap();
+        let mut observed = Vec::new();
+        for batch in reader {
+            let batch = batch.unwrap();
+            let provenance = batch
+                .column_by_name(SPINDLE_PROVENANCE_COLUMN)
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            observed.extend((0..provenance.len()).map(|i| {
+                (!provenance.is_null(i)).then(|| {
+                    serde_json::from_str::<SpindleProvenance>(provenance.value(i)).unwrap()
+                })
+            }));
+        }
+        assert_eq!(observed, [None, Some(key)]);
+    }
 
     fn non_tmp_dir() -> TempDir {
         if let Some(env_dir) = std::env::var_os("TMPDIR") {
