@@ -130,3 +130,48 @@ fn development_jobs_partition_checks_and_install_only_their_required_tools() {
     assert!(!verify.contains("jj git init --colocate"));
     assert!(!verify.contains("install-verification-tools.sh"));
 }
+
+#[test]
+fn image_qualification_runs_the_develop_push_workload() {
+    let workflows = repo_root().join(".github/workflows");
+    let development = fs::read_to_string(workflows.join("development-checks.yml")).unwrap();
+    let trial = fs::read_to_string(workflows.join("ci-image-trial.yml")).unwrap();
+
+    for command in [
+        "jj git init --colocate",
+        "cargo xtask check --group native",
+        "sh .github/scripts/check-engine.sh",
+        "cargo xtask fuzz smoke /var/tmp/fabric-fuzz-smoke",
+        "cargo xtask check --group workspace",
+        "cargo build --locked --release --workspace --bins --examples",
+        "target/release/xtask collection smoke",
+    ] {
+        for workflow in [&development, &trial] {
+            assert!(
+                workflow
+                    .lines()
+                    .filter_map(|line| line.trim().strip_prefix("run: "))
+                    .any(|line| line
+                        .strip_prefix("/github/home/.cargo/bin/")
+                        .unwrap_or(line)
+                        == command),
+                "missing shared workload command: {command}"
+            );
+        }
+    }
+    for setting in [
+        "runs-on: ubuntu-24.04",
+        "CARGO_BUILD_JOBS: '4'",
+        "CARGO_INCREMENTAL: '0'",
+        "CARGO_PROFILE_DEV_DEBUG: '0'",
+        "CARGO_PROFILE_TEST_DEBUG: '0'",
+        "LEAN_NUM_THREADS: '4'",
+        "TMPDIR: /var/tmp",
+        "FABRIC_FUZZ_TARGET_DIR: /github/home/.cache/fabrico11y-fuzz-target",
+    ] {
+        assert!(development.contains(setting) && trial.contains(setting));
+    }
+    assert!(trial.contains("FABRIC_FUZZ_SMOKE_SECONDS: '60'"));
+    assert_eq!(trial.matches("fail-on-cache-miss: true").count(), 2);
+    assert!(!trial.contains("restore-keys:"));
+}
