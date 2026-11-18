@@ -175,6 +175,29 @@ flowchart LR
     AENEAS --> LEAN
 ```
 
+### CI tool images
+
+The tool-image workflow builds two Linux x86-64 Fedora images when trusted
+`develop` changes affect provisioning. The common image contains Rust,
+Jujutsu, and Weaver. The native image shares the common layers and also
+contains the proof and fuzz toolchains and the native engine test binary.
+Installed tools live under `/opt/fabrico11y`, outside the Actions home mount.
+
+```mermaid
+flowchart LR
+    Pins["Trusted develop revision and tool pins"] --> Common["Build common image"]
+    Common --> Native["Build native image"]
+    Common --> Offline["Verify installed tools without network"]
+    Native --> Offline
+    Offline --> Registry["Publish images and record digests"]
+    Registry --> Qualification["Measure hosted jobs with candidate digests"]
+    Qualification --> Review["Review adoption in development checks"]
+```
+
+The required development jobs continue to use their current Fedora image
+until the candidate digests pass hosted qualification. See
+[CI image qualification](ci-images.md) for the comparison and adoption procedure.
+
 ## 4. Single-Host and Distributed Deployment
 
 `cargo xtask collection install-stack` provisions a co-located rootless user service stack confined inside `fabrico11y.slice` (`MemoryHigh=256M`, `MemoryMax=512M`, `CPUQuota=15%`, `IOWeight=30`, `TasksMax=64`) with explicit `TMPDIR=/data/tmp` and `KillMode=control-group`. Its units omit rootless namespace mounts (`PrivateTmp` and `ProtectSystem=strict`) that fail under SELinux user managers.
