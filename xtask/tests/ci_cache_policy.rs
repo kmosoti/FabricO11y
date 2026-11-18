@@ -292,7 +292,7 @@ fn exact_git_checkout_keeps_workspace_artifacts_fresh() {
     normalize();
     assert!(!fresh(&build(root, false), BINARY));
     let source = root.join("payload/src/lib.rs");
-    File::open(source)
+    File::open(&source)
         .unwrap()
         .set_modified(SystemTime::now() + Duration::from_secs(60))
         .unwrap();
@@ -302,4 +302,16 @@ fn exact_git_checkout_keeps_workspace_artifacts_fresh() {
     assert!(fresh(&warm, BINARY));
     assert!(fresh(&warm, "itoa"));
     assert_eq!(binary_output(root, false), "A 42\n");
+
+    fs::write(&source, "pub const TAG: &str = \"B\";\n").unwrap();
+    fs::write(root.join(".git/index"), b"invalid index").unwrap();
+    let unreadable_index = Command::new("bash")
+        .args(["-c", &restore_checkout])
+        .env("GITHUB_SHA", revision.trim())
+        .env("GITHUB_WORKSPACE", root)
+        .current_dir(root)
+        .output()
+        .unwrap();
+    assert!(!unreadable_index.status.success());
+    assert!(fs::read_to_string(source).unwrap().contains("\"B\""));
 }

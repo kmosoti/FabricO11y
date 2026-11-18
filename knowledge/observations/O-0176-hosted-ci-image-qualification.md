@@ -68,5 +68,26 @@ ownership, permissions, executable bytes, symlinks, and hardlinks survived
 the round trip. The smoke exercised DNS and TCP access from both
 containers. It used small fixtures and supplies no workload timing evidence.
 
+## Same-VM common cold pairs
+
+The [paired common run](https://github.com/kmosoti/FabricO11y/actions/runs/44405946015)
+completed all product workloads in the three cold pairs. The timings cover
+anonymous image pull through the final release smoke.
+
+| Pair | Fedora (ms) | Candidate (ms) | Candidate minus Fedora (ms) |
+| --- | ---: | ---: | ---: |
+| 1 | 1,559,990 | 1,544,340 | -15,650 |
+| 2 | 1,125,420 | 1,142,210 | +16,790 |
+| 3 | 993,740 | 985,050 | -8,690 |
+| Median | 1,125,420 | 1,142,210 | -8,690 |
+
+The first two median columns compare each variant's three times. The last
+column takes the median of the three paired differences. The candidate
+missed the threshold on the median times. The first warm candidate restored
+the exact 1,535,101,138-byte application archive. The warm witness expected
+the earlier Cargo fingerprint directory and stopped before running a
+workload. Cargo 1.100 puts fingerprints under the package's build directory.
+The run was cancelled after that failure. It has no qualified warm timing.
+
 See [the qualification procedure](../../docs/ci-images.md#compare-on-matched-hosted-vms)
 for the full workload and timing criteria.
