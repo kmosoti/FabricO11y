@@ -1,6 +1,6 @@
 # Contributing
 
-Use stable Rust (>= 1.100.0), native Cargo commands, and Jujutsu 0.46.0 with a Git
+Use Rust 1.100.0, native Cargo commands, and Jujutsu 0.46.0 with a Git
 backend. Initialize an existing Git checkout with `jj git init --colocate`,
 configure your Jujutsu identity, and install the commit template before committing:
 
@@ -75,8 +75,12 @@ On Fedora, `.github/scripts/install-verification-tools.sh` bootstraps the pinned
 Verus/Z3, Charon/Aeneas/Lean, OCaml dependencies, extraction/fuzz Rust toolchains
 and cargo-fuzz. It installs native Fedora build prerequisites and `perf`; run it
 in a development container or an environment where package installation is
-authorized. `verification/aeneas.opam.lock` freezes the OCaml dependency set.
-Application builds continue to use `rust-toolchain.toml`.
+authorized. `verification/aeneas.opam.lock` freezes the OCaml dependencies.
+The installer validates a managed switch scoped to the lock digest and records
+the Aeneas binary digest after a successful build. The first run after switching
+from the legacy OPAM layout rebuilds Aeneas and its dependencies. Product builds
+use the exact Rust pin in `rust-toolchain.toml`. Verus and Charon use their
+independently pinned compiler versions.
 
 Tools default to `$HOME/.local/share/fabrico11y/proof-tools`. Set
 `FABRIC_PROOF_TOOLS` to use another installation, or override individual binaries

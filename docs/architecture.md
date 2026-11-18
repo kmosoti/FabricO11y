@@ -159,6 +159,22 @@ recovery, and fuzzing. Scheduled and manual runs add the workflow-specific
 tests without repeating the common group. Local candidate verification runs
 the full acceptance tier.
 
+Product CI builds use the Rust version in `rust-toolchain.toml`. Native verifiers
+use independent compiler pins. The bootstrap reuses the managed OPAM switch when
+the installed packages match the full lock. It reuses the Aeneas executable when
+the lock and executable digests match its recorded build.
+
+```mermaid
+flowchart LR
+    PRODUCT["rust-toolchain.toml"] --> WORKSPACE["Product Cargo builds"]
+    VERUS["Verus Rust pin"] --> VERIFIER["Verus checks"]
+    CHARON["Charon nightly pin"] --> EXTRACT["Rust extraction"]
+    OPAM["Frozen OPAM lock"] --> SWITCH["Validate switch packages"]
+    SWITCH --> AENEAS["Aeneas build and binary digest"]
+    EXTRACT --> LEAN["Lean proof checks"]
+    AENEAS --> LEAN
+```
+
 ## 4. Single-Host and Distributed Deployment
 
 `cargo xtask collection install-stack` provisions a co-located rootless user service stack confined inside `fabrico11y.slice` (`MemoryHigh=256M`, `MemoryMax=512M`, `CPUQuota=15%`, `IOWeight=30`, `TasksMax=64`) with explicit `TMPDIR=/data/tmp` and `KillMode=control-group`. Its units omit rootless namespace mounts (`PrivateTmp` and `ProtectSystem=strict`) that fail under SELinux user managers.

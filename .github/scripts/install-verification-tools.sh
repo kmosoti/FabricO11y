@@ -66,43 +66,82 @@ if [ ! -x "$charon_bin" ] \
         cargo build --release --locked --manifest-path "$aeneas_dir/charon/charon/Cargo.toml"
 fi
 export OPAMROOT="$FABRIC_PROOF_TOOLS/opam-root"
-opam_lock_hash=$(sha256sum "$repo_root/verification/aeneas.opam.lock" | awk '{print $1}')
-opam_stamp="$OPAMROOT/.aeneas-opam-lock.sha256"
+opam_lock="$repo_root/verification/aeneas.opam.lock"
+opam_lock_hash=$(sha256sum "$opam_lock")
+opam_lock_hash=${opam_lock_hash%% *}
+# A dedicated switch prevents legacy or changed locks from lending us packages
+# with the same version numbers but different sources.
+opam_switch="fabric-aeneas-v1-$opam_lock_hash"
+switch_stamp="$OPAMROOT/.$opam_switch.ready"
+aeneas_stamp="$OPAMROOT/.aeneas-build-v1"
 aeneas_bin="$aeneas_dir/src/_build/default/main.exe"
-need_aeneas=0
-if [ ! -x "$aeneas_bin" ] \
-    || ! "$aeneas_bin" -version 2>/dev/null | grep -Fq "ab34bd28458a08c150b7cbf1873e59af74588138"; then
-    need_aeneas=1
-fi
+locked_packages=$(LC_ALL=C awk '
+    /^installed: \[$/ { in_packages = 1; next }
+    in_packages && /^\]$/ { complete = 1; exit }
+    in_packages && $0 !~ /^[[:space:]]*"[^"]+"$/ { exit 1 }
+    in_packages {
+        gsub(/^[[:space:]]*"|"$/, "")
+        print
+    }
+    END { if (!complete) exit 1 }
+' "$opam_lock")
+test -n "$locked_packages"
+locked_packages=$(printf '%s\n' "$locked_packages" | LC_ALL=C sort)
+
+switch_matches_lock() {
+    installed_packages=$(opam list --switch "$opam_switch" --installed --short --columns=package --color=never) || return 1
+    installed_packages=$(printf '%s\n' "$installed_packages" | LC_ALL=C sort)
+    [ "$installed_packages" = "$locked_packages" ]
+}
+
+write_stamp() {
+    stamp_tmp=$(mktemp "$OPAMROOT/.fabric-stamp.XXXXXXXX")
+    if ! printf '%s\n' "$2" > "$stamp_tmp" || ! mv -f -- "$stamp_tmp" "$1"; then
+        rm -f -- "$stamp_tmp"
+        return 1
+    fi
+}
+
+aeneas_identity() {
+    [ -x "$aeneas_bin" ] || return 1
+    version=$("$aeneas_bin" -version) || return 1
+    case "$version" in
+        *ab34bd28458a08c150b7cbf1873e59af74588138*) ;;
+        *) return 1 ;;
+    esac
+    digest=$(sha256sum "$aeneas_bin") || return 1
+    printf '%s %s\n' "$opam_lock_hash" "${digest%% *}"
+}
+
 if [ ! -f "$OPAMROOT/config" ]; then
     opam init --bare --no-setup --yes
-    need_aeneas=1
 fi
-if ! opam switch list --short | grep -Fxq "$aeneas_dir"; then
-    opam switch create "$aeneas_dir" ocaml-base-compiler.5.3.0 --yes
-    need_aeneas=1
+if [ ! -f "$switch_stamp" ] || [ "$(cat "$switch_stamp")" != "$opam_lock_hash" ] || ! switch_matches_lock; then
+    rm -f -- "$switch_stamp" "$aeneas_stamp"
+    switches=$(opam switch list --short)
+    if printf '%s\n' "$switches" | grep -Fxq "$opam_switch"; then
+        opam switch remove "$opam_switch" --yes
+    fi
+    opam switch import "$opam_lock" --switch "$opam_switch" --yes
+    if ! switch_matches_lock; then
+        echo 'installed OPAM packages differ from verification/aeneas.opam.lock after import' >&2
+        exit 1
+    fi
+    write_stamp "$switch_stamp" "$opam_lock_hash"
 fi
-if [ "$need_aeneas" -eq 0 ] \
-    && [ ! -f "$opam_stamp" ] \
-    && [ -x "$aeneas_bin" ] \
-    && [ -f "$OPAMROOT/config" ] \
-    && opam switch list --short | grep -Fxq "$aeneas_dir"; then
-    printf '%s\n' "$opam_lock_hash" > "$opam_stamp"
-fi
-if [ ! -f "$opam_stamp" ] || [ "$(cat "$opam_stamp")" != "$opam_lock_hash" ]; then
-    opam switch import "$repo_root/verification/aeneas.opam.lock" --switch "$aeneas_dir" --yes
-    printf '%s\n' "$opam_lock_hash" > "$opam_stamp"
-    need_aeneas=1
-fi
-if [ "$need_aeneas" -eq 1 ]; then
+if [ ! -f "$aeneas_stamp" ] || ! identity=$(aeneas_identity) || [ "$(cat "$aeneas_stamp")" != "$identity" ]; then
+    rm -f -- "$aeneas_stamp"
     make -C "$aeneas_dir/charon" charon-ml/src/CharonVersion.ml
     # Aeneas vendors the Charon OCaml sources through its source directory.
     [ -e "$aeneas_dir/src/charon" ] || ln -s ../charon "$aeneas_dir/src/charon"
     (
         cd "$aeneas_dir/src"
+        opam exec --switch "$opam_switch" -- dune clean
         AENEAS_VERSION=ab34bd28458a08c150b7cbf1873e59af74588138 \
-            opam exec --switch "$aeneas_dir" -- dune build -j "$cargo_jobs" main.exe
+            opam exec --switch "$opam_switch" -- dune build -j "$cargo_jobs" main.exe
     )
+    identity=$(aeneas_identity)
+    write_stamp "$aeneas_stamp" "$identity"
 fi
 if ! (
     cd "$aeneas_dir/backends/lean"
