@@ -136,6 +136,13 @@ fn image_qualification_runs_the_develop_push_workload() {
     let workflows = repo_root().join(".github/workflows");
     let development = fs::read_to_string(workflows.join("development-checks.yml")).unwrap();
     let trial = fs::read_to_string(workflows.join("ci-image-trial.yml")).unwrap();
+    let paired_lane =
+        fs::read_to_string(repo_root().join(".github/scripts/ci-image-paired-lane.sh")).unwrap();
+    let paired_store =
+        fs::read_to_string(repo_root().join(".github/scripts/ci-image-paired-store.sh")).unwrap();
+    let paired_cache =
+        fs::read_to_string(repo_root().join(".github/actions/ci-image-paired-lane/action.yml"))
+            .unwrap();
 
     for command in [
         "jj git init --colocate",
@@ -146,6 +153,12 @@ fn image_qualification_runs_the_develop_push_workload() {
         "cargo build --locked --release --workspace --bins --examples",
         "target/release/xtask collection smoke",
     ] {
+        assert!(
+            paired_lane
+                .lines()
+                .any(|line| line.trim_end().ends_with(command)),
+            "paired trial missing shared workload command: {command}"
+        );
         for workflow in [&development, &trial] {
             assert!(
                 workflow
@@ -171,7 +184,24 @@ fn image_qualification_runs_the_develop_push_workload() {
     ] {
         assert!(development.contains(setting) && trial.contains(setting));
     }
+    for setting in [
+        "CARGO_BUILD_JOBS=4",
+        "CARGO_INCREMENTAL=0",
+        "CARGO_PROFILE_DEV_DEBUG=0",
+        "CARGO_PROFILE_TEST_DEBUG=0",
+        "LEAN_NUM_THREADS=4",
+        "TMPDIR=/var/tmp",
+        "FABRIC_FUZZ_TARGET_DIR=/github/home/.cache/fabrico11y-fuzz-target",
+    ] {
+        assert!(
+            paired_store.contains(setting),
+            "paired trial missing {setting}"
+        );
+    }
+    assert!(paired_lane.contains("FABRIC_FUZZ_SMOKE_SECONDS=60"));
     assert!(trial.contains("FABRIC_FUZZ_SMOKE_SECONDS: '60'"));
     assert_eq!(trial.matches("fail-on-cache-miss: true").count(), 2);
     assert!(!trial.contains("restore-keys:"));
+    assert_eq!(paired_cache.matches("fail-on-cache-miss: true").count(), 2);
+    assert!(!paired_cache.contains("restore-keys:"));
 }
