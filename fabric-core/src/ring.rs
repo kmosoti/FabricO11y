@@ -264,7 +264,17 @@ impl HotMetricRing {
 
     fn push_one(&mut self, pt: &MetricPoint) {
         self.insert_into_series(pt);
+        self.push_unflushed(pt);
+    }
 
+    /// Stage new samples for durable output without allocating query history.
+    pub fn push_unflushed_batch(&mut self, points: &[MetricPoint]) {
+        for pt in points {
+            self.push_unflushed(pt);
+        }
+    }
+
+    fn push_unflushed(&mut self, pt: &MetricPoint) {
         let pt_bytes = metric_point_bytes(pt);
         self.unflushed.push_back(pt.clone());
         self.unflushed_bytes = self.unflushed_bytes.saturating_add(pt_bytes);
@@ -341,6 +351,20 @@ impl HotMetricRing {
     pub fn drain_unflushed(&mut self) -> Vec<MetricPoint> {
         self.unflushed_bytes = 0;
         self.unflushed.drain(..).collect()
+    }
+
+    /// Release the optional query cache while retaining the separate unflushed queue.
+    pub fn release_hot_history(&mut self) {
+        // This lease covers only compressed query history. In-flight and
+        // unflushed custody is owned by separate buffers.
+        let returned =
+            admission_kernel::telemetry::elastic_lease_return(self.used_bytes as u64, 0, 0, true);
+        if returned == 0 {
+            return;
+        }
+        self.series = BTreeMap::new();
+        self.series_order = VecDeque::new();
+        self.used_bytes = 0;
     }
 
     /// Re-queues drained metric points at the front if a Parquet flush fails.
@@ -554,6 +578,32 @@ mod tests {
             restored.iter().map(|p| p.timestamp_ms).collect::<Vec<_>>(),
             vec![100, 200, 300]
         );
+    }
+
+    #[test]
+    fn pressure_releases_hot_history_without_discarding_unflushed_metrics() {
+        let mut ring = HotMetricRing::with_capacity_bytes(8 * 1024);
+        let point = MetricPoint {
+            timestamp_ms: 17,
+            name: "local.sample".into(),
+            value: 23.0,
+            host: "node".into(),
+            slice: String::new(),
+            unit: String::new(),
+            pid: None,
+            labels_json: "{}".into(),
+        };
+        ring.push_one(&point);
+        assert_eq!(ring.query_since(0).len(), 1);
+        ring.release_hot_history();
+        ring.release_hot_history();
+        assert_eq!(ring.used_bytes, 0);
+        assert!(ring.query_since(0).is_empty());
+        let unflushed = ring.drain_unflushed();
+        assert_eq!(unflushed.len(), 1);
+        assert_eq!(unflushed[0].name, point.name);
+        assert_eq!(unflushed[0].timestamp_ms, point.timestamp_ms);
+        assert_eq!(unflushed[0].value.to_bits(), point.value.to_bits());
     }
 
     #[test]

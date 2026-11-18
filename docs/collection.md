@@ -315,3 +315,23 @@ to another authority. Roll back further deletion by setting `reclaim_confirmed`
 to `false`, keeping canonical access configured for already reclaimed records.
 Shadow mode can exhaust the local quota while verification is pending; its
 confirmed prefix is preserved and does not imply payload reclamation.
+
+## Elastic collector memory
+
+The resident collector computes its default hot ring budget in bytes at
+startup. It finds the smallest finite `memory.high` or `memory.max` in its
+Linux cgroup v2 service and ancestor directories. It leaves
+`ceil(limit / 4)` bytes as headroom and allocates one eighth of the remainder
+to the ring, rounded down and clamped to the ring's supported range of
+4 KiB through 32 MiB. If a finite limit is unavailable, the default is 32 MiB.
+For a 256 MiB effective limit the default ring budget is 24 MiB.
+
+The collector compares each cgroup's `memory.current` to the spendable
+portion of that same cgroup. At or above that threshold it pauses optional
+host sampling and releases the compressed hot query cache. It continues
+processing local custody and attempts durable flushes. The unflushed metric
+queue, staged Spindle prefix, in-flight writes, and durable storage keep their
+existing ownership and recovery rules. The released cache may need to warm
+again once pressure clears. The cgroup headroom formula is a policy for the
+collector's optional work. It cannot reserve kernel memory for competing
+processes.
