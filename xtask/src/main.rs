@@ -109,10 +109,7 @@ fn capture_to(root: &Path, file: &Path) -> Result<(), String> {
         .and_then(|mut file| file.write_all(capture.as_bytes()))
         .map_err(|e| e.to_string())
 }
-fn checks(tier: &str, root: &Path) -> Result<(), String> {
-    if !["fast", "medium", "extensive", "acceptance"].contains(&tier) {
-        return Err("unknown tier".into());
-    }
+fn workspace_checks(root: &Path, include_lints: bool) -> Result<(), String> {
     coverage::validate(root)?;
     registry::check(root, false)?;
     run("cargo", &["fmt", "--all", "--", "--check"], root)?;
@@ -125,7 +122,7 @@ fn checks(tier: &str, root: &Path) -> Result<(), String> {
     }
     run("cargo", &["check", "--workspace", "--locked"], root)?;
     run("cargo", &["test", "--workspace", "--locked"], root)?;
-    if tier != "fast" {
+    if include_lints {
         run(
             "cargo",
             &[
@@ -142,69 +139,87 @@ fn checks(tier: &str, root: &Path) -> Result<(), String> {
         run("cargo", &["test", "--doc", "--workspace", "--locked"], root)?;
         run("cargo", &["tree", "--locked"], root)?;
     }
-    if tier == "extensive" {
-        run(
-            "cargo",
-            &[
-                "test",
-                "-p",
-                "xtask",
-                "--locked",
-                "workflow_",
-                "--",
-                "--ignored",
-            ],
-            root,
-        )?;
-    }
-    if tier == "acceptance" {
-        coverage::run(root)?;
-        run(
-            "cargo",
-            &[
-                "test",
-                "-p",
-                "xtask",
-                "--locked",
-                "--test",
-                "collection_programs",
-                "--",
-                "--ignored",
-                "--nocapture",
-            ],
-            root,
-        )?;
-        run(
-            "cargo",
-            &[
-                "test",
-                "-p",
-                "xtask",
-                "--locked",
-                "--test",
-                "distributed_programs",
-                "--",
-                "--ignored",
-            ],
-            root,
-        )?;
-        architecture::check(root)?;
-        proof::check("all", root)?;
-        proof::check("selftest", root)?;
-        let stamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|e| e.to_string())?
-            .as_nanos();
-        let artifacts = root.join(format!(".local/acceptance-fuzz-{stamp}"));
-        fuzz::cli(
-            &[
-                "replay",
-                artifacts.to_str().ok_or("non-UTF8 artifact path")?,
-            ],
-            root,
-        )?;
-    }
     Ok(())
+}
+fn workflow_checks(root: &Path) -> Result<(), String> {
+    run(
+        "cargo",
+        &[
+            "test",
+            "-p",
+            "xtask",
+            "--locked",
+            "workflow_",
+            "--",
+            "--ignored",
+        ],
+        root,
+    )
+}
+fn native_checks(root: &Path) -> Result<(), String> {
+    coverage::run(root)?;
+    run(
+        "cargo",
+        &[
+            "test",
+            "-p",
+            "xtask",
+            "--locked",
+            "--test",
+            "collection_programs",
+            "--",
+            "--ignored",
+            "--nocapture",
+        ],
+        root,
+    )?;
+    run(
+        "cargo",
+        &[
+            "test",
+            "-p",
+            "xtask",
+            "--locked",
+            "--test",
+            "distributed_programs",
+            "--",
+            "--ignored",
+        ],
+        root,
+    )?;
+    architecture::check(root)?;
+    proof::check("all", root)?;
+    proof::check("selftest", root)?;
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_nanos();
+    let artifacts = root.join(format!(".local/acceptance-fuzz-{stamp}"));
+    fuzz::cli(
+        &[
+            "replay",
+            artifacts.to_str().ok_or("non-UTF8 artifact path")?,
+        ],
+        root,
+    )?;
+    Ok(())
+}
+fn checks(tier: &str, root: &Path) -> Result<(), String> {
+    match tier {
+        "fast" => workspace_checks(root, false),
+        "medium" => workspace_checks(root, true),
+        "extensive" => workspace_checks(root, true).and_then(|()| workflow_checks(root)),
+        "acceptance" => workspace_checks(root, true).and_then(|()| native_checks(root)),
+        _ => Err("unknown tier".into()),
+    }
+}
+fn check_group(group: &str, root: &Path) -> Result<(), String> {
+    match group {
+        "workspace" => workspace_checks(root, true),
+        "workflow" => workflow_checks(root),
+        "native" => native_checks(root),
+        _ => Err("unknown check group".into()),
+    }
 }
 fn write_verification_status(root: &Path, receipt: &str) -> Result<(), String> {
     use std::io::Write;
@@ -342,6 +357,7 @@ fn main() -> ExitCode {
             Ok(())
         }
         ["check", "--tier", tier] => checks(tier, &root),
+        ["check", "--group", group] => check_group(group, &root),
         ["collection", ..] => xtask::collection::run(&root, &args[1..]),
         ["prove"] => proof::check("verus", &root),
         ["prove", checker] => proof::check(checker, &root),
@@ -357,7 +373,7 @@ fn main() -> ExitCode {
         ["candidate", "capture", file] => capture_to(&root, Path::new(file)),
         ["candidate", "verify", file] => verify(&root, Path::new(file)),
         _ => Err(
-            "usage: doctor | prove | check --tier fast|medium|extensive | candidate capture|verify FILE | coverage validate|check"
+            "usage: doctor | prove | check --tier fast|medium|extensive|acceptance | check --group workspace|workflow|native | candidate capture|verify FILE | coverage validate|check"
                 .into(),
         ),
     };
@@ -372,8 +388,10 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn invalid_tier_refused() {
-        assert!(super::checks("unknown", std::path::Path::new(".")).is_err());
+    fn invalid_check_selectors_refused() {
+        let root = std::path::Path::new(".");
+        assert!(super::checks("unknown", root).is_err());
+        assert!(super::check_group("unknown", root).is_err());
     }
     #[test]
     fn process_failure_retained() {

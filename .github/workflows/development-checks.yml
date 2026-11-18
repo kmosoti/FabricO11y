@@ -45,12 +45,10 @@ jobs:
             native-fedora44-d68cae91-${{ runner.arch }}-
       - name: Install pinned native verification tools
         run: sh .github/scripts/install-verification-tools.sh
-      - name: Install pinned schema checker
-        run: sh .github/scripts/install-schema-tools.sh
       - name: Initialize candidate workspace
         run: jj git init --colocate
-      - name: Architecture, tests, proofs and fuzz regressions
-        run: /github/home/.cargo/bin/cargo xtask check --tier acceptance
+      - name: Native architecture, coverage, proofs and fuzz regressions
+        run: /github/home/.cargo/bin/cargo xtask check --group native
       - name: Native engine custody and recovery regressions
         timeout-minutes: 10
         run: sh .github/scripts/check-engine.sh
@@ -90,20 +88,18 @@ jobs:
         run: sh .github/scripts/install-toolchain.sh
       - name: Install pinned schema checker
         run: sh .github/scripts/install-schema-tools.sh
-      - name: Initialize Jujutsu workspace
-        run: jj git init --colocate
       - name: Record execution environment
         run: cat /etc/os-release && uname -a
-      - name: Medium checks
-        run: /github/home/.cargo/bin/cargo xtask check --tier medium
+      - name: Shared workspace checks
+        run: /github/home/.cargo/bin/cargo xtask check --group workspace
       - name: Build release collection executables
         run: /github/home/.cargo/bin/cargo build --locked --release --workspace --bins --examples
       - name: Release SDK and Spindle restart smoke
         timeout-minutes: 2
         run: target/release/xtask collection smoke
-      - name: Extensive checks
+      - name: Extended workflow tests
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        run: /github/home/.cargo/bin/cargo xtask check --tier extensive
+        run: /github/home/.cargo/bin/cargo xtask check --group workflow
       - name: Save trusted CI cache
         uses: ./.github/actions/save-ci-cache
         if: success() && github.event_name == 'push' && github.ref == 'refs/heads/develop' && steps.ci-cache.outputs.hit != 'true'
