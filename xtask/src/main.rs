@@ -9,6 +9,7 @@ mod coverage;
 use xtask::evidence;
 mod extraction;
 mod fuzz;
+mod guide;
 mod profile;
 mod proof;
 mod registry;
@@ -287,7 +288,12 @@ fn verify_candidate(root: &Path, file: &Path) -> Result<(), String> {
             return Err("materialization differs".into());
         }
         coverage_manifest = Some(coverage::digest(&work)?);
+        let checkers = guide::checker_identities(&work)?;
         checks("acceptance", &work)?;
+        if checkers != guide::checker_identities(&work)? {
+            return Err("checker identities changed during candidate verification".into());
+        }
+        guide::write_candidate_evidence(&work, id, checkers)?;
         output("jj", &["util", "snapshot"], &work)?;
         if !output(
             "jj",
@@ -364,6 +370,7 @@ fn main() -> ExitCode {
         ["architecture"] => architecture::check(&root),
         ["coverage", "validate"] => coverage::validate(&root),
         ["coverage", "check"] => coverage::run(&root),
+        ["guide", "wiki", revision] => guide::wiki(&root, revision),
         ["registry", "check"] => registry::check(&root, false),
         ["registry", "generate"] => registry::check(&root, true),
         ["fuzz", rest @ ..] => fuzz::cli(rest, &root),
@@ -373,7 +380,7 @@ fn main() -> ExitCode {
         ["candidate", "capture", file] => capture_to(&root, Path::new(file)),
         ["candidate", "verify", file] => verify(&root, Path::new(file)),
         _ => Err(
-            "usage: doctor | prove | check --tier fast|medium|extensive|acceptance | check --group workspace|workflow|native | candidate capture|verify FILE | coverage validate|check"
+            "usage: doctor | prove | check --tier fast|medium|extensive|acceptance | check --group workspace|workflow|native | candidate capture|verify FILE | coverage validate|check | guide wiki REVISION"
                 .into(),
         ),
     };

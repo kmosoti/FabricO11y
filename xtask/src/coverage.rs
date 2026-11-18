@@ -102,7 +102,50 @@ fn load(root: &Path) -> Result<Manifest, String> {
     Ok(m)
 }
 pub fn validate(root: &Path) -> Result<(), String> {
-    load(root).map(|_| ())
+    guide_catalog(root).map(|_| ())
+}
+pub fn guide_catalog(root: &Path) -> Result<fabric_core::guide::Catalog, String> {
+    let manifest = load(root)?;
+    super::guide::validate_catalog(root, manifest.checks.iter().map(|check| check.id.as_str()))
+}
+
+pub fn tested_outcomes(root: &Path) -> Result<Vec<fabric_core::guide::CheckOutcome>, String> {
+    use fabric_core::guide::{CheckOutcome, CheckStatus};
+
+    #[derive(Deserialize)]
+    struct RecordedChecks {
+        schema: u32,
+        manifest_sha256: String,
+        checks: Vec<Execution>,
+    }
+
+    let manifest = load(root)?;
+    let RecordedChecks {
+        schema,
+        manifest_sha256,
+        checks,
+    } = super::evidence::read(&root.join(".local/coverage.json"))?;
+    if schema != 1
+        || manifest_sha256 != digest(root)?
+        || checks.len() != manifest.checks.len()
+        || checks
+            .iter()
+            .zip(&manifest.checks)
+            .any(|(execution, check)| {
+                execution.id != check.id
+                    || execution.test != check.test
+                    || execution.status != "tested"
+            })
+    {
+        return Err("candidate coverage results do not match declared exact checks".into());
+    }
+    Ok(checks
+        .into_iter()
+        .map(|check| CheckOutcome {
+            id: check.id,
+            status: CheckStatus::Passed,
+        })
+        .collect())
 }
 pub fn digest(root: &Path) -> Result<String, String> {
     super::evidence::hash(&root.join("verification/coverage.toml"))
@@ -122,11 +165,11 @@ fn passed_exact_test(stdout: &str, name: &str) -> bool {
             .lines()
             .any(|s| s.starts_with("test result: ok. 1 passed; 0 failed; 0 ignored;"))
 }
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct Execution {
     id: String,
     test: String,
-    status: &'static str,
+    status: String,
 }
 fn configure_cargo_env(command: &mut Command, root: &Path) -> Result<(), String> {
     command
@@ -211,7 +254,7 @@ pub fn run(root: &Path) -> Result<(), String> {
         results.push(Execution {
             id: check.id.clone(),
             test: check.test.clone(),
-            status: "tested",
+            status: "tested".into(),
         });
     }
     if digest != self::digest(root)? {
