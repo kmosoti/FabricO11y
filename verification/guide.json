@@ -104,6 +104,45 @@
       ],
       "documentation": ["docs/investigation.md", "docs/fabric-server-evaluation.md"],
       "proofs": []
+    },
+    {
+      "id": "receipts",
+      "title": "Receipt projection readiness",
+      "summary": "Check whether the exact observation in a local Spindle receipt is queryable at the selected projection target.",
+      "scenarios": [
+        {
+          "description": "Wait for a locally committed row",
+          "command": "fabric projection-ready --origin <origin> --receipt receipt.json --wait 30s --json",
+          "expected": "The command returns visible only for exact committed evidence, pending at a lagging frontier, or unavailable when evidence cannot be established.",
+          "checks": [
+            "local-receipt-deadline",
+            "local-receipt-pending"
+          ]
+        },
+        {
+          "description": "Check the authorized canonical projection",
+          "command": "fabric projection-ready --origin <origin> --receipt receipt.json --target canonical --authority <authority> --json",
+          "expected": "The receiver reports distinct custody and projection frontiers when it can establish the scope and the requested receipt.",
+          "checks": [
+            "canonical-receipt-readiness"
+          ]
+        }
+      ],
+      "documentation": [
+        "docs/collection.md",
+        "docs/canonical-custody.md",
+        "docs/deployment-verification.md"
+      ],
+      "proofs": [
+        {
+          "kind": "extracted_rust",
+          "path": "proofs/ExtractedAdmission.lean",
+          "theorem": "admission_kernel.projection_frontier_contract",
+          "checker": "aeneas",
+          "scope": "The frontier decision advances only through a contiguous, origin-qualified completed range.",
+          "assumptions": "The caller supplies authenticated origin and completed publication evidence. Transport, Parquet and redb durability require runtime checks."
+        }
+      ]
     }
   ]
 }
