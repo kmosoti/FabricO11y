@@ -33,10 +33,62 @@ Give each origin a different credential. Configure the receiver explicitly:
 
 Run `fabric-server serve CONFIG.json`. It prints a bounded readiness response and
 serves authenticated requests on loopback. For another host, use an authenticated
-SSH or VPN tunnel terminating at loopback. A node credential permits ingestion and
+SSH tunnel, optionally over a VPN. A node credential permits ingestion and
 original-byte reads for its origin. A reader can query only configured origins;
 reader credentials cannot ingest. Neither the query CLI nor MCP accepts arbitrary
 SQL, commands or file access.
+
+## Connect multiple hosts
+
+1. Start local-only Spindle on each host and record the origin returned by
+   `spindle status "$XDG_RUNTIME_DIR/spindle/spindle.sock"`. Preserve its custody
+   directory across deployments. Use a fresh store to enroll a distinct source.
+2. Configure the receiver with each origin and a different credential file per
+   origin. Give each host only the credential for its own origin. Store the
+   matching credential in a private file on the host. Provision canonical
+   and projection storage separately. The receiver accepts up to 32 configured
+   origins and up to 32 concurrent connections.
+3. Start the receiver using its private state and use `fabric-query progress`
+   with the reader credential to obtain the persistent authority. Set the
+   expected authority in each Spindle forwarding configuration before starting
+   shadow forwarding. The coupled `install-stack` command configures one
+   co-located origin. Use the explicit receiver and node configurations for
+   multiple origins.
+4. On each remote host, run an authenticated loopback tunnel, such as the
+   following foreground SSH session. Set Spindle's forwarding endpoint to
+   `127.0.0.1:48200`. The receiver in this example listens on
+   `127.0.0.1:19115`.
+
+```sh
+ssh -NT -o ExitOnForwardFailure=yes \
+  -L 127.0.0.1:48200:127.0.0.1:19115 operator@receiver.example
+```
+
+From the receiver host, or from an operator host with its own tunnel, use the
+reader credential to inspect canonical progress. Substitute the local endpoint
+and your owned credential path.
+
+```sh
+FABRIC_ENDPOINT=127.0.0.1:19115 \
+  FABRIC_CREDENTIAL_FILE=/absolute/private/fabric/reader.key \
+  fabric-query progress
+```
+
+Compare each host's `highest_record_id` and `canonical_through` with the matching
+origin's receiver frontier. Then submit a [typed query](investigation.md) scoped
+to the intended origins. Compare `coverage.snapshot`,
+`coverage.canonical_frontier`, and `coverage.projection.frontiers` for each origin.
+A complete result covers its requested source snapshot. It can still omit
+records accepted only at a disconnected host. Check `coverage.observed_gaps`
+and `coverage.truncated` alongside those frontiers.
+
+The source identity is `(authority, origin, source ID)` across deployments.
+A source ID by itself can repeat across hosts. Each collector's local projection
+and the receiver's canonical projection may advance independently. A canonical
+acknowledgment establishes custody. Query evidence comes from the projection
+serving the requested snapshot.
+
+## Storage, verification, and recovery
 
 The SQLite mode stores canonical bytes in a synchronous transactional database.
 Its Arrow/Parquet/DataFusion projection is rebuildable and has its own quota and
