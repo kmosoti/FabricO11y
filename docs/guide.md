@@ -8,6 +8,7 @@ fabric guide local --table
 fabric guide custody --json
 fabric guide fleet --json
 fabric guide query --json
+fabric guide receipts --json
 ```
 
 The guide uses an embedded catalog and runs without a daemon, network, or data
