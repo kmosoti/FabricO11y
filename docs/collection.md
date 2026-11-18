@@ -6,6 +6,34 @@ open and send JSONL commands. New collection writes typed v2 observations; legac
 prototype APIs and `observation::read_legacy` preserve v1 without inventing units.
 See the [SDK](contracts/sdk.md) and [collector](contracts/spindle.md) contracts.
 
+## Choose a deployment
+
+| Deployment | Custody and query path |
+| --- | --- |
+| Single host, local only | Spindle retains observations locally with `forwarding` omitted. The local collector projects Spindle observations from its Unix socket for `fabric query`. |
+| Single host, co-located receiver | `install-stack` provisions Spindle, the local collector, and Fabric Server. The local and canonical projections have separate progress. |
+| Multiple hosts, one receiver | Spindle forwards each origin through a loopback tunnel to one Fabric Server. Each host can run its own collector. Use `fabric-query` for source-fenced receiver queries. |
+
+For local-only host collection, start Spindle with the
+[local installer](#install-and-configure). Install [the repository slice unit](../config/fabrico11y.slice)
+in the user unit directory and reload the user manager. Create the data and
+scratch directories on local disk with write access for the service user, then
+start the collector in the slice.
+
+```sh
+systemd-run --user --collect --unit=fabric-daemon-local --slice=fabrico11y.slice \
+  --setenv=TMPDIR=/data/tmp \
+  /data/cargo-target/release/fabric --data-dir /data/fabrico11y --tmp-dir /data/tmp daemon \
+  --spindle-socket "$XDG_RUNTIME_DIR/spindle/spindle.sock"
+/data/cargo-target/release/fabric --data-dir /data/fabrico11y query metrics --since 1h --json
+```
+
+Use a separate data directory and runtime socket directory for a second collector
+on the same host. After disconnecting a receiver tunnel, local recording and
+projection continue while the needed payloads remain in local custody and there
+is space to accept new records. Previously reclaimed records require receiver
+access for replay. See [multi-host receiver setup](canonical-custody.md#connect-multiple-hosts).
+
 ## Install and configure
 
 Build the production executables and runnable harness, then install for the current
