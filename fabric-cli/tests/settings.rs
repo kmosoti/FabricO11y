@@ -46,5 +46,27 @@ fn settings_emit_toml_and_report_daemon_sources() {
     let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
     assert_eq!(report["command"], "settings");
     assert_eq!(report["data"]["daemon"]["interval_ms"], 250);
+    let data = &report["data"];
+    assert_eq!(data["sources"]["ring_budget_bytes"], "automatic");
+    let expected_bytes = data["ring_budget"]["cgroup_limit_bytes"]
+        .as_u64()
+        .map_or(32 * 1024 * 1024, |limit| {
+            ((limit - limit.div_ceil(4)) / 8).clamp(4096, 32 * 1024 * 1024)
+        });
+    assert_eq!(data["ring_budget"]["automatic_bytes"], expected_bytes);
+    assert_eq!(data["daemon"]["ring_budget_bytes"], expected_bytes);
+
+    let override_result = command
+        .args(["--ring-budget-bytes", "4096"])
+        .output()
+        .unwrap();
+    assert!(override_result.status.success());
+    let override_report: serde_json::Value =
+        serde_json::from_slice(&override_result.stdout).unwrap();
+    assert_eq!(
+        override_report["data"]["sources"]["ring_budget_bytes"],
+        "command_line"
+    );
+    assert_eq!(override_report["data"]["daemon"]["ring_budget_bytes"], 4096);
     assert!(!Path::new(&absent).exists());
 }
