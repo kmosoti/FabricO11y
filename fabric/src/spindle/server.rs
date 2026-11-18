@@ -195,6 +195,7 @@ pub struct Daemon {
     store: Store,
     listener: UnixListener,
     connections: Vec<Connection>,
+    connection_limit: usize,
     files: Vec<FileSource>,
     journal: Option<JournalSource>,
     host: Option<HostSource>,
@@ -250,12 +251,14 @@ impl Daemon {
         let files = config.files.iter().cloned().map(FileSource::new).collect();
         let journal = config.journal.clone().map(JournalSource::new);
         let host = config.host.clone().map(HostSource::new);
-        let connections = Vec::with_capacity(config.max_connections);
+        let connection_limit = connection_limit(config.max_connections);
+        let connections = Vec::with_capacity(connection_limit);
         Ok(Self {
             config,
             store,
             listener,
             connections,
+            connection_limit,
             files,
             journal,
             host,
@@ -292,10 +295,10 @@ impl Daemon {
     pub fn tick(&mut self) -> Result<(), String> {
         self.forward_tick();
         if !self.stopping {
-            for _ in 0..self.config.max_connections {
+            for _ in 0..self.connection_limit {
                 match self.listener.accept() {
                     Ok((stream, _)) => {
-                        if self.connections.len() >= self.config.max_connections {
+                        if self.connections.len() >= self.connection_limit {
                             self.health.refusals += 1;
                             continue;
                         }
@@ -375,6 +378,7 @@ impl Daemon {
                 && Instant::now() >= reporter.next_report
             {
                 self.health.active_connections = self.connections.len();
+                self.health.connection_limit = Some(self.connection_limit);
                 self.health.queue_bytes = connection_queue_bytes(&self.connections);
                 reporter.report(&self.health, &self.store, self.config.forwarding.is_some());
             }
@@ -782,6 +786,19 @@ impl Connection {
             }
         }
         Ok(ConnectionProgress::Pending)
+    }
+}
+
+fn connection_limit(configured: usize) -> usize {
+    let limit = rustix::process::getrlimit(rustix::process::Resource::Nofile);
+    match (limit.current, fs::read_dir("/proc/self/fd")) {
+        (Some(limit), Ok(open)) => {
+            let spendable = admission_kernel::telemetry::elastic_spendable(limit);
+            // Including the enumerator itself reserves room for one accept in flight.
+            let available = spendable.saturating_sub(open.count() as u64);
+            configured.min(usize::try_from(available.max(1)).unwrap_or(usize::MAX))
+        }
+        _ => configured,
     }
 }
 
