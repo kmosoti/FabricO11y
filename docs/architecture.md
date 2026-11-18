@@ -202,13 +202,18 @@ The tool-image workflow builds two Linux x86-64 Fedora images when trusted
 Jujutsu, and Weaver. The native image shares the common layers and also
 contains the proof and fuzz toolchains and the native engine test binary.
 Installed tools live under `/opt/fabrico11y`, outside the Actions home mount.
+A trusted manual dispatch can also build a separate seeded common candidate.
+Its registry compiler entries are available only to compatible release builds.
+Every job builds the current workspace in its own Cargo target directory.
 
 ```mermaid
 flowchart LR
     Pins["Trusted develop revision and tool pins"] --> Common["Build common image"]
     Common --> Native["Build native image"]
+    Common --> Seed["Build optional common compiler seed"]
     Common --> Offline["Verify installed tools without network"]
     Native --> Offline
+    Seed --> Offline
     Offline --> Registry["Publish images and record digests"]
     Registry --> Plan["Validate source and public digest on a trial branch"]
     Plan --> Cold["Compare both lanes on each hosted VM"]
