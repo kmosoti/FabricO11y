@@ -3,7 +3,11 @@ pub mod engine;
 pub mod ledger;
 mod self_observation;
 use fabric::{
-    canonical::{self, Authenticated, Request, Response},
+    canonical::{
+        self, Authenticated, ProjectionReadiness, ProjectionReadyRequest, ProjectionReason,
+        ProjectionStatus, Request, Response,
+    },
+    observation,
     query::QueryRequest,
 };
 use fabric_query::Projection;
@@ -21,7 +25,7 @@ use std::{
     os::unix::fs::{MetadataExt, PermissionsExt},
     path::{Path, PathBuf},
     sync::{
-        Arc, Mutex, RwLock,
+        Arc, Mutex, RwLock, TryLockError,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     thread,
@@ -488,6 +492,124 @@ fn reserve(
     slot.cancel = cancel.clone();
     Ok((cancel, QueryGuard(queries.clone())))
 }
+fn receipt_readiness(
+    request: &ProjectionReadyRequest,
+    reads: &ReadState,
+    projection: &Mutex<Projection>,
+    queries: &Arc<Mutex<QuerySlot>>,
+    projection_error: &Mutex<Option<String>>,
+) -> ProjectionReadiness {
+    let deadline = Instant::now() + Duration::from_millis(request.timeout_ms.into());
+    let mut report = ProjectionReadiness {
+        status: ProjectionStatus::Unavailable,
+        authority: None,
+        reason: ProjectionReason::AuthorityMismatch,
+        custody_frontier: None,
+        projection_frontier: None,
+    };
+    if request.authority != reads.authority {
+        return report;
+    }
+    report.authority = Some(reads.authority.clone());
+    let Ok(frontiers) = reads.frontiers.try_read() else {
+        report.reason = ProjectionReason::CustodyEvidenceUnavailable;
+        return report;
+    };
+    let custody = frontiers.get(&request.origin).copied().unwrap_or(0);
+    report.custody_frontier = Some(custody);
+    drop(frontiers);
+    if reads.engine.is_some() {
+        // Native custody has no independently committed Parquet witness.
+        report.reason = ProjectionReason::BackendUnsupported;
+        return report;
+    }
+    if let Ok(current) = projection.try_lock() {
+        report.projection_frontier = current.source_frontier(&request.origin).ok();
+    }
+    if request.source_id > custody {
+        report.reason = ProjectionReason::RecordUnavailable;
+        return report;
+    }
+    let row = {
+        let Ok(reader) = reads.reader.try_lock() else {
+            report.reason = ProjectionReason::CustodyEvidenceUnavailable;
+            return report;
+        };
+        let Ok(rows) = reader.read(&request.origin, request.source_id - 1, request.source_id, 1)
+        else {
+            report.reason = ProjectionReason::CustodyEvidenceUnavailable;
+            return report;
+        };
+        let Some(row) = rows.into_iter().next() else {
+            report.reason = ProjectionReason::RecordUnavailable;
+            return report;
+        };
+        row
+    };
+    let Ok(observation) = observation::decode_versioned(row.raw.as_bytes()) else {
+        report.reason = ProjectionReason::CustodyEvidenceUnavailable;
+        return report;
+    };
+    if row.origin != request.origin
+        || row.source_id != request.source_id
+        || observation.identity() != &request.identity
+    {
+        report.reason = ProjectionReason::IdentityMismatch;
+        return report;
+    }
+    report.reason = ProjectionReason::ProjectionEvidenceUnavailable;
+    let Ok((cancel, _guard)) = reserve(queries, "projection-ready") else {
+        return report;
+    };
+    while Instant::now() < deadline {
+        if cancel.load(Ordering::Acquire)
+            || !matches!(projection_error.try_lock(), Ok(error) if error.is_none())
+        {
+            report.status = ProjectionStatus::Unavailable;
+            report.reason = ProjectionReason::ProjectionEvidenceUnavailable;
+            return report;
+        }
+        match projection.try_lock() {
+            Ok(projected) => {
+                let Ok(frontier) = projected.source_frontier(&request.origin) else {
+                    report.status = ProjectionStatus::Unavailable;
+                    report.reason = ProjectionReason::ProjectionEvidenceUnavailable;
+                    return report;
+                };
+                report.projection_frontier = Some(frontier);
+                if frontier >= request.source_id {
+                    report.status = ProjectionStatus::Unavailable;
+                    report.reason = ProjectionReason::ProjectionEvidenceUnavailable;
+                    match projected.proves_projected_row(&row, &cancel, deadline) {
+                        Ok(true) => {
+                            report.status = ProjectionStatus::Visible;
+                            report.reason = ProjectionReason::CommittedRow;
+                        }
+                        Ok(false) => report.reason = ProjectionReason::ProjectedRowUnavailable,
+                        Err(_) => {}
+                    }
+                    return report;
+                }
+                report.status = ProjectionStatus::Pending;
+                report.reason = ProjectionReason::AwaitingProjection;
+            }
+            Err(TryLockError::WouldBlock) => {}
+            Err(TryLockError::Poisoned(_)) => {
+                report.status = ProjectionStatus::Unavailable;
+                report.reason = ProjectionReason::ProjectionEvidenceUnavailable;
+                return report;
+            }
+        }
+        if !request.wait {
+            break;
+        }
+        thread::sleep(
+            Duration::from_millis(10).min(deadline.saturating_duration_since(Instant::now())),
+        );
+    }
+    report
+}
+
 fn handle(
     req: Authenticated,
     ledger: &Arc<Mutex<Ledger>>,
@@ -581,6 +703,24 @@ fn handle(
                 authority: reads.authority.clone(),
                 frontiers,
             })
+        }
+        Request::ProjectionReady { request } => {
+            if !reader {
+                return Err("read credential required".into());
+            }
+            request.validate()?;
+            let readiness = if allows(&request.origin) {
+                receipt_readiness(&request, reads, projection, queries, projection_error)
+            } else {
+                ProjectionReadiness {
+                    status: ProjectionStatus::Unavailable,
+                    authority: None,
+                    reason: ProjectionReason::UnknownOrigin,
+                    custody_frontier: None,
+                    projection_frontier: None,
+                }
+            };
+            Ok(Response::ProjectionReady { readiness })
         }
         Request::Capabilities => Ok(Response::Capabilities {
             authority: reads.authority.clone(),
@@ -826,5 +966,202 @@ pub fn cli() -> Result<(), String> {
             server.serve()
         }
         _ => Err("usage: fabric-server serve CONFIG".into()),
+    }
+}
+
+#[cfg(test)]
+mod receipt_tests {
+    use super::*;
+    use fabric::canonical::ForwardRecord;
+
+    fn fixture() -> (tempfile::TempDir, Server) {
+        let scratch = std::env::var_os("TMPDIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("/var/tmp"));
+        assert!(!scratch.starts_with("/tmp") && !scratch.starts_with("/dev/shm"));
+        let root = tempfile::tempdir_in(scratch).unwrap();
+        let credential = |name: &str| {
+            let path = root.path().join(name);
+            fs::write(&path, format!("canonical-test-credential-{name}")).unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+            path
+        };
+        let server = Server::open(Config {
+            listen: "127.0.0.1:0".into(),
+            storage: root.path().join("canonical"),
+            projection: root.path().join("projection"),
+            quota_bytes: 4 << 20,
+            projection_quota_bytes: 4 << 20,
+            reader_credential_file: credential("reader"),
+            nodes: ["alpha", "beta"]
+                .into_iter()
+                .map(|origin| NodeGrant {
+                    origin: origin.into(),
+                    credential_file: credential(origin),
+                })
+                .collect(),
+            node_quota_bytes: Default::default(),
+            engine_endpoint: None,
+            max_connections: 4,
+        })
+        .unwrap();
+        (root, server)
+    }
+
+    fn call(server: &Server, credential: &str, request: Request) -> Result<Response, String> {
+        handle(
+            Authenticated {
+                credential: format!("canonical-test-credential-{credential}"),
+                request,
+            },
+            &server.ledger,
+            &server.projection,
+            &server.auth,
+            &server.queries,
+            &server.projection_error,
+            &server.reads,
+        )
+    }
+
+    fn probe(server: &Server, request: &ProjectionReadyRequest) -> ProjectionReadiness {
+        match call(
+            server,
+            "reader",
+            Request::ProjectionReady {
+                request: request.clone(),
+            },
+        )
+        .unwrap()
+        {
+            Response::ProjectionReady { readiness } => readiness,
+            other => panic!("unexpected probe response {other:?}"),
+        }
+    }
+
+    #[test]
+    fn exact_receipt_requires_a_queryable_committed_row() {
+        let (root, server) = fixture();
+        let raw = |name: &str| {
+            serde_json::json!({
+                "version": 2, "registry": "fabrico11y/2",
+                "identity": {"producer": name, "generation": "sample", "sequence": 1},
+                "timestamp_ns": 0, "resource": "service",
+                "data": {"kind": "log", "level": "info", "message": "sample"}
+            })
+            .to_string()
+        };
+        for origin in ["alpha", "beta"] {
+            assert!(matches!(
+                call(
+                    &server,
+                    origin,
+                    Request::Ingest {
+                        origin: origin.into(),
+                        records: vec![ForwardRecord {
+                            source_id: 1,
+                            raw: raw(origin),
+                        }],
+                    },
+                ),
+                Ok(Response::Committed { through: 1, .. })
+            ));
+        }
+        let request = ProjectionReadyRequest {
+            authority: server.reads.authority.clone(),
+            origin: "beta".into(),
+            source_id: 1,
+            identity: observation::decode_versioned(raw("beta").as_bytes())
+                .unwrap()
+                .identity()
+                .clone(),
+            timeout_ms: 1000,
+            wait: false,
+        };
+        assert!(matches!(
+            probe(&server, &request),
+            ProjectionReadiness {
+                status: ProjectionStatus::Pending,
+                custody_frontier: Some(1),
+                projection_frontier: Some(0),
+                ..
+            }
+        ));
+        let mut wait = request.clone();
+        wait.timeout_ms = 50;
+        wait.wait = true;
+        let start = Instant::now();
+        assert_eq!(probe(&server, &wait).status, ProjectionStatus::Pending);
+        assert!(start.elapsed() >= Duration::from_millis(50));
+        assert!(start.elapsed() < Duration::from_secs(1));
+
+        let rows = server.ledger.lock().unwrap().replay(0, 2, 8192).unwrap();
+        server.projection.lock().unwrap().apply(&rows[..1]).unwrap();
+        assert_eq!(probe(&server, &request).status, ProjectionStatus::Pending);
+        server.projection.lock().unwrap().apply(&rows[1..]).unwrap();
+        assert!(matches!(
+            probe(&server, &request),
+            ProjectionReadiness {
+                status: ProjectionStatus::Visible,
+                reason: ProjectionReason::CommittedRow,
+                custody_frontier: Some(1),
+                projection_frontier: Some(1),
+                ..
+            }
+        ));
+
+        let mut mismatch = request.clone();
+        mismatch.source_id = 2;
+        assert_eq!(
+            probe(&server, &mismatch).reason,
+            ProjectionReason::RecordUnavailable,
+        );
+        mismatch.source_id = 1;
+        mismatch.identity.producer = "alpha".into();
+        assert_eq!(
+            probe(&server, &mismatch).reason,
+            ProjectionReason::IdentityMismatch,
+        );
+        mismatch.authority = "wrong-authority".into();
+        assert!(matches!(
+            probe(&server, &mismatch),
+            ProjectionReadiness {
+                reason: ProjectionReason::AuthorityMismatch,
+                custody_frontier: None,
+                projection_frontier: None,
+                ..
+            }
+        ));
+        mismatch.authority = request.authority.clone();
+        mismatch.origin = "not-granted".into();
+        assert_eq!(
+            probe(&server, &mismatch).reason,
+            ProjectionReason::UnknownOrigin,
+        );
+        assert!(
+            call(
+                &server,
+                "beta",
+                Request::ProjectionReady {
+                    request: request.clone(),
+                },
+            )
+            .is_err()
+        );
+
+        let segment = root.path().join("projection/segment-2-0.parquet");
+        assert!(segment.is_file());
+        let mut bytes = fs::read(&segment).unwrap();
+        bytes[16] ^= 1;
+        fs::write(segment, bytes).unwrap();
+        assert!(matches!(
+            probe(&server, &request),
+            ProjectionReadiness {
+                status: ProjectionStatus::Unavailable,
+                reason: ProjectionReason::ProjectionEvidenceUnavailable,
+                custody_frontier: Some(1),
+                projection_frontier: Some(1),
+                ..
+            }
+        ));
     }
 }

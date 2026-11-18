@@ -350,49 +350,61 @@ pub struct Client {
     endpoint: String,
     credential: String,
 }
+/// Reads the private credential file used by canonical readers.
+pub fn read_credential_file(path: &std::path::Path) -> Result<String, String> {
+    use rustix::fs::{Mode, OFlags};
+    use std::{fs::File, io::Read, os::unix::fs::MetadataExt};
+    let file = rustix::fs::open(
+        path,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
+        Mode::empty(),
+    )
+    .map(File::from)
+    .map_err(|error| error.to_string())?;
+    let metadata = file.metadata().map_err(|error| error.to_string())?;
+    if !metadata.is_file()
+        || metadata.uid() != rustix::process::getuid().as_raw()
+        || metadata.mode() & 0o077 != 0
+        || metadata.len() > 256
+    {
+        return Err("credential file must be private, owned and <=256 bytes".into());
+    }
+    let mut value = String::new();
+    file.take(257)
+        .read_to_string(&mut value)
+        .map_err(|error| error.to_string())?;
+    if value.len() > 256 {
+        return Err("credential file exceeds 256 bytes".into());
+    }
+    validate_credential(value.trim().to_owned())
+}
+
+fn validate_credential(value: String) -> Result<String, String> {
+    if value.len() < 16 || value.len() > 256 || !value.bytes().all(|b| b.is_ascii_graphic()) {
+        return Err("invalid credential format".into());
+    }
+    Ok(value)
+}
+
 /// Connection settings shared by the CLI and MCP host. A private file avoids
 /// putting the credential itself in host configuration or command arguments.
 pub fn connection_from_env() -> Result<(String, String), String> {
-    use std::{
-        fs,
-        io::Read,
-        os::unix::fs::{MetadataExt, PermissionsExt},
-    };
     let endpoint = std::env::var("FABRIC_ENDPOINT").map_err(|_| "FABRIC_ENDPOINT required")?;
     let credential = match (
         std::env::var_os("FABRIC_CREDENTIAL_FILE"),
         std::env::var_os("FABRIC_CREDENTIAL"),
     ) {
-        (Some(path), None) => {
-            let metadata = fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
-            if !metadata.is_file()
-                || metadata.file_type().is_symlink()
-                || metadata.uid() != rustix::process::getuid().as_raw()
-                || metadata.permissions().mode() & 0o077 != 0
-                || metadata.len() > 256
-            {
-                return Err("credential file must be private, owned and <=256 bytes".into());
-            }
-            let mut value = String::new();
-            fs::File::open(path)
-                .and_then(|f| f.take(257).read_to_string(&mut value))
-                .map_err(|e| e.to_string())?;
-            value.trim().to_owned()
-        }
-        (None, Some(value)) => value
-            .into_string()
-            .map_err(|_| "invalid credential encoding")?,
+        (Some(path), None) => read_credential_file(std::path::Path::new(&path))?,
+        (None, Some(value)) => validate_credential(
+            value
+                .into_string()
+                .map_err(|_| "invalid credential encoding")?,
+        )?,
         (Some(_), Some(_)) => {
             return Err("choose FABRIC_CREDENTIAL_FILE or FABRIC_CREDENTIAL".into());
         }
         (None, None) => return Err("FABRIC_CREDENTIAL_FILE required".into()),
     };
-    if credential.len() < 16
-        || credential.len() > 256
-        || !credential.bytes().all(|b| b.is_ascii_graphic())
-    {
-        return Err("invalid credential format".into());
-    }
     Ok((endpoint, credential))
 }
 impl Client {

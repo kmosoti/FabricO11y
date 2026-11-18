@@ -12,6 +12,7 @@ pub const MAX_FRAME: usize = 1024 * 1024;
 // Forwarding count and decoded-byte caps apply together; reclamation has its own bound.
 pub const MAX_BATCH: usize = 512;
 pub const MAX_BATCH_BYTES: usize = 256 * 1024;
+pub const MAX_PROJECTION_READY_TIMEOUT_MS: u32 = 30_000;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ForwardRecord {
@@ -28,6 +29,71 @@ pub struct CanonicalRow {
     pub source_id: u64,
     pub raw: String,
 }
+/// Scope and budget for an exact receipt visibility check at a canonical authority.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectionReadyRequest {
+    pub authority: String,
+    pub origin: String,
+    #[serde(with = "query::decimal")]
+    pub source_id: u64,
+    pub identity: observation::Identity,
+    pub timeout_ms: u32,
+    pub wait: bool,
+}
+impl ProjectionReadyRequest {
+    pub fn validate(&self) -> Result<(), String> {
+        let valid = |value: &str| !value.is_empty() && value.len() <= 128 && !value.contains('\0');
+        if !valid(&self.authority)
+            || !valid(&self.origin)
+            || !valid(&self.identity.producer)
+            || !valid(&self.identity.generation)
+            || self.identity.sequence == 0
+            || self.source_id == 0
+            || self.source_id > i64::MAX as u64
+            || !(1..=MAX_PROJECTION_READY_TIMEOUT_MS).contains(&self.timeout_ms)
+        {
+            return Err("invalid canonical projection readiness request".into());
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectionStatus {
+    Visible,
+    Pending,
+    Unavailable,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectionReason {
+    CommittedRow,
+    AwaitingProjection,
+    AuthorityMismatch,
+    UnknownOrigin,
+    RecordUnavailable,
+    IdentityMismatch,
+    CustodyEvidenceUnavailable,
+    ProjectionEvidenceUnavailable,
+    ProjectedRowUnavailable,
+    BackendUnsupported,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectionReadiness {
+    pub status: ProjectionStatus,
+    pub authority: Option<String>,
+    pub reason: ProjectionReason,
+    #[serde(with = "query::optional_decimal")]
+    pub custody_frontier: Option<u64>,
+    #[serde(with = "query::optional_decimal")]
+    pub projection_frontier: Option<u64>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Authenticated {
@@ -52,6 +118,9 @@ pub enum Request {
         identity: observation::Identity,
     },
     Progress,
+    ProjectionReady {
+        request: ProjectionReadyRequest,
+    },
     Capabilities,
     Query {
         request: query::QueryRequest,
@@ -85,6 +154,9 @@ pub enum Response {
         authority: String,
         #[serde(with = "query::snapshot_decimal")]
         frontiers: BTreeMap<String, u64>,
+    },
+    ProjectionReady {
+        readiness: ProjectionReadiness,
     },
     Capabilities {
         authority: String,
