@@ -220,15 +220,19 @@ flowchart LR
     Plan --> Cold["Compare both lanes on each hosted VM"]
     Cold --> Warm["Repeat with exact cache hits on fresh hosted runners"]
     Warm --> Review["Review adoption in development checks"]
+    Review --> Verify["verify uses the pinned seeded common image"]
+    Review --> Acceptance["native-acceptance uses the pinned native image"]
 ```
 
 Routine qualification checks simulate plan and report behavior with offline
 fixtures. An explicit live comparison runs both variants on the same hosted
 VM for each cold or warm pair. Each lane uses a fresh container store. Warm lanes restore
-only their exact trial cache. The development jobs use the current Fedora image
-until candidate digests pass hosted qualification. The workflow reuses
-dependency downloads across source revisions. Its compiled Cargo and fuzz
-archives require the exact tested commit and compatible build inputs.
+only their exact trial cache. The development jobs use the qualified image
+digests and check the installed tools against the source pins before restoring
+caches. The seeded release launcher falls back to Cargo when the checkout's
+seed policy differs. Dependency sources can be reused across revisions.
+Compiled Cargo and fuzz archives require the exact tested commit and
+compatible build inputs.
 Only successful `develop` pushes publish these caches. See
 [CI image qualification](ci-images.md) for the comparison and adoption procedure.
 

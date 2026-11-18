@@ -209,13 +209,15 @@ fn compiled_miss_removes_old_targets_and_keeps_dependency_sources() {
         assert_eq!(binary_output(root, release), "B 42\n");
     }
 
-    let restored = [
-        ".cargo/registry",
-        ".cargo/git/db",
+    let restored = [".cargo/registry", ".cargo/git/db"];
+    let installed = [
+        ".cargo/bin",
+        ".rustup/toolchains",
+        ".local/bin",
         ".local/share/fabrico11y/schema-tools",
         ".local/share/fabrico11y/engine-tools",
+        ".local/share/fabrico11y/proof-tools",
     ];
-    let installed = [".cargo/bin", ".rustup/toolchains", ".local/bin"];
     for directory in restored.into_iter().chain(installed) {
         fs::create_dir_all(cache_home.join(directory)).unwrap();
         fs::write(cache_home.join(directory).join("witness"), b"owned fixture").unwrap();
@@ -230,6 +232,11 @@ fn compiled_miss_removes_old_targets_and_keeps_dependency_sources() {
     for directory in installed {
         assert!(cache_home.join(directory).join("witness").is_file());
     }
+    let fuzz = cache_home.join(".cache/fabrico11y-fuzz-target");
+    fs::create_dir_all(&fuzz).unwrap();
+    fs::write(fuzz.join("stale-fuzzer"), b"cache witness").unwrap();
+    cleanup("    - name: Discard fuzz artifacts", root);
+    assert!(!fuzz.exists());
     assert_eq!(binary_output(root, false), "B 42\n");
 }
 
@@ -247,6 +254,13 @@ fn only_dependency_sources_have_cross_revision_restore_keys() {
         assert!(cache.contains("${{ github.sha }}"));
     }
     assert!(ACTION.contains("restore-keys: ${{ steps.policy.outputs.sources-prefix }}"));
+    let normalize = ACTION
+        .split_once("    - name: Reapply commit mtimes")
+        .unwrap()
+        .1;
+    assert!(normalize.contains(
+        "steps.cache.outputs.cache-hit == 'true' || steps.fuzz.outputs.cache-hit == 'true'"
+    ));
 }
 
 #[test]
@@ -259,6 +273,8 @@ fn exact_git_checkout_keeps_workspace_artifacts_fresh() {
             Command::new("git")
                 .args(args)
                 .current_dir(root)
+                .env("GIT_AUTHOR_DATE", "2023-11-14T22:13:20Z")
+                .env("GIT_COMMITTER_DATE", "2023-11-14T22:13:20Z")
                 .output()
                 .unwrap(),
         )
@@ -277,6 +293,13 @@ fn exact_git_checkout_keeps_workspace_artifacts_fresh() {
         "pinned source",
     ]);
     let revision = git(&["rev-parse", "HEAD"]);
+    let archive_time = SystemTime::UNIX_EPOCH
+        + Duration::from_secs(
+            git(&["show", "-s", "--format=%ct", "HEAD"])
+                .trim()
+                .parse()
+                .unwrap(),
+        );
     let restore_checkout = step_script("    - name: Reapply commit mtimes");
     let normalize = || {
         success(
@@ -289,22 +312,36 @@ fn exact_git_checkout_keeps_workspace_artifacts_fresh() {
                 .unwrap(),
         );
     };
-    normalize();
-    assert!(!fresh(&build(root, false), BINARY));
     let source = root.join("payload/src/lib.rs");
+    assert!(fs::metadata(&source).unwrap().modified().unwrap() > archive_time);
+    assert!(!fresh(&build(root, false), BINARY));
     File::open(&source)
         .unwrap()
         .set_modified(SystemTime::now() + Duration::from_secs(60))
         .unwrap();
     normalize();
+    assert_eq!(
+        fs::metadata(&source).unwrap().modified().unwrap(),
+        archive_time
+    );
     let warm = build(root, false);
     assert!(fresh(&warm, "payload"));
     assert!(fresh(&warm, BINARY));
     assert!(fresh(&warm, "itoa"));
     assert_eq!(binary_output(root, false), "A 42\n");
-
     fs::write(&source, "pub const TAG: &str = \"B\";\n").unwrap();
-    fs::write(root.join(".git/index"), b"invalid index").unwrap();
+    let dirty = Command::new("bash")
+        .args(["-c", &restore_checkout])
+        .env("GITHUB_SHA", revision.trim())
+        .env("GITHUB_WORKSPACE", root)
+        .current_dir(root)
+        .output()
+        .unwrap();
+    assert!(!dirty.status.success());
+    assert!(fs::read_to_string(&source).unwrap().contains("\"B\""));
+
+    let index = root.join(".git/index");
+    fs::write(&index, b"invalid index").unwrap();
     let unreadable_index = Command::new("bash")
         .args(["-c", &restore_checkout])
         .env("GITHUB_SHA", revision.trim())
@@ -313,5 +350,5 @@ fn exact_git_checkout_keeps_workspace_artifacts_fresh() {
         .output()
         .unwrap();
     assert!(!unreadable_index.status.success());
-    assert!(fs::read_to_string(source).unwrap().contains("\"B\""));
+    assert!(fs::read_to_string(&source).unwrap().contains("\"B\""));
 }

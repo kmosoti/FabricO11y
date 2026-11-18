@@ -28,8 +28,6 @@ runs:
         path: |
           /github/home/.cargo/registry
           /github/home/.cargo/git/db
-          /github/home/.local/share/fabrico11y/schema-tools
-          /github/home/.local/share/fabrico11y/engine-tools
         key: ${{ inputs.sources-key }}
     - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       if: github.event_name == 'push' && github.ref == 'refs/heads/develop' && inputs.hit != 'true'
