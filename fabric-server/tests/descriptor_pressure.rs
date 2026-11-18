@@ -256,7 +256,7 @@ fn lease_child(root: &Path) {
         if root.join("apply-pressure").exists() {
             if memory.is_empty() && descriptors.is_empty() {
                 if let Ok(bytes) = std::env::var(MEMORY_BYTES) {
-                    memory.resize(bytes.parse().unwrap(), 0);
+                    memory = vec![0; bytes.parse().unwrap()];
                     for page in memory.chunks_mut(4096) {
                         page[0] = 1;
                     }
