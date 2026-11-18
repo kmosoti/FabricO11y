@@ -1,0 +1,6 @@
+{
+  "revision": "0d14f2c517ed1a0a49d2445be77cda9c9e3bf796",
+  "profile": "verify",
+  "candidate": "ghcr.io/kmosoti/fabrico11y-ci@sha256:286ae57fc692879a30ca3d1c3d20da5522689e5107764fb73b3f5f8ec4306b68",
+  "samples": 3
+}
