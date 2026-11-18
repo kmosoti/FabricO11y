@@ -201,3 +201,30 @@ id = "unified-query-spec-operator-precedence-and-literals"
 package = "fabric-core"
 target = "telemetry_invariants"
 test = "unified_query_spec_operator_precedence_and_numeric_literals"
+
+[[invariants]]
+id = "receipt-projection-readiness"
+requirement = "A receipt check reports its scoped availability without changing collection state or waiting beyond its deadline."
+required = true
+boundaries = ["receipt input", "Spindle origin", "committed local projection", "canonical reader scope"]
+checks = ["local-receipt-deadline", "local-receipt-pending", "canonical-receipt-readiness"]
+proof_scope = "CLI executable tests, with the extracted contiguous frontier decision established separately."
+assumptions = ["The Linux runtime schedules the CLI and its worker. Custody and projected evidence retain their scoped semantics."]
+
+[[checks]]
+id = "local-receipt-deadline"
+package = "fabric-cli"
+target = "projection_ready"
+test = "blocked_standard_input_respects_the_process_deadline"
+
+[[checks]]
+id = "local-receipt-pending"
+package = "fabric-cli"
+target = "projection_ready"
+test = "verified_custody_is_pending_without_creating_collection_state"
+
+[[checks]]
+id = "canonical-receipt-readiness"
+package = "fabric-cli"
+target = "projection_ready"
+test = "canonical_receipt_uses_the_authenticated_receiver_without_local_storage"
