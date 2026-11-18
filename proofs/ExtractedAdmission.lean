@@ -184,6 +184,12 @@ theorem elastic_spendable_contract (limit : U64) :
   simp_all
   omega
 
+private theorem u64_saturating_sub_val (x y : U64) :
+    (core.num.U64.saturating_sub x y).val = x.val - y.val := by
+  change (BitVec.ofNat 64 (max 0 (x.val - y.val))).toNat = _
+  rw [BitVec.toNat_ofNat, max_eq_right (Nat.zero_le _)]
+  exact Nat.mod_eq_of_lt (lt_of_le_of_lt (Nat.sub_le x.val y.val) x.bv.isLt)
+
 theorem elastic_lease_return_contract (leased owned desired : U64) (pressure : Bool) :
     telemetry.elastic_lease_return leased owned desired pressure ⦃ returned =>
       returned.val ≤ leased.val ∧
@@ -193,13 +199,15 @@ theorem elastic_lease_return_contract (leased owned desired : U64) (pressure : B
       (pressure = false → desired.val ≤ leased.val → desired.val ≤ leased.val - returned.val) ⦄ := by
   cases pressure with
   | false =>
-    by_cases h : desired ≤ owned <;> simp [telemetry.elastic_lease_return, h] <;> step*
-    all_goals try simp_all
-    all_goals repeat' constructor <;> omega
+    by_cases h : desired.val ≤ owned.val
+    · have order : desired ≤ owned := h
+      simp [telemetry.elastic_lease_return, order, u64_saturating_sub_val]
+      omega
+    · have order : ¬ desired ≤ owned := h
+      simp [telemetry.elastic_lease_return, order, u64_saturating_sub_val]
+      omega
   | true =>
-    simp [telemetry.elastic_lease_return]
-    step*
-    simp_all
+    simp [telemetry.elastic_lease_return, u64_saturating_sub_val]
     omega
 
 theorem ring_can_buffer_contract (unflushed_bytes budget_bytes : U64) :
