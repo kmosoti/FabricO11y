@@ -106,8 +106,8 @@ image variation between standard `ubuntu-24.04` jobs. Each job measures the
 Fedora baseline and the candidate sequentially on the same runner. Three cold
 jobs and three warm jobs give each variant the same runner mix in a cache
 state. Cold order is baseline/candidate, candidate/baseline, baseline/candidate.
-Warm order reverses that sequence. A small host-level cache can persist across
-lanes. Separate workspaces, homes, containers, and fresh Docker and containerd
+Warm order reverses that sequence. The second lane can inherit host page and
+network caches. Separate workspaces, homes, containers, and fresh Docker and containerd
 stores prevent direct reuse of source, build outputs, or image layers. Both
 images are pulled anonymously by digest, including for warm samples.
 

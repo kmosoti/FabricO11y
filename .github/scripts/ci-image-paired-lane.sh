@@ -218,7 +218,12 @@ verification() {
     finish environment
 
     if [[ "$PAIR_PROFILE" == native-acceptance ]]; then
-      measure initialize_jj in_container 0 jj git init --colocate
+      # The mounted archive belongs to the host runner. Scope Git trust to it.
+      # shellcheck disable=SC2016
+      measure initialize_jj in_container 0 sh -ec '
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
+        jj git init --colocate
+      '
       measure native_verification in_container 0 cargo xtask check --group native
       measure engine in_container 600 sh .github/scripts/check-engine.sh
       measure fuzz_smoke in_container 0 env FABRIC_FUZZ_SMOKE_SECONDS=60 \
