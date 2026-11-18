@@ -6,6 +6,7 @@ pub mod daemon;
 pub mod fs_watch;
 pub mod host;
 mod host_export;
+pub mod resource_budget;
 pub mod self_guard;
 pub mod spindle_bridge;
 mod spindle_range;

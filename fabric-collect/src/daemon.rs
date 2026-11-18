@@ -22,8 +22,8 @@ use fabric_core::{
 };
 use fabric_graph::{CausalGraph, Direction, LineageSubgraph};
 use fabric_store::{
-    CatalogStore, DEFAULT_RING_BUDGET_BYTES, HotMetricRing, JanitorConfig, OlapParquetStore,
-    RetentionJanitor, validate_non_tmp_path_on_disk,
+    CatalogStore, HotMetricRing, JanitorConfig, OlapParquetStore, RetentionJanitor,
+    validate_non_tmp_path_on_disk,
 };
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
@@ -59,12 +59,20 @@ pub struct DaemonConfig {
 
 impl Default for DaemonConfig {
     fn default() -> Self {
+        Self::with_ring_budget(crate::resource_budget::automatic_ring_budget().budget_bytes)
+    }
+}
+
+impl DaemonConfig {
+    /// Initialize the remaining defaults using a precomputed ring budget.
+    #[must_use]
+    pub fn with_ring_budget(ring_budget_bytes: usize) -> Self {
         Self {
             data_dir: PathBuf::from(fabric_core::DEFAULT_DATA_DIR),
             tmp_dir: PathBuf::from(DEFAULT_TMP_DIR),
             interval_ms: 2000,
             max_ticks: None,
-            ring_budget_bytes: DEFAULT_RING_BUDGET_BYTES,
+            ring_budget_bytes,
             max_disk_bytes: fabric_store::janitor::DEFAULT_MAX_DISK_BYTES,
             spindle_socket: default_spindle_socket(),
             runtime_dir: None,
@@ -317,6 +325,7 @@ fn enqueue_spindle_record(
     key: SpindleProvenance,
     env: IngestEnvelope,
     runtime: &DaemonRuntime,
+    cache_hot: bool,
 ) -> bool {
     let now_ms = Utc::now().timestamp_millis();
     let item_bytes = envelope_approx_bytes(&env) + spindle_provenance_bytes(Some(&key));
@@ -345,7 +354,7 @@ fn enqueue_spindle_record(
                 if pt.timestamp_ms <= 0 {
                     pt.timestamp_ms = now_ms;
                 }
-                hot_metric = Some(pt.clone());
+                hot_metric = cache_hot.then(|| pt.clone());
                 staging.metrics.push((provenance, pt));
             }
             IngestEnvelope::Log(mut log) => {
@@ -388,6 +397,7 @@ fn enqueue_test_spindle_record(id: u64, env: IngestEnvelope, runtime: &DaemonRun
         },
         env,
         runtime,
+        true,
     )
 }
 
@@ -1260,6 +1270,7 @@ async fn run_daemon_mode(mut config: DaemonConfig, spindle_only: bool) -> Result
             _ = sigterm.recv() => break,
             _ = ticker.tick() => {
                 tick_count += 1;
+                let cgroup_pressure = crate::resource_budget::cgroup_memory_pressure();
 
                 // Drain bounded queues.
                 let extra_metrics = drain_telemetry_queues(
@@ -1303,7 +1314,7 @@ async fn run_daemon_mode(mut config: DaemonConfig, spindle_only: bool) -> Result
                                         spindle_backpressure = true;
                                         break;
                                     }
-                                } else if !enqueue_spindle_record(key, env, &runtime) {
+                                } else if !enqueue_spindle_record(key, env, &runtime, !cgroup_pressure) {
                                     spindle_backpressure = true;
                                     break;
                                 }
@@ -1324,7 +1335,7 @@ async fn run_daemon_mode(mut config: DaemonConfig, spindle_only: bool) -> Result
                     }
                 }
 
-                if !spindle_only {
+                if !spindle_only && !cgroup_pressure {
                     let mut state = run_collect_cycle(&runtime.guard, &mut fs_tracker, &mut vol_detector, &mut sketch);
                     if let Some(exporter) = host_exporter.as_mut() {
                         exporter.collect(&mut state);
@@ -1341,18 +1352,25 @@ async fn run_daemon_mode(mut config: DaemonConfig, spindle_only: bool) -> Result
 
                     let _ = runtime.catalog.commit_cycle(&state.snapshot, &state.drift, &state.graph);
                     *runtime.latest.write() = Some(state);
+                } else if !extra_metrics.is_empty() {
+                    runtime.ring.write().push_unflushed_batch(&extra_metrics);
                 }
 
                 // Self-shedding check, Spindle backpressure, or 60s flush cadence.
                 let force_shed = runtime.guard.is_shedding();
-                if tick_count == 1
+                if cgroup_pressure || force_shed {
+                    runtime.ring.write().release_hot_history();
+                }
+                let scheduled = tick_count == 1
                     || force_shed
                     || spindle_backpressure
-                    || last_flush.elapsed() >= Duration::from_secs(60)
-                {
+                    || last_flush.elapsed() >= Duration::from_secs(60);
+                if scheduled || cgroup_pressure {
                     if let Err(err) = runtime.flush_to_olap() {
                         *runtime.last_spindle_error.write() = Some(format!("olap flush failed: {err}"));
                     }
+                }
+                if scheduled {
                     let _ = runtime.run_janitor_pass();
                     last_flush = std::time::Instant::now();
                 }
