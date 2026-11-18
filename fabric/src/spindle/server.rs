@@ -262,7 +262,10 @@ impl Daemon {
             files,
             journal,
             host,
-            health: Health::default(),
+            health: Health {
+                connection_limit: Some(connection_limit),
+                ..Health::default()
+            },
             start: Instant::now(),
             stopping: false,
             socket_identity,
@@ -378,7 +381,6 @@ impl Daemon {
                 && Instant::now() >= reporter.next_report
             {
                 self.health.active_connections = self.connections.len();
-                self.health.connection_limit = Some(self.connection_limit);
                 self.health.queue_bytes = connection_queue_bytes(&self.connections);
                 reporter.report(&self.health, &self.store, self.config.forwarding.is_some());
             }
