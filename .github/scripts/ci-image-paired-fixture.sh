@@ -29,6 +29,7 @@ fixture() {
 test ! -S /var/run/docker.sock
 test -z "${ACTIONS_RUNTIME_TOKEN:-}${GH_TOKEN:-}${GITHUB_TOKEN:-}"
 getent hosts github.com
+timeout 15 bash -c 'exec 3<> /dev/tcp/github.com/443'
 fixture "$application"
 if [ "$profile:$role" = native-acceptance:baseline ]; then
     fixture "$proof"
