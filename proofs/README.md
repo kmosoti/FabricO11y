@@ -87,6 +87,14 @@ callers establish origin identity, continuity within the range, and successful
 publication. Native checker self-tests remove the publication gate from the
 actual Rust implementation and require Verus to reject the mutant postcondition.
 
+The executable elastic budget contracts prove quarter-headroom rounding,
+one-owner admission at the exact capacity boundary, and reduction of idle
+leases without returning live charges. The admission test compares the owner
+count directly with capacity, so it works even at the `u64` maximum. The server
+uses these predicates with sampled Linux limits and keeps query leases charged
+until the associated worker cleans up. The process tests check that integration
+and restart behavior.
+
 `TelemetrySmt.smt2` (`cargo xtask prove smt`) checks
 64-bit Z3 `QF_BV` ZigZag bijection, modular Gorilla timestamp delta-of-delta
 roundtripping, IEEE-754 XOR zero-trimming, and watermark monotonicity alongside a

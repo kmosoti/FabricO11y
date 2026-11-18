@@ -1,4 +1,6 @@
 //! Bounded authoritative receiver and isolated analytical projection worker.
+use admission_kernel::telemetry::{elastic_can_admit, elastic_lease_return};
+
 pub mod engine;
 pub mod ledger;
 mod self_observation;
@@ -9,6 +11,7 @@ use fabric::{
     },
     observation,
     query::QueryRequest,
+    resources,
 };
 use fabric_query::Projection;
 use ledger::Ledger;
@@ -57,7 +60,7 @@ pub struct Config {
     pub max_connections: usize,
 }
 fn connections() -> usize {
-    16
+    resources::DEFAULT_RECEIVER_CONNECTIONS
 }
 fn secret(path: &Path) -> Result<String, String> {
     use std::io::Read;
@@ -106,6 +109,8 @@ impl Drop for QueryGuard {
     }
 }
 struct ReadState {
+    pressure: AtomicBool,
+    queries: Arc<Mutex<QuerySlot>>,
     admission: FairMutex<()>,
     reader: Mutex<ledger::Reader>,
     authority: String,
@@ -118,7 +123,6 @@ pub struct Server {
     ledger: Arc<Mutex<Ledger>>,
     projection: Arc<Mutex<Projection>>,
     auth: Arc<Auth>,
-    queries: Arc<Mutex<QuerySlot>>,
     stop: Arc<AtomicBool>,
     max_connections: usize,
     projection_error: Arc<Mutex<Option<String>>>,
@@ -188,6 +192,12 @@ impl Server {
         let reads = {
             let state = ledger.lock().map_err(|_| "canonical lock")?;
             Arc::new(ReadState {
+                pressure: AtomicBool::new(false),
+                queries: Arc::new(Mutex::new(QuerySlot {
+                    active: false,
+                    id: String::new(),
+                    cancel: Arc::new(AtomicBool::new(false)),
+                })),
                 admission: FairMutex::new(()),
                 reader: Mutex::new(state.reader()?),
                 authority: state.authority.clone(),
@@ -203,11 +213,6 @@ impl Server {
             ledger,
             projection,
             auth: Arc::new(auth),
-            queries: Arc::new(Mutex::new(QuerySlot {
-                active: false,
-                id: String::new(),
-                cancel: Arc::new(AtomicBool::new(false)),
-            })),
             stop: Arc::new(AtomicBool::new(false)),
             max_connections: config.max_connections,
             projection_error: Arc::new(Mutex::new(None)),
@@ -224,6 +229,12 @@ impl Server {
         self.stop.clone()
     }
     pub fn serve(self) -> Result<(), String> {
+        let connection_limit = resources::connection_limit(self.max_connections);
+        self.serve_with_limit(connection_limit)
+    }
+
+    fn serve_with_limit(self, connection_limit: usize) -> Result<(), String> {
+        let mut next_sample = self.sample_pressure();
         let mut self_report = ReportState::default();
         let mut next_report = Instant::now();
         if let Some(telemetry) = &self.reads.telemetry {
@@ -239,11 +250,10 @@ impl Server {
             let result = (|| {
                 let mut last = Instant::now() - Duration::from_secs(2);
                 while !stop.load(Ordering::SeqCst) {
-                    if native {
-                        thread::sleep(Duration::from_millis(25));
-                        continue;
-                    }
-                    if last.elapsed() < Duration::from_secs(1) {
+                    if native
+                        || last.elapsed() < Duration::from_secs(1)
+                        || !optional_admission(reads.pressure.load(Ordering::Acquire), false)
+                    {
                         thread::sleep(Duration::from_millis(25));
                         continue;
                     }
@@ -308,6 +318,10 @@ impl Server {
         let mut workers = Vec::<thread::JoinHandle<()>>::new();
         let mut failure = None;
         while !self.stop.load(Ordering::SeqCst) {
+            workers.retain(|worker| !worker.is_finished());
+            if Instant::now() >= next_sample {
+                next_sample = self.sample_pressure();
+            }
             if let Some(telemetry) = &self.reads.telemetry
                 && Instant::now() >= next_report
             {
@@ -329,8 +343,11 @@ impl Server {
                 });
             }
             match self.listener.accept() {
-                Ok((mut socket, _)) => {
-                    if active.load(Ordering::SeqCst) >= self.max_connections {
+                Ok((socket, _)) => {
+                    if !elastic_can_admit(
+                        connection_limit as u64,
+                        active.load(Ordering::SeqCst) as u64,
+                    ) {
                         continue;
                     }
                     active.fetch_add(1, Ordering::SeqCst);
@@ -340,11 +357,12 @@ impl Server {
                     let ledger = self.ledger.clone();
                     let projection = self.projection.clone();
                     let auth = self.auth.clone();
-                    let queries = self.queries.clone();
                     let projection_error = self.projection_error.clone();
                     let reads = self.reads.clone();
-                    workers.push(thread::spawn(move || {
-                        let _guard = guard;
+                    let worker = thread::Builder::new().spawn(move || {
+                        let _connection_lease = guard;
+                        let mut socket = socket;
+                        let mut query_lease = None;
                         let request = canonical::read_frame(
                             &mut socket,
                             Instant::now() + Duration::from_secs(2),
@@ -358,9 +376,9 @@ impl Server {
                                 &ledger,
                                 &projection,
                                 &auth,
-                                &queries,
                                 &projection_error,
                                 &reads,
+                                &mut query_lease,
                             ),
                             Err(e) => Err(e),
                         }
@@ -381,8 +399,15 @@ impl Server {
                                 Instant::now() + Duration::from_secs(2),
                             );
                         }
-                    }));
-                    workers.retain(|w| !w.is_finished());
+                    });
+                    match worker {
+                        Ok(worker) => workers.push(worker),
+                        Err(e) if retry_accept(&e) => thread::sleep(Duration::from_millis(5)),
+                        Err(e) => {
+                            failure = Some(e.to_string());
+                            break;
+                        }
+                    }
                 }
                 Err(e) if retry_accept(&e) => thread::sleep(Duration::from_millis(5)),
                 Err(e) => {
@@ -392,7 +417,7 @@ impl Server {
             }
         }
         self.stop.store(true, Ordering::SeqCst);
-        if let Ok(q) = self.queries.lock() {
+        if let Ok(q) = self.reads.queries.lock() {
             q.cancel.store(true, Ordering::SeqCst)
         }
         for w in workers {
@@ -407,6 +432,12 @@ impl Server {
             _ => (),
         }
         failure.map_or(Ok(()), Err)
+    }
+
+    fn sample_pressure(&self) -> Instant {
+        let pressure = resources::descriptor_pressure() || resources::process_memory().pressured;
+        self.reads.pressure.store(pressure, Ordering::Release);
+        Instant::now() + Duration::from_millis(resources::RECEIVER_PRESSURE_SAMPLE_MS)
     }
 
     fn workload_projection_lag(&self, telemetry: &ServerTelemetry) -> Option<u64> {
@@ -425,16 +456,13 @@ impl Server {
     }
 }
 fn retry_accept(error: &std::io::Error) -> bool {
-    use rustix::io::Errno;
     // Existing work can release transient pressure without abandoning custody.
     matches!(
         error.kind(),
         std::io::ErrorKind::WouldBlock
             | std::io::ErrorKind::Interrupted
             | std::io::ErrorKind::ConnectionAborted
-    ) || [Errno::MFILE, Errno::NFILE, Errno::NOBUFS, Errno::NOMEM]
-        .iter()
-        .any(|errno| error.raw_os_error() == Some(errno.raw_os_error()))
+    ) || resources::is_resource_error(error)
 }
 fn retry_projector_pressure(error: &str) -> bool {
     use rustix::io::Errno;
@@ -478,26 +506,38 @@ fn canonical_state<'a>(
     })
 }
 
+fn optional_admission(pressure: bool, active: bool) -> bool {
+    let owned = u64::from(active);
+    let returned = elastic_lease_return(1, owned, 1, pressure);
+    elastic_can_admit(1 - returned, owned)
+}
+
 fn reserve(
-    queries: &Arc<Mutex<QuerySlot>>,
+    reads: &ReadState,
     id: &str,
-) -> Result<(Arc<AtomicBool>, QueryGuard), String> {
-    let cancel = Arc::new(AtomicBool::new(false));
-    let mut slot = queries.lock().map_err(|_| "query lock")?;
-    if slot.active {
-        return Err("query busy".into());
+    lease: &mut Option<QueryGuard>,
+) -> Result<Arc<AtomicBool>, String> {
+    let mut slot = reads.queries.lock().map_err(|_| "query lock")?;
+    if !optional_admission(reads.pressure.load(Ordering::Acquire), slot.active) {
+        return Err(if slot.active {
+            "query busy".into()
+        } else {
+            "analytical work deferred by resource pressure".into()
+        });
     }
+    let cancel = Arc::new(AtomicBool::new(false));
     slot.active = true;
     slot.id = id.to_owned();
     slot.cancel = cancel.clone();
-    Ok((cancel, QueryGuard(queries.clone())))
+    *lease = Some(QueryGuard(reads.queries.clone()));
+    Ok(cancel)
 }
 fn receipt_readiness(
     request: &ProjectionReadyRequest,
     reads: &ReadState,
     projection: &Mutex<Projection>,
-    queries: &Arc<Mutex<QuerySlot>>,
     projection_error: &Mutex<Option<String>>,
+    query_lease: &mut Option<QueryGuard>,
 ) -> ProjectionReadiness {
     let deadline = Instant::now() + Duration::from_millis(request.timeout_ms.into());
     let mut report = ProjectionReadiness {
@@ -530,6 +570,10 @@ fn receipt_readiness(
         report.reason = ProjectionReason::RecordUnavailable;
         return report;
     }
+    report.reason = ProjectionReason::ProjectionEvidenceUnavailable;
+    let Ok(cancel) = reserve(reads, "projection-ready", query_lease) else {
+        return report;
+    };
     let row = {
         let Ok(reader) = reads.reader.try_lock() else {
             report.reason = ProjectionReason::CustodyEvidenceUnavailable;
@@ -557,10 +601,6 @@ fn receipt_readiness(
         report.reason = ProjectionReason::IdentityMismatch;
         return report;
     }
-    report.reason = ProjectionReason::ProjectionEvidenceUnavailable;
-    let Ok((cancel, _guard)) = reserve(queries, "projection-ready") else {
-        return report;
-    };
     while Instant::now() < deadline {
         if cancel.load(Ordering::Acquire)
             || !matches!(projection_error.try_lock(), Ok(error) if error.is_none())
@@ -615,9 +655,9 @@ fn handle(
     ledger: &Arc<Mutex<Ledger>>,
     projection: &Arc<Mutex<Projection>>,
     auth: &Auth,
-    queries: &Arc<Mutex<QuerySlot>>,
     projection_error: &Mutex<Option<String>>,
     reads: &ReadState,
+    query_lease: &mut Option<QueryGuard>,
 ) -> Result<Response, String> {
     let reader = matches(&auth.reader, &req.credential);
     let node = auth
@@ -710,7 +750,7 @@ fn handle(
             }
             request.validate()?;
             let readiness = if allows(&request.origin) {
-                receipt_readiness(&request, reads, projection, queries, projection_error)
+                receipt_readiness(&request, reads, projection, projection_error, query_lease)
             } else {
                 ProjectionReadiness {
                     status: ProjectionStatus::Unavailable,
@@ -749,7 +789,7 @@ fn handle(
             if !reader {
                 return Err("read credential required".into());
             }
-            let slot = queries.lock().map_err(|_| "query lock")?;
+            let slot = reads.queries.lock().map_err(|_| "query lock")?;
             if !slot.active || slot.id != query_id {
                 return Err("query unavailable".into());
             }
@@ -761,7 +801,7 @@ fn handle(
                 return Err("read credential required".into());
             }
             let canonical = prepare(&mut request, auth, reads)?;
-            let (cancel, _guard) = reserve(queries, &request.query_id)?;
+            let cancel = reserve(reads, &request.query_id, query_lease)?;
             let deadline =
                 Instant::now() + Duration::from_millis(request.budgets.timeout_ms.into());
             let plan = if let Some(engine) = &reads.engine {
@@ -786,7 +826,7 @@ fn handle(
             }
             let canonical = prepare(&mut request, auth, reads)?;
             let output_limit = request.budgets.output_bytes as usize;
-            let (cancel, _guard) = reserve(queries, &request.query_id)?;
+            let cancel = reserve(reads, &request.query_id, query_lease)?;
             let deadline =
                 Instant::now() + Duration::from_millis(request.budgets.timeout_ms.into());
             let authority = request
@@ -947,13 +987,15 @@ pub fn cli() -> Result<(), String> {
             ready_rx
                 .recv()
                 .map_err(|_| "signal thread exited before registering handlers".to_string())??;
+            let resources = resources::receiver_resources(server.max_connections);
+            let connection_limit = resources.connection_limit;
             println!(
                 "{}",
-                serde_json::json!({"ready":true,"address":server.address()})
+                serde_json::json!({"ready": true, "address": server.address(), "connection_limit": connection_limit, "resources": resources})
             );
             std::io::stdout().flush().map_err(|e| e.to_string())?;
             fabric::spindle::notify_systemd_ready();
-            server.serve()
+            server.serve_with_limit(connection_limit)
         }
         _ => Err("usage: fabric-server serve CONFIG".into()),
     }
@@ -1007,9 +1049,9 @@ mod receipt_tests {
             &server.ledger,
             &server.projection,
             &server.auth,
-            &server.queries,
             &server.projection_error,
             &server.reads,
+            &mut None,
         )
     }
 
@@ -1026,6 +1068,36 @@ mod receipt_tests {
             Response::ProjectionReady { readiness } => readiness,
             other => panic!("unexpected probe response {other:?}"),
         }
+    }
+
+    #[test]
+    fn pressure_keeps_live_query_lease_until_cleanup() {
+        let (_root, server) = fixture();
+        let mut lease = None;
+        let cancel = reserve(&server.reads, "one", &mut lease).unwrap();
+        server.reads.pressure.store(true, Ordering::Release);
+        assert!(matches!(
+            call(
+                &server,
+                "reader",
+                Request::Cancel {
+                    query_id: "one".into()
+                }
+            ),
+            Ok(Response::Cancelled { .. })
+        ));
+        assert!(cancel.load(Ordering::Acquire));
+        assert_eq!(
+            reserve(&server.reads, "two", &mut None).unwrap_err(),
+            "query busy"
+        );
+        drop(lease.take());
+        assert_eq!(
+            reserve(&server.reads, "two", &mut None).unwrap_err(),
+            "analytical work deferred by resource pressure"
+        );
+        server.reads.pressure.store(false, Ordering::Release);
+        assert!(reserve(&server.reads, "two", &mut lease).is_ok());
     }
 
     #[test]

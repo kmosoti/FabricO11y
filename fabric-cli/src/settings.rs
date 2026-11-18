@@ -1,6 +1,6 @@
 use super::{Cli, DaemonArgs, fabrico11y_config_dir};
 use clap::{ArgMatches, parser::ValueSource};
-use fabric::config;
+use fabric::{config, resources};
 use fabric_collect::{
     DaemonConfig,
     resource_budget::{RingBudget, automatic_ring_budget},
@@ -58,6 +58,14 @@ struct Report<'a> {
     sources: &'a BTreeMap<&'static str, Source>,
     spindle: ServiceHint<super::SpindleFileConfigHint>,
     server: ServiceHint<super::ServerFileConfigHint>,
+    receiver_resources: Option<ReceiverResourcePreview>,
+}
+
+#[derive(Serialize)]
+struct ReceiverResourcePreview {
+    scope: &'static str,
+    #[serde(flatten)]
+    resources: resources::ReceiverResources,
 }
 
 #[derive(Serialize)]
@@ -290,6 +298,17 @@ pub(super) fn print(
     if let Some(fields) = server.fields.as_mut() {
         fields.listen = listener_address(fields.listen.take());
     }
+    let receiver_resources = server
+        .fields
+        .as_ref()
+        .map(|fields| ReceiverResourcePreview {
+            scope: "settings_process",
+            resources: resources::receiver_resources(
+                fields
+                    .max_connections
+                    .unwrap_or(resources::DEFAULT_RECEIVER_CONNECTIONS),
+            ),
+        });
     let report = Report {
         version: config::VERSION,
         profile,
@@ -319,6 +338,7 @@ pub(super) fn print(
         sources: &settings.sources,
         spindle,
         server,
+        receiver_resources,
     };
     if cli.json {
         super::emit_json("settings", &report)
