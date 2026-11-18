@@ -90,6 +90,10 @@ wrapper=("$seed/registry-rustc" "$scratch/rustc" --crate-type lib -C opt-level=3
 [[ "$("${wrapper[@]}" -Ctarget-cpu=generic --target=x86_64-unknown-linux-gnu)" == cache ]]
 [[ "$("${wrapper[@]}" -C target-cpu=native)" == compiler ]]
 [[ "$("${wrapper[@]}" -Ctarget-cpu=native)" == compiler ]]
+[[ "$("${wrapper[@]}" -Ctarget_cpu=native)" == compiler ]]
+[[ "$("${wrapper[@]}" --codegen target-cpu=native)" == compiler ]]
+[[ "$("${wrapper[@]}" --codegen=target-cpu=native)" == compiler ]]
+[[ "$("${wrapper[@]}" -Ctarget_feature=+avx2)" == compiler ]]
 [[ "$("${wrapper[@]}" --target aarch64-unknown-linux-gnu)" == compiler ]]
 [[ "$("${wrapper[@]}" --target=aarch64-unknown-linux-gnu)" == compiler ]]
 printf 'Host-relative CPUs and foreign Rust targets bypass the compiler cache\n'
