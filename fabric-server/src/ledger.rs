@@ -15,6 +15,7 @@ use std::{
     path::{Path, PathBuf},
 };
 const RESERVE: u64 = 128 * 1024;
+const NODE_QUOTA_SHARE_DIVISOR: u64 = 4;
 const COLUMNS: &str = "id,origin,source_id,raw,raw_len,raw_hash";
 /// Explicitly releases `flock` before closing so sibling `fork()`s do not pin `owner.lock`.
 struct ExclusiveLock(File);
@@ -28,6 +29,7 @@ pub struct Ledger {
     conn: Connection,
     dir: PathBuf,
     quota: u64,
+    node_quota_bytes: BTreeMap<String, u64>,
     engine: Option<crate::engine::Greptime>,
     pub authority: String,
     _lock: ExclusiveLock,
@@ -72,8 +74,24 @@ impl Ledger {
         quota: u64,
         endpoint: Option<&str>,
     ) -> Result<Self, String> {
+        Self::open_with_node_quotas(dir, quota, endpoint, BTreeMap::new())
+    }
+    pub(crate) fn open_with_node_quotas(
+        dir: &Path,
+        quota: u64,
+        endpoint: Option<&str>,
+        node_quota_bytes: BTreeMap<String, u64>,
+    ) -> Result<Self, String> {
         if quota < 1024 * 1024 {
             return Err("canonical quota must be >=1MiB".into());
+        }
+        let dedicated_cap = node_quota_bytes
+            .values()
+            .try_fold(0u64, |total, &limit| total.checked_add(limit));
+        if node_quota_bytes.values().any(|&limit| limit == 0)
+            || !dedicated_cap.is_some_and(|cap| cap <= quota / NODE_QUOTA_SHARE_DIVISOR)
+        {
+            return Err("canonical node quotas must be positive and total at most one quarter of canonical quota".into());
         }
         private_dir(dir)?;
         for name in ["owner.lock", "canonical.sqlite", "canonical.sqlite-journal"] {
@@ -221,6 +239,7 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
             conn,
             dir: dir.to_owned(),
             quota,
+            node_quota_bytes,
             engine,
             authority,
             _lock: lock,
@@ -235,8 +254,57 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
             }
             engine.verify_frontiers(&ledger.frontiers()?)?;
         }
+        ledger.refresh_node_usage()?;
         ledger.recover_pending()?;
         Ok(ledger)
+    }
+    fn refresh_node_usage(&mut self) -> Result<(), String> {
+        if self.node_quota_bytes.is_empty() {
+            return Ok(());
+        }
+        let tx = self.conn.transaction().map_err(err)?;
+        tx.execute(
+            "CREATE TABLE IF NOT EXISTS node_quota_usage (
+                origin TEXT PRIMARY KEY,
+                raw_bytes INTEGER NOT NULL CHECK(raw_bytes >= 0),
+                source_through INTEGER NOT NULL CHECK(source_through >= 0)
+            )",
+            [],
+        )
+        .map_err(err)?;
+        // Existing ledgers and older writers may have admitted rows without
+        // accounting. The origin/source index finds just the uncounted tail,
+        // including reservations that have yet to publish to the engine.
+        for origin in self.node_quota_bytes.keys() {
+            let existing: Option<(u64, u64)> = tx
+                .query_row(
+                    "SELECT raw_bytes, source_through FROM node_quota_usage WHERE origin=?1",
+                    [origin],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .optional()
+                .map_err(err)?;
+            let (used, through) = existing.unwrap_or((0, 0));
+            let (additional, last): (u64, u64) = tx
+                .query_row(
+                    "SELECT COALESCE(SUM(raw_len),0), COALESCE(MAX(source_id),?2)
+                       FROM records WHERE origin=?1 AND source_id>?2",
+                    params![origin, through],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .map_err(err)?;
+            let total = used
+                .checked_add(additional)
+                .ok_or("canonical node quota usage overflow")?;
+            if existing != Some((total, last)) {
+                tx.execute(
+                    "INSERT OR REPLACE INTO node_quota_usage VALUES(?1,?2,?3)",
+                    params![origin, total, last],
+                )
+                .map_err(err)?;
+            }
+        }
+        tx.commit().map_err(err)
     }
     pub fn engine(&self) -> Option<crate::engine::Greptime> {
         self.engine.clone()
@@ -262,7 +330,7 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
                 sum.checked_add(m.len()).ok_or("state byte overflow".into())
             })
     }
-    fn room_for(&self, bytes: usize) -> Result<(), String> {
+    fn room_for(&self, bytes: usize, ceiling: u64) -> Result<(), String> {
         let free: u64 = self
             .conn
             .pragma_query_value(None, "freelist_count", |r| r.get(0))
@@ -276,9 +344,14 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
             .disk_bytes()?
             .saturating_add(growth.saturating_mul(2))
             .saturating_add(RESERVE)
-            > self.quota
+            > ceiling
         {
-            return Err("canonical storage full".into());
+            let reason = if ceiling < self.quota {
+                "canonical storage headroom reserved for workload origins"
+            } else {
+                "canonical storage full"
+            };
+            return Err(reason.into());
         }
         Ok(())
     }
@@ -360,9 +433,34 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
         if additions.is_empty() {
             return Ok(through);
         }
-        self.room_for(additions.iter().map(|r| r.raw.len()).sum())?;
+        let bytes: usize = additions.iter().map(|r| r.raw.len()).sum();
+        let quota = self.node_quota_bytes.get(origin).copied();
         let engine_mode = self.engine.is_some();
+        let ceiling = if quota.is_some() {
+            self.quota - self.quota / NODE_QUOTA_SHARE_DIVISOR
+        } else {
+            self.quota
+        };
+        self.room_for(bytes, ceiling)?;
         let tx = self.conn.transaction().map_err(err)?;
+        if let Some(limit) = quota {
+            let used: u64 = tx
+                .query_row(
+                    "SELECT raw_bytes FROM node_quota_usage WHERE origin=?1",
+                    [origin],
+                    |row| row.get(0),
+                )
+                .map_err(err)?;
+            let next = used
+                .checked_add(bytes as u64)
+                .filter(|&total| total <= limit)
+                .ok_or("canonical node payload quota exhausted")?;
+            tx.execute(
+                "UPDATE node_quota_usage SET raw_bytes=?2, source_through=?3 WHERE origin=?1",
+                params![origin, next, through],
+            )
+            .map_err(err)?;
+        }
         tx.execute("INSERT OR IGNORE INTO origins VALUES(?1,0)", [origin])
             .map_err(err)?;
         for r in additions {

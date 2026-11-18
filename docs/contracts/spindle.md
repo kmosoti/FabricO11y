@@ -74,6 +74,39 @@ required to resolve deleted payloads. Setting `reclaim_confirmed` back to `false
 stops further reclamation while preserving access to already reclaimed records.
 Health distinguishes `canonical_through` from `reclaimed_through`.
 
+### Service telemetry custody
+
+Install a separate Spindle instance for service telemetry with a distinct
+private socket, storage directory, and local quota. The existing config accepts
+an instance with no host, file, or journal sources. Give its persistent origin
+a dedicated credential if it forwards to Fabric Server. Keep reclamation in
+shadow mode until verified, following the same process as workload origins.
+Count the telemetry origin against the receiver's origin limit. A dedicated
+local spool isolates its local quota and source frontier. Configure a
+`node_quota_bytes` entry for each telemetry origin on Fabric Server to bound
+its retained canonical payload bytes. The combined caps may use at most a
+quarter of the receiver's canonical control quota. New scoped admissions also
+observe a separate control-storage headroom threshold. Keep capacity for
+SQLite metadata, projection output and any independent engine storage. All
+accepted canonical records retain their normal durability when the telemetry
+quota is exhausted. Monitor local retry metadata, retained bytes and forwarding
+lag, and manage capacity explicitly because canonical records do not expire
+automatically.
+
+Point each service exporter at the dedicated socket with
+`FABRIC_SELF_TELEMETRY_SOCKET`. Leave the variable unset on the dedicated
+Spindle instance. An exporter rejects its own serving socket. Configure the
+socket in a private owned directory and confine instances under
+`fabrico11y.slice`. Keep request and export telemetry for the telemetry origin
+out of per-record instrumentation on that lane.
+
+Each service instance uses one SDK delivery worker and reserves 32 slots of
+4 KiB. Admission reports overflow or contention locally. Delivery uses a
+250 ms socket deadline and retries unchanged bytes and identity after an
+uncertain reply. Queued data lives in process memory until Spindle confirms
+durable custody. After custody, forwarding and canonical projection retain
+their existing separate progress boundaries.
+
 Spindle groups synchronous requests already accepted in one bounded event-loop
 iteration into a durable SQLite commit. Per-request savepoints isolate invalid
 submissions. Receipts and lease replies are published after the outer commit
