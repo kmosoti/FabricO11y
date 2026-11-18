@@ -564,56 +564,112 @@ fn fleet_requires_configured_authority_and_rejects_other_authority_for_same_orig
     }
 }
 
-#[test]
-fn incomplete_trickled_and_oversize_doctor_replies_are_bounded() {
-    for kind in ["incomplete", "trickle", "oversize"] {
-        let scratch = Scratch::new();
-        let peer = unix_peer(&scratch.0.join("daemon.sock"), move |mut socket| {
-            socket
-                .set_read_timeout(Some(Duration::from_secs(3)))
-                .unwrap();
-            let mut request = String::new();
-            BufReader::new(socket.try_clone().unwrap())
-                .read_line(&mut request)
-                .unwrap();
-            match kind {
-                "incomplete" => {
-                    socket.write_all(b"{\"kind\":\"doctor\"").unwrap();
-                }
-                "trickle" => {
-                    for _ in 0..30 {
-                        if socket.write_all(b" ").is_err() {
-                            break;
-                        }
-                        thread::sleep(Duration::from_millis(100));
-                    }
-                }
-                "oversize" => {
-                    let mut bytes = vec![b'x'; 64 * 1024 + 1];
-                    bytes.push(b'\n');
-                    let _ = socket.write_all(&bytes);
-                }
-                _ => unreachable!(),
-            }
-        });
-        let spool = spindle(&scratch.0.join("spindle.sock"), "origin-local");
-        let start = Instant::now();
-        let output = scratch
-            .command()
-            .args(["production-ready", "--spindle-socket"])
-            .arg(scratch.0.join("spindle.sock"))
-            .arg("--json")
-            .output()
+fn rejected_doctor_reply(kind: &str) {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+    let scratch = Scratch::new();
+    let completed = Arc::new(AtomicBool::new(false));
+    let peer_completed = Arc::clone(&completed);
+    let kind_owned = kind.to_owned();
+    let peer = unix_peer(&scratch.0.join("daemon.sock"), move |mut socket| {
+        socket
+            .set_read_timeout(Some(Duration::from_secs(3)))
             .unwrap();
-        let elapsed = start.elapsed();
-        peer.join().unwrap();
-        spool.join().unwrap();
-        assert_eq!(output.status.code(), Some(3), "{kind}: {output:?}");
+        let mut request = String::new();
+        BufReader::new(socket.try_clone().unwrap())
+            .read_line(&mut request)
+            .unwrap();
         assert_eq!(
-            json(&output)["data"]["collector"]["reason"],
-            "collector_unavailable"
+            serde_json::from_str::<Value>(&request).unwrap(),
+            serde_json::json!({"op":"doctor"})
         );
-        assert!(elapsed < Duration::from_secs(4), "{kind}: {elapsed:?}");
-        scratch.assert_no_data();
+        let mut report = DoctorReport {
+            healthy: true,
+            daemon_running: true,
+            ..DoctorReport::default()
+        };
+        if kind_owned == "oversize" {
+            report.checks.push(fabric_core::DoctorCheck {
+                name: "large_valid_check".into(),
+                passed: true,
+                actual: "ok".into(),
+                threshold: "ok".into(),
+                detail: "x".repeat(64 * 1024),
+            });
+        }
+        let mut bytes = serde_json::to_vec(&DaemonResponse::Doctor(report)).unwrap();
+        // The rejected bytes would otherwise be a typed, healthy Doctor response.
+        let decoded: DaemonResponse = serde_json::from_slice(&bytes).unwrap();
+        assert!(matches!(decoded, DaemonResponse::Doctor(d) if d.healthy && d.daemon_running));
+        if kind_owned == "oversize" {
+            assert!(bytes.len() > 64 * 1024);
+        }
+        bytes.push(b'\n');
+        match kind_owned.as_str() {
+            "incomplete" => {
+                socket.write_all(b"{\"kind\":\"doctor\"").unwrap();
+            }
+            "trickle" => {
+                // Every idle interval is well below the old 750 ms per-read limit,
+                // but the complete valid reply takes longer than the total deadline.
+                let mut all_sent = true;
+                for chunk in bytes.chunks(bytes.len().div_ceil(8)) {
+                    if socket.write_all(chunk).is_err() {
+                        all_sent = false;
+                        break;
+                    }
+                    thread::sleep(Duration::from_millis(200));
+                }
+                if all_sent {
+                    peer_completed.store(true, Ordering::SeqCst);
+                }
+            }
+            "oversize" => {
+                if socket.write_all(&bytes).is_ok() {
+                    peer_completed.store(true, Ordering::SeqCst);
+                }
+            }
+            _ => unreachable!(),
+        }
+    });
+    let spool = spindle(&scratch.0.join("spindle.sock"), "origin-local");
+    let start = Instant::now();
+    let output = scratch
+        .command()
+        .args(["production-ready", "--spindle-socket"])
+        .arg(scratch.0.join("spindle.sock"))
+        .arg("--json")
+        .output()
+        .unwrap();
+    let elapsed = start.elapsed();
+    peer.join().unwrap();
+    spool.join().unwrap();
+    assert_eq!(output.status.code(), Some(3), "{kind}: {output:?}");
+    assert_eq!(
+        json(&output)["data"]["collector"]["reason"],
+        "collector_unavailable"
+    );
+    assert!(elapsed < Duration::from_secs(4), "{kind}: {elapsed:?}");
+    if kind == "trickle" {
+        assert!(
+            !completed.load(Ordering::SeqCst),
+            "readiness waited for the full trickled reply"
+        );
     }
+    scratch.assert_no_data();
+}
+
+#[test]
+fn incomplete_doctor_reply_is_unavailable() {
+    rejected_doctor_reply("incomplete");
+}
+#[test]
+fn valid_trickled_doctor_reply_respects_total_deadline() {
+    rejected_doctor_reply("trickle");
+}
+#[test]
+fn valid_oversize_doctor_reply_is_unavailable() {
+    rejected_doctor_reply("oversize");
 }
