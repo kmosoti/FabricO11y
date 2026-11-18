@@ -24,17 +24,20 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 300
     container:
-      image: registry.fedoraproject.org/fedora@sha256:d68cae9185777603262e0a7094f792ffed9326b22e1a03e2d2a1731fc3f94733
+      image: &stock-image registry.fedoraproject.org/fedora@sha256:d68cae9185777603262e0a7094f792ffed9326b22e1a03e2d2a1731fc3f94733
     steps:
       - uses: actions/checkout@v5
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
-      - uses: ./.github/actions/restore-ci-cache
-        id: ci-cache
-        with:
-          profile: native-acceptance
       - name: Install Cargo and Jujutsu
         run: sh .github/scripts/install-toolchain.sh
+      - uses: ./.github/actions/restore-ci-cache
+        id: ci-sources
+        with:
+          profile: native-acceptance
+          image: *stock-image
+          layer: sources
       - name: Restore pinned verification tool installation
         id: proof-tools-cache
         uses: actions/cache/restore@v4
@@ -45,6 +48,12 @@ jobs:
             native-fedora44-d68cae91-${{ runner.arch }}-
       - name: Install pinned native verification tools
         run: sh .github/scripts/install-verification-tools.sh
+      - uses: ./.github/actions/restore-ci-cache
+        id: ci-cache
+        with:
+          profile: native-acceptance
+          image: *stock-image
+          layer: compiled
       - name: Initialize candidate workspace
         run: jj git init --colocate
       - name: Native architecture, coverage, proofs and fuzz regressions
@@ -68,26 +77,40 @@ jobs:
           key: ${{ steps.proof-tools-cache.outputs.cache-primary-key }}
       - name: Save trusted CI cache
         uses: ./.github/actions/save-ci-cache
-        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/develop' && steps.ci-cache.outputs.hit != 'true'
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/develop'
         with:
+          sources-key: ${{ steps.ci-sources.outputs.sources-key }}
+          sources-hit: ${{ steps.ci-sources.outputs.sources-hit }}
           key: ${{ steps.ci-cache.outputs.key }}
+          hit: ${{ steps.ci-cache.outputs.hit }}
+          fuzz-key: ${{ steps.ci-cache.outputs.fuzz-key }}
+          fuzz-hit: ${{ steps.ci-cache.outputs.fuzz-hit }}
   verify:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     container:
-      image: registry.fedoraproject.org/fedora@sha256:d68cae9185777603262e0a7094f792ffed9326b22e1a03e2d2a1731fc3f94733
+      image: *stock-image
     steps:
       - uses: actions/checkout@v5
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
+      - name: Install checked toolchain and Jujutsu
+        run: sh .github/scripts/install-toolchain.sh
+      - uses: ./.github/actions/restore-ci-cache
+        id: ci-sources
+        with:
+          profile: verify
+          image: *stock-image
+          layer: sources
+      - name: Install pinned schema checker
+        run: sh .github/scripts/install-schema-tools.sh
       - uses: ./.github/actions/restore-ci-cache
         id: ci-cache
         with:
           profile: verify
-      - name: Install checked toolchain and Jujutsu
-        run: sh .github/scripts/install-toolchain.sh
-      - name: Install pinned schema checker
-        run: sh .github/scripts/install-schema-tools.sh
+          image: *stock-image
+          layer: compiled
       - name: Record execution environment
         run: cat /etc/os-release && uname -a
       - name: Shared workspace checks
@@ -102,6 +125,11 @@ jobs:
         run: /github/home/.cargo/bin/cargo xtask check --group workflow
       - name: Save trusted CI cache
         uses: ./.github/actions/save-ci-cache
-        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/develop' && steps.ci-cache.outputs.hit != 'true'
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/develop'
         with:
+          sources-key: ${{ steps.ci-sources.outputs.sources-key }}
+          sources-hit: ${{ steps.ci-sources.outputs.sources-hit }}
           key: ${{ steps.ci-cache.outputs.key }}
+          hit: ${{ steps.ci-cache.outputs.hit }}
+          fuzz-key: ${{ steps.ci-cache.outputs.fuzz-key }}
+          fuzz-hit: ${{ steps.ci-cache.outputs.fuzz-hit }}

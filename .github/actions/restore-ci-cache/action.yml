@@ -1,20 +1,108 @@
 name: Restore trusted CI cache
-description: Restore dependency, tool, build, and fuzz target caches by profile, container digest, arch, and lockfiles.
+description: Reuse dependency sources across revisions and restore build artifacts for the exact source.
 inputs:
   profile:
     required: true
     description: CI job profile (verify or native-acceptance)
+  image:
+    required: true
+    description: Digest-pinned job container image
+  layer:
+    required: true
+    description: Cache layer to restore (sources or compiled)
 outputs:
+  sources-key:
+    description: Dependency source cache key for a later trusted save
+    value: ${{ steps.sources.outputs.cache-primary-key }}
+  sources-hit:
+    description: Exact dependency source key restored
+    value: ${{ steps.sources.outputs.cache-hit }}
   key:
-    description: Primary key used for a later trusted save
+    description: Exact Cargo artifact key for a later trusted save
     value: ${{ steps.cache.outputs.cache-primary-key }}
   hit:
-    description: Exact key restored
+    description: Exact Cargo artifact key restored
     value: ${{ steps.cache.outputs.cache-hit }}
+  fuzz-key:
+    description: Exact fuzz artifact key for a later trusted save
+    value: ${{ steps.fuzz.outputs.cache-primary-key }}
+  fuzz-hit:
+    description: Exact fuzz artifact key restored
+    value: ${{ steps.fuzz.outputs.cache-hit }}
 runs:
   using: composite
   steps:
-    - id: cache
+    - id: policy
+      shell: bash
+      env:
+        LAYER: ${{ inputs.layer }}
+        PROFILE: ${{ inputs.profile }}
+        BUILD_IMAGE: ${{ inputs.image }}
+        BUILD_PLATFORM: ${{ runner.os }}-${{ runner.arch }}
+        SOURCE_TOOLS: ${{ hashFiles('.github/scripts/install-schema-tools.sh', '.github/scripts/install-engine-tools.sh') }}
+        BUILD_INPUTS: ${{ hashFiles('**/Cargo.toml', '**/build.rs', 'Cargo.lock', 'fuzz/Cargo.lock', 'rust-toolchain.toml', '.cargo/**', '.github/scripts/*.sh', '.github/actions/restore-ci-cache/action.yml', '.github/actions/save-ci-cache/action.yml', '.github/workflows/development-checks.yml', 'verification/aeneas.opam.lock') }}
+      run: |
+        set -euo pipefail
+        [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+        [[ "$BUILD_IMAGE" =~ @sha256:[0-9a-f]{64}$ ]]
+        [[ "$BUILD_INPUTS" =~ ^[0-9a-f]{64}$ ]]
+        case "$PROFILE" in verify|native-acceptance) ;; *) exit 1 ;; esac
+        case "$LAYER" in sources|compiled) ;; *) exit 1 ;; esac
+        platform=$(printf '%s\0' "$PROFILE" "$BUILD_PLATFORM" "$BUILD_IMAGE" | sha256sum)
+        if [[ "$LAYER" == sources ]]; then
+          [[ "$SOURCE_TOOLS" =~ ^[0-9a-f]{64}$ ]]
+          source_scope=$(printf '%s\0' "${platform%% *}" "$SOURCE_TOOLS" | sha256sum)
+          prefix="ci-v2-sources-$PROFILE-${source_scope%% *}-"
+          printf 'sources-prefix=%s\nsources-key=%s%s\n' "$prefix" "$prefix" "$BUILD_INPUTS" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        checkout=archive
+        if [[ -e .git ]]; then
+          checkout=git
+          git_config=(git -c "safe.directory=$GITHUB_WORKSPACE")
+          [[ "$("${git_config[@]}" rev-parse HEAD)" == "$GITHUB_SHA" ]]
+          [[ -z "$("${git_config[@]}" status --porcelain)" ]]
+        fi
+        rustc_identity=$(rustc +1.100.0 -vV)
+        cargo_identity=$(cargo +1.100.0 -vV)
+        native_packages=$(rpm -q gcc binutils glibc openssl-devel)
+        native_compilers=''
+        if [[ "$PROFILE" == native-acceptance ]]; then
+          native_packages+=$'\n'$(rpm -q gcc-c++ gmp-devel)
+          native_compilers=$(
+            rustup run 1.99.1 rustc -vV
+            rustup run nightly-2026-09-17 rustc -vV
+          )
+        fi
+        global_config=$(
+          for config in "${CARGO_HOME:-$HOME/.cargo}"/config{,.toml}; do
+            if [[ -f "$config" ]]; then sha256sum "$config"; fi
+          done
+        )
+        compiler_environment=$(python3 - <<'PY'
+        import hashlib
+        import json
+        import os
+        import re
+
+        build_variables = re.compile(
+            r"CARGO_(?:BUILD_|PROFILE_|TARGET_|INCREMENTAL$|ENCODED_RUSTFLAGS$|ENCODED_RUSTDOCFLAGS$|HOME$)"
+            r"|RUST(?:C|DOC|FLAGS|UP_TOOLCHAIN$|UP_HOME$)|(?:CC|CXX|AR|CFLAGS|CPPFLAGS|CXXFLAGS|LDFLAGS)(?:_|$)"
+            r"|(?:PKG_CONFIG|OPENSSL|LIBSQLITE3|FABRIC_FUZZ)(?:_|$)"
+            r"|(?:PATH|CPATH|C_INCLUDE_PATH|CPLUS_INCLUDE_PATH|LIBRARY_PATH|LD_LIBRARY_PATH|SOURCE_DATE_EPOCH)$"
+        )
+        values = {key: value for key, value in os.environ.items() if build_variables.match(key)}
+        print(hashlib.sha256(json.dumps(values, sort_keys=True).encode()).hexdigest())
+        PY
+        )
+        compatibility=$(printf '%s\0' "${platform%% *}" "$BUILD_INPUTS" "$GITHUB_WORKSPACE" "$checkout" \
+          "$rustc_identity" "$cargo_identity" "$native_compilers" "$native_packages" \
+          "$global_config" "$compiler_environment" | sha256sum)
+        printf 'compatibility=%s\n' "${compatibility%% *}" >> "$GITHUB_OUTPUT"
+
+    - id: sources
+      if: inputs.layer == 'sources'
       uses: actions/cache/restore@v4
       with:
         path: |
@@ -22,8 +110,57 @@ runs:
           /github/home/.cargo/git/db
           /github/home/.local/share/fabrico11y/schema-tools
           /github/home/.local/share/fabrico11y/engine-tools
-          target
-          /github/home/.cache/fabrico11y-fuzz-target
-        key: ci-v1-${{ inputs.profile }}-fedora44-d68cae91-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', 'fuzz/Cargo.lock', '.github/scripts/*.sh') }}
-        restore-keys: |
-          ci-v1-${{ inputs.profile }}-fedora44-d68cae91-${{ runner.arch }}-
+        key: ${{ steps.policy.outputs.sources-key }}
+        restore-keys: ${{ steps.policy.outputs.sources-prefix }}
+
+    - name: Discard incomplete dependency source restores
+      if: inputs.layer == 'sources' && steps.sources.outputs.cache-matched-key == ''
+      shell: bash
+      env:
+        CACHE_HOME: /github/home
+      run: |
+        # A failed extraction can leave incomplete cache paths without a key.
+        rm -rf -- "${CACHE_HOME:?}/.cargo/registry" "$CACHE_HOME/.cargo/git/db" \
+          "$CACHE_HOME/.local/share/fabrico11y/schema-tools" \
+          "$CACHE_HOME/.local/share/fabrico11y/engine-tools"
+
+    - id: cache
+      if: inputs.layer == 'compiled'
+      uses: actions/cache/restore@v4
+      with:
+        path: target
+        key: ci-v2-target-${{ inputs.profile }}-${{ steps.policy.outputs.compatibility }}-${{ github.sha }}
+
+    - name: Discard Cargo artifacts without an exact source match
+      if: inputs.layer == 'compiled' && steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        # This also covers partial extraction with no reported match. Workspace
+        # cleanup cannot enumerate targets removed since an older revision.
+        rm -rf -- "${GITHUB_WORKSPACE:?}/target"
+
+    - id: fuzz
+      if: inputs.layer == 'compiled' && inputs.profile == 'native-acceptance'
+      uses: actions/cache/restore@v4
+      with:
+        path: /github/home/.cache/fabrico11y-fuzz-target
+        key: ci-v2-fuzz-${{ steps.policy.outputs.compatibility }}-${{ github.sha }}
+
+    - name: Discard fuzz artifacts without an exact source match
+      if: inputs.layer == 'compiled' && inputs.profile == 'native-acceptance' && steps.fuzz.outputs.cache-hit != 'true'
+      shell: bash
+      run: rm -rf -- /github/home/.cache/fabrico11y-fuzz-target
+
+    - name: Reapply commit mtimes after an exact artifact restore
+      if: steps.cache.outputs.cache-hit == 'true' || steps.fuzz.outputs.cache-hit == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Checkout's REST path already preserves the pinned archive timestamps.
+        if [[ -e .git ]]; then
+          git_config=(git -c "safe.directory=$GITHUB_WORKSPACE")
+          [[ "$("${git_config[@]}" rev-parse HEAD)" == "$GITHUB_SHA" ]]
+          [[ -z "$("${git_config[@]}" status --porcelain)" ]]
+          "${git_config[@]}" archive --format=tar "$GITHUB_SHA" | tar -xf -
+          [[ -z "$("${git_config[@]}" status --porcelain)" ]]
+        fi
