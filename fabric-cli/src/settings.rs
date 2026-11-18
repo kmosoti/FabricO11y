@@ -1,7 +1,10 @@
 use super::{Cli, DaemonArgs, fabrico11y_config_dir};
 use clap::{ArgMatches, parser::ValueSource};
 use fabric::config;
-use fabric_collect::DaemonConfig;
+use fabric_collect::{
+    DaemonConfig,
+    resource_budget::{RingBudget, automatic_ring_budget},
+};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
@@ -34,11 +37,13 @@ pub(super) enum Source {
     Environment,
     Profile,
     Default,
+    Automatic,
     Missing,
 }
 
 pub(super) struct Effective {
     pub config: DaemonConfig,
+    automatic_budget: RingBudget,
     sources: BTreeMap<&'static str, Source>,
 }
 
@@ -49,9 +54,16 @@ struct Report<'a> {
     profile_status: Source,
     daemon: CollectorFields,
     daemon_mode: &'static str,
+    ring_budget: AutomaticRingReport,
     sources: &'a BTreeMap<&'static str, Source>,
     spindle: ServiceHint<super::SpindleFileConfigHint>,
     server: ServiceHint<super::ServerFileConfigHint>,
+}
+
+#[derive(Serialize)]
+struct AutomaticRingReport {
+    automatic_bytes: usize,
+    cgroup_limit_bytes: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -140,7 +152,8 @@ pub(super) fn effective(
     let Some((_, command)) = matches.subcommand() else {
         return Err("missing daemon arguments".into());
     };
-    let mut config = DaemonConfig::default();
+    let automatic_budget = automatic_ring_budget();
+    let mut config = DaemonConfig::with_ring_budget(automatic_budget.budget_bytes);
     let mut sources = BTreeMap::new();
     let (resolved_data, data_source) = data_dir(cli, matches, profile);
     config.data_dir = resolved_data;
@@ -209,7 +222,14 @@ pub(super) fn effective(
         ));
     }
     config.ring_budget_bytes = value;
-    sources.insert("ring_budget_bytes", source);
+    sources.insert(
+        "ring_budget_bytes",
+        if source == Source::Default {
+            Source::Automatic
+        } else {
+            source
+        },
+    );
     let (value, source) = selected(
         args.max_disk_bytes,
         Source::CommandLine,
@@ -221,7 +241,11 @@ pub(super) fn effective(
     }
     config.max_disk_bytes = value;
     sources.insert("max_disk_bytes", source);
-    Ok(Effective { config, sources })
+    Ok(Effective {
+        config,
+        automatic_budget,
+        sources,
+    })
 }
 
 fn service_hint<T: serde::de::DeserializeOwned>(stem: &str) -> Result<ServiceHint<T>, String> {
@@ -287,6 +311,10 @@ pub(super) fn print(
             (true, _) => "once",
             (_, true) => "spindle_only",
             _ => "resident",
+        },
+        ring_budget: AutomaticRingReport {
+            automatic_bytes: settings.automatic_budget.budget_bytes,
+            cgroup_limit_bytes: settings.automatic_budget.cgroup_limit_bytes,
         },
         sources: &settings.sources,
         spindle,
