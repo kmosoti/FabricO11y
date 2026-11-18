@@ -5,6 +5,7 @@ pub mod channel;
 pub mod daemon;
 pub mod fs_watch;
 pub mod host;
+mod host_export;
 pub mod self_guard;
 pub mod spindle_bridge;
 mod spindle_range;
@@ -16,6 +17,7 @@ pub use daemon::{
     default_daemon_socket, default_ingest_socket, default_spindle_socket, query_daemon_socket,
     query_running_daemon, run_daemon, run_spindle_only_daemon,
 };
+pub use host_export::{configured_host_export_node, is_forwarded_host_signal};
 pub use self_guard::SelfPreservationGuard;
 pub use spindle_bridge::{
     IngestEnvelope, SpindleProjectionPoll, observation_to_telemetry, parse_ingest_line,
