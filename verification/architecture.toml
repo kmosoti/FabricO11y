@@ -1,7 +1,7 @@
 # Direct dependency boundaries, including test dependencies.
 [crates]
 admission-kernel = ["vstd"]
-fabric = ["serde", "serde_json", "tempfile", "admission-kernel", "rusqlite", "rustix", "sha2", "hmac", "schemars"]
+fabric = ["serde", "serde_json", "tempfile", "admission-kernel", "rusqlite", "rustix", "sha2", "hmac", "schemars", "toml"]
 fabric-core = ["admission-kernel", "arrow", "chrono", "serde", "serde_json", "proptest"]
 fabric-graph = ["arrow", "fabric-core", "serde", "serde_json", "proptest"]
 fabric-store = ["admission-kernel", "arrow", "chrono", "fabric-core", "fabric-graph", "parking_lot", "parquet", "redb", "serde", "serde_json", "tempfile"]
@@ -9,5 +9,5 @@ fabric-collect = ["admission-kernel", "chrono", "fabric", "fabric-core", "fabric
 fabric-query = ["fabric", "fabric-core", "fabric-graph", "fabric-store", "chrono", "datafusion", "arrow", "parquet", "tokio", "serde", "serde_json", "sha2", "hmac", "rustix", "tempfile"]
 fabric-mcp = ["fabric", "rmcp", "schemars", "serde", "serde_json", "tokio", "futures", "tokio-util", "tempfile"]
 fabric-server = ["fabric", "fabric-query", "serde", "serde_json", "rusqlite", "sha2", "chrono", "hmac", "reqwest", "rustix", "admission-kernel", "parking_lot", "tokio", "tempfile"]
-fabric-cli = ["admission-kernel", "arrow", "chrono", "clap", "fabric", "fabric-collect", "fabric-core", "fabric-graph", "fabric-query", "fabric-store", "rustix", "serde", "serde_json", "sha2", "tokio"]
+fabric-cli = ["admission-kernel", "arrow", "chrono", "clap", "fabric", "fabric-collect", "fabric-core", "fabric-graph", "fabric-query", "fabric-store", "rustix", "serde", "serde_json", "sha2", "tokio", "toml"]
 xtask = ["serde", "serde_json", "tempfile", "toml", "proc-macro2", "arrow-array", "arrow-schema", "arrow-ipc", "fabric", "fabric-core", "fabric-server", "rusqlite", "rustix"]

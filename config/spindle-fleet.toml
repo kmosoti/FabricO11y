@@ -1,0 +1,13 @@
+version = 1
+socket = "/run/user/1000/spindle/spindle.sock"
+storage = "/data/fabrico11y/spindle"
+quota_bytes = 67108864
+max_connections = 16
+client_timeout_ms = 500
+
+[forwarding]
+# Local end of the authenticated tunnel to the canonical receiver.
+endpoint = "127.0.0.1:17440"
+authority = "REPLACE_WITH_RECEIVER_AUTHORITY"
+credential_file = "/data/fabrico11y/credentials/node.token"
+reclaim_confirmed = false

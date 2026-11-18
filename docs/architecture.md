@@ -127,6 +127,25 @@ The canonical probe reuses the bounded analytical worker. It confirms the full
 projected row from the committed Parquet segment within the request budget. Native
 engine mode reports unavailable when it has no independent Parquet witness.
 
+## Versioned service configuration
+
+The shared loader reads bounded regular files. Explicit service launch paths
+support versioned TOML and the existing JSON format. Collector profiles resolve
+configuration per field, and the read-only inspector reports the selected
+values and where they came from. [Settings](settings.md)
+
+```mermaid
+flowchart LR
+    CFG["Versioned TOML and legacy JSON"] --> READ["Bounded configuration loader"]
+    READ --> SPINDLE["Spindle custody configuration"]
+    READ --> SERVER["Fabric Server receiver configuration"]
+    READ --> PROFILE["Collector profile"]
+    CLI["Flags and environment"] --> RESOLVE["Field precedence and defaults"]
+    PROFILE --> RESOLVE
+    RESOLVE --> DAEMON["fabric daemon"]
+    RESOLVE --> SETTINGS["fabric settings"]
+```
+
 ## 3. Two-Branch Stacked Development Workflow & Release Gate
 
 Following the repository workflow anchored in [`knowledge/decisions/D-0001-development-workflow.md`](../knowledge/decisions/D-0001-development-workflow.md):
