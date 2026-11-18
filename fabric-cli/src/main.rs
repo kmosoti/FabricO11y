@@ -34,6 +34,7 @@ use std::sync::atomic::AtomicU64;
 use std::time::{Duration, Instant};
 
 mod guide;
+mod production_ready;
 mod projection_ready;
 mod settings;
 
@@ -101,6 +102,8 @@ enum Commands {
     Custody(CustodyArgs),
     /// Check whether an exact Spindle receipt is queryable from committed projection.
     ProjectionReady(projection_ready::Args),
+    /// Check current local services and, optionally, canonical progress for this origin.
+    ProductionReady(production_ready::Args),
     /// Run the converged telemetry daemon (inside fabrico11y.slice).
     Daemon(DaemonArgs),
 }
@@ -233,6 +236,9 @@ async fn run() -> Result<(), String> {
     if let Commands::Guide(args) = &cli.command {
         return guide::run(args, format);
     }
+    if let Commands::ProductionReady(args) = &cli.command {
+        std::process::exit(production_ready::run(&cli, &matches, args, format).await);
+    }
     let (profile_path, profile) = settings::load_profile(cli.config.as_deref())?;
     let (data_dir, _) = settings::data_dir(&cli, &matches, &profile);
     if let Commands::ProjectionReady(args) = cli.command {
@@ -250,7 +256,10 @@ async fn run() -> Result<(), String> {
     let layout = validated_storage_layout(&data_dir)?;
 
     match &cli.command {
-        Commands::Guide(_) | Commands::ProjectionReady(_) | Commands::Settings(_) => {
+        Commands::Guide(_)
+        | Commands::ProjectionReady(_)
+        | Commands::ProductionReady(_)
+        | Commands::Settings(_) => {
             unreachable!("commands dispatched before storage access")
         }
         Commands::Snapshot => {
