@@ -1,6 +1,7 @@
 //! Bounded authoritative receiver and isolated analytical projection worker.
 pub mod engine;
 pub mod ledger;
+mod self_observation;
 use fabric::{
     canonical::{self, Authenticated, Request, Response},
     query::QueryRequest,
@@ -8,6 +9,7 @@ use fabric::{
 use fabric_query::Projection;
 use ledger::Ledger;
 use parking_lot::{FairMutex, FairMutexGuard};
+use self_observation::{REPORT_INTERVAL, ReportState, ServerTelemetry};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -105,6 +107,7 @@ struct ReadState {
     authority: String,
     frontiers: RwLock<BTreeMap<String, u64>>,
     engine: Option<engine::Greptime>,
+    telemetry: Option<ServerTelemetry>,
 }
 pub struct Server {
     listener: TcpListener,
@@ -173,6 +176,11 @@ impl Server {
             return Err("projection ahead of canonical history; rebuild required".into());
         }
         let projection = Arc::new(Mutex::new(projection_state));
+        let auth = Auth { reader, nodes };
+        let telemetry = ServerTelemetry::from_env(&auth).unwrap_or_else(|error| {
+            eprintln!("fabric-server: self-telemetry disabled: {error}");
+            None
+        });
         let reads = {
             let state = ledger.lock().map_err(|_| "canonical lock")?;
             Arc::new(ReadState {
@@ -181,6 +189,7 @@ impl Server {
                 authority: state.authority.clone(),
                 frontiers: RwLock::new(frontiers),
                 engine: state.engine(),
+                telemetry,
             })
         };
         let listener = TcpListener::bind(address).map_err(|e| e.to_string())?;
@@ -189,7 +198,7 @@ impl Server {
             listener,
             ledger,
             projection,
-            auth: Arc::new(Auth { reader, nodes }),
+            auth: Arc::new(auth),
             queries: Arc::new(Mutex::new(QuerySlot {
                 active: false,
                 id: String::new(),
@@ -211,6 +220,11 @@ impl Server {
         self.stop.clone()
     }
     pub fn serve(self) -> Result<(), String> {
+        let mut self_report = ReportState::default();
+        let mut next_report = Instant::now();
+        if let Some(telemetry) = &self.reads.telemetry {
+            telemetry.started();
+        }
         let reads = self.reads.clone();
         let projection = self.projection.clone();
         let stop = self.stop.clone();
@@ -249,17 +263,28 @@ impl Server {
                         Err(err) => return Err(err),
                     };
                     let full = rows.len() == 8192;
-                    if !rows.is_empty()
-                        && let Err(err) = projection
+                    if !rows.is_empty() {
+                        let result = projection
                             .lock()
                             .map_err(|_| "projection lock")?
-                            .apply(&rows)
-                    {
-                        if retry_projector_pressure(&err) {
-                            thread::sleep(Duration::from_millis(25));
-                            continue;
+                            .apply(&rows);
+                        let retry = result
+                            .as_ref()
+                            .is_err_and(|err| retry_projector_pressure(err));
+                        if let Some(telemetry) = &reads.telemetry {
+                            let workload_rows = rows
+                                .iter()
+                                .filter(|row| telemetry.tracks(&row.origin))
+                                .count();
+                            telemetry.projection(workload_rows, result.is_ok(), retry);
                         }
-                        return Err(err);
+                        if let Err(err) = result {
+                            if retry {
+                                thread::sleep(Duration::from_millis(25));
+                                continue;
+                            }
+                            return Err(err);
+                        }
                     }
                     if !full {
                         last = Instant::now();
@@ -279,6 +304,18 @@ impl Server {
         let mut workers = Vec::<thread::JoinHandle<()>>::new();
         let mut failure = None;
         while !self.stop.load(Ordering::SeqCst) {
+            if let Some(telemetry) = &self.reads.telemetry
+                && Instant::now() >= next_report
+            {
+                let lag = self.workload_projection_lag(telemetry);
+                let projection_fault = self
+                    .projection_error
+                    .try_lock()
+                    .ok()
+                    .map(|fault| fault.is_some());
+                telemetry.report(&mut self_report, lag, projection_fault);
+                next_report = Instant::now() + REPORT_INTERVAL;
+            }
             if projector.is_finished()
                 && let Ok(mut fault) = self.projection_error.lock()
             {
@@ -357,12 +394,30 @@ impl Server {
         for w in workers {
             let _ = w.join();
         }
+        if let Some(telemetry) = &self.reads.telemetry {
+            telemetry.shutdown();
+        }
         match projector.join() {
             Ok(Err(e)) => return Err(e),
             Err(_) => return Err("projection worker panicked".into()),
             _ => (),
         }
         failure.map_or(Ok(()), Err)
+    }
+
+    fn workload_projection_lag(&self, telemetry: &ServerTelemetry) -> Option<u64> {
+        if self.reads.engine.is_some() {
+            return None;
+        }
+        let progress = self.projection.try_lock().ok()?.progress();
+        let canonical = self.reads.frontiers.try_read().ok()?;
+        canonical
+            .iter()
+            .filter(|(origin, _)| telemetry.tracks(origin))
+            .map(|(origin, through)| {
+                through.saturating_sub(progress.frontiers.get(origin).copied().unwrap_or(0))
+            })
+            .max()
     }
 }
 fn retry_accept(error: &std::io::Error) -> bool {
@@ -453,6 +508,10 @@ fn handle(
     }
     let allows =
         |origin: &str| reader && auth.nodes.contains_key(origin) || node.as_deref() == Some(origin);
+    let mut measurement = reads
+        .telemetry
+        .as_ref()
+        .and_then(|telemetry| telemetry.measure(&req.request, node.as_deref(), reader, auth));
     match req.request {
         Request::Ingest { origin, records } => {
             if node.as_deref() != Some(&origin) {
@@ -465,6 +524,9 @@ fn handle(
                 .write()
                 .map_err(|_| "canonical catalog lock")? = ledger.frontiers()?;
             let through = result?;
+            if let Some(observation) = &mut measurement {
+                observation.succeed();
+            }
             Ok(Response::Committed {
                 authority: ledger.authority.clone(),
                 origin,
@@ -643,6 +705,9 @@ fn handle(
             .len();
             if measured > output_limit || measured > canonical::MAX_FRAME {
                 return Err("query response envelope byte budget".into());
+            }
+            if let Some(observation) = &mut measurement {
+                observation.succeed();
             }
             Ok(Response::Query { response })
         }

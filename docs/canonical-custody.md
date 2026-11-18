@@ -82,3 +82,40 @@ connection; Parquet publication runs after releasing it. Native engine reads use
 separate read connection so an engine write does not hold their application lock.
 The ledger quota bounds its local files. Provision native engine data and WAL
 capacity separately when using `engine_endpoint`.
+
+## Fabric Server self-observability
+
+For Fabric Server to export its own metrics, events, logs, and sampled traces,
+configure a dedicated Spindle telemetry store and grant its origin access to the
+canonical receiver. Set these environment variables on the Fabric Server process:
+
+```sh
+FABRIC_SELF_TELEMETRY_SOCKET=/data/fabrico11y/telemetry/spindle.sock
+FABRIC_SELF_TELEMETRY_ORIGINS='telemetry-origin,other-node-telemetry-origin'
+```
+
+The socket must be on this host in a private owned directory. The origins list
+must contain every telemetry origin routed to this receiver, using their
+configured grant identifiers. Workload origins should be kept separate from
+telemetry origins. The dedicated telemetry Spindle service has self-export
+disabled and can forward through the same authenticated tunnel as another
+Spindle origin. Keep server self-export diagnostics out of workload journal
+sources to avoid collecting a second copy under a workload origin. For a server forwarding to itself through that service, the
+origin guard excludes telemetry commits, their projected rows, and queries
+that include a telemetry origin from the server's own measurements. These
+operations remain available through the normal custody and query APIs.
+
+The server reports workload commit and query counts and failures, projected
+row counts and failures, the maximum committed workload projection lag when
+a local projection snapshot is available, and the self-telemetry queue and
+drop counts. Each one-minute report includes at most one completed commit and
+one completed query trace, with corresponding duration gauges in nanoseconds.
+A query has to name an explicit workload-only scope to be measured. Projection fault transitions produce an event and a redacted
+log. Native engine mode omits the local Parquet projection lag metric.
+
+A full emitter queue drops new samples before Spindle assigns record IDs.
+Optional exporter configuration errors and delivery pressure are reported to
+the local service log. The exporter does not retry in the server's request
+handling or projection worker, and telemetry failure does not invalidate
+canonical custody. The usual canonical retention and quota rules apply to
+accepted telemetry records.
