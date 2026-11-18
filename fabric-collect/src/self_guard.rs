@@ -56,7 +56,7 @@ impl SelfPreservationGuard {
             cgroup_path,
             fabrico11y_slice_confined,
             dropped_events_total: self.dropped_events.load(Ordering::Relaxed),
-            self_shedding_active: shedding,
+            self_shedding_active: shedding || crate::resource_budget::cgroup_memory_pressure(),
         }
     }
 

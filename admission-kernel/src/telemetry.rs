@@ -50,6 +50,34 @@ pub fn projection_frontier_advance(
     }
 }
 
+/// Spendable capacity after reserving a quarter, rounded up.
+pub fn elastic_spendable(limit: u64) -> (spendable: u64)
+    ensures
+        spendable <= limit,
+        (limit as int) <= 4 * ((limit as int) - (spendable as int)),
+        4 * ((limit as int) - (spendable as int)) < (limit as int) + 4,
+{
+    if limit == 0 {
+        0
+    } else {
+        let headroom = (limit - 1) / 4 + 1;
+        limit - headroom
+    }
+}
+
+/// Releases only unused elastic charges. Stale accounting fails closed.
+pub fn elastic_lease_return(leased: u64, owned: u64, desired: u64, pressure: bool) -> (returned: u64)
+    ensures
+        returned <= leased,
+        owned <= leased ==> owned as int <= (leased as int) - (returned as int),
+        leased < owned ==> returned == 0,
+        pressure && owned <= leased ==> (leased as int) - (returned as int) == owned,
+        !pressure && desired <= leased ==> desired as int <= (leased as int) - (returned as int),
+{
+    let keep = if pressure || owned >= desired { owned } else { desired };
+    leased.saturating_sub(keep)
+}
+
 /// Permits accepting another unflushed metric sample while preserving at least
 /// 25% (minimum 512 B) headroom below the soft half-ring cap (minimum 2048 B).
 pub fn ring_can_buffer(unflushed_bytes: u64, budget_bytes: u64) -> (ok: bool)

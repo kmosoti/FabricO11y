@@ -174,6 +174,34 @@ theorem projection_aborted_unchanged
     telemetry.projection_frontier_advance committed first last origin_matches false = ok committed := by
   cases origin_matches <;> simp [telemetry.projection_frontier_advance]
 
+theorem elastic_spendable_contract (limit : U64) :
+    telemetry.elastic_spendable limit ⦃ spendable =>
+      spendable.val ≤ limit.val ∧
+      limit.val ≤ 4 * (limit.val - spendable.val) ∧
+      4 * (limit.val - spendable.val) < limit.val + 4 ⦄ := by
+  unfold telemetry.elastic_spendable
+  step*
+  simp_all
+  omega
+
+theorem elastic_lease_return_contract (leased owned desired : U64) (pressure : Bool) :
+    telemetry.elastic_lease_return leased owned desired pressure ⦃ returned =>
+      returned.val ≤ leased.val ∧
+      (owned.val ≤ leased.val → owned.val ≤ leased.val - returned.val) ∧
+      (leased.val < owned.val → returned.val = 0) ∧
+      (pressure = true → owned.val ≤ leased.val → leased.val - returned.val = owned.val) ∧
+      (pressure = false → desired.val ≤ leased.val → desired.val ≤ leased.val - returned.val) ⦄ := by
+  cases pressure with
+  | false =>
+    by_cases h : desired ≤ owned <;> simp [telemetry.elastic_lease_return, h] <;> step*
+    all_goals try simp_all
+    all_goals repeat' constructor <;> omega
+  | true =>
+    simp [telemetry.elastic_lease_return]
+    step*
+    simp_all
+    omega
+
 theorem ring_can_buffer_contract (unflushed_bytes budget_bytes : U64) :
     telemetry.ring_can_buffer unflushed_bytes budget_bytes ⦃ ok =>
       let half := budget_bytes.val / 2
@@ -215,6 +243,8 @@ theorem rss_shedding_decision_contract (rss_bytes shed_limit_bytes : U64) :
 #print axioms watermark_advance_contract
 #print axioms projection_frontier_contract
 #print axioms projection_aborted_unchanged
+#print axioms elastic_spendable_contract
+#print axioms elastic_lease_return_contract
 #print axioms ring_can_buffer_contract
 #print axioms disk_needs_eviction_contract
 #print axioms rss_shedding_decision_contract
