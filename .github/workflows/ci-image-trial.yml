@@ -70,6 +70,9 @@ jobs:
           fi
           # The base Fedora image has no Git yet, so checkout uses the pinned REST archive there.
           if [ "$PREBUILT" = true ]; then
+            # Checkout creates a temporary Git configuration; trust the runner's
+            # workspace only for this container job after that action exits.
+            git config --global --add safe.directory "$GITHUB_WORKSPACE"
             test "$(git rev-parse HEAD)" = "$EXPECTED_REVISION"
           fi
           key="ci-image-trial-v1-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$PROFILE-$RUNNER_ARCH-${TRIAL_IMAGE##*@sha256:}-$BUILD_INPUTS"
