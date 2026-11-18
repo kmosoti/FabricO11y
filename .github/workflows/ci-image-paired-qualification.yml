@@ -1,0 +1,88 @@
+name: Paired CI image qualification
+
+on:
+  push:
+    branches: ['ci/tool-image-paired-qualification/**']
+    paths:
+      - '.github/ci-images/paired-qualification.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: paired-ci-image-qualification
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    if: github.repository == 'kmosoti/FabricO11y'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      revision: ${{ steps.plan.outputs.revision }}
+      profile: ${{ steps.plan.outputs.profile }}
+      candidate: ${{ steps.plan.outputs.candidate }}
+      mode: ${{ steps.plan.outputs.mode }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - name: Validate trusted source and public image
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/ci-image-paired-plan.sh
+
+  cold:
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix:
+        sample: ${{ fromJSON(needs.plan.outputs.mode == 'smoke' && '[1]' || '[1,2,3]') }}
+    uses: ./.github/workflows/ci-image-paired-trial.yml
+    with:
+      revision: ${{ needs.plan.outputs.revision }}
+      profile: ${{ needs.plan.outputs.profile }}
+      candidate: ${{ needs.plan.outputs.candidate }}
+      smoke: ${{ needs.plan.outputs.mode == 'smoke' }}
+      warm: false
+      sample: ${{ matrix.sample }}
+
+  warm:
+    needs: [plan, cold]
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        sample: ${{ fromJSON(needs.plan.outputs.mode == 'smoke' && '[1]' || '[1,2,3]') }}
+    uses: ./.github/workflows/ci-image-paired-trial.yml
+    with:
+      revision: ${{ needs.plan.outputs.revision }}
+      profile: ${{ needs.plan.outputs.profile }}
+      candidate: ${{ needs.plan.outputs.candidate }}
+      smoke: ${{ needs.plan.outputs.mode == 'smoke' }}
+      warm: true
+      sample: ${{ matrix.sample }}
+
+  report:
+    needs: [plan, cold, warm]
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      PROFILE: ${{ needs.plan.outputs.profile }}
+      REVISION: ${{ needs.plan.outputs.revision }}
+      CANDIDATE: ${{ needs.plan.outputs.candidate }}
+      MODE: ${{ needs.plan.outputs.mode }}
+      COLD_RESULT: ${{ needs.cold.result }}
+      WARM_RESULT: ${{ needs.warm.result }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: ci-image-pair-${{ github.run_attempt }}-*
+          path: ${{ runner.temp }}/paired-ci-evidence
+      - name: Verify matched pairs and report the original thresholds
+        run: bash .github/scripts/ci-image-paired-report.sh "$RUNNER_TEMP/paired-ci-evidence"

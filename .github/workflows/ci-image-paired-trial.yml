@@ -1,0 +1,98 @@
+name: Paired CI image trial
+
+on:
+  workflow_call:
+    inputs:
+      revision:
+        required: true
+        type: string
+      profile:
+        required: true
+        type: string
+      candidate:
+        required: true
+        type: string
+      smoke:
+        required: true
+        type: boolean
+      warm:
+        required: true
+        type: boolean
+      sample:
+        required: true
+        type: number
+
+permissions:
+  contents: read
+
+jobs:
+  pair:
+    name: pair-${{ inputs.warm && 'warm' || 'cold' }}-${{ inputs.sample }}
+    if: github.repository == 'kmosoti/FabricO11y' && github.event_name == 'push' && startsWith(github.ref, 'refs/heads/ci/tool-image-paired-qualification/')
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ inputs.smoke && 30 || (inputs.profile == 'verify' && 100 || 360) }}
+    env:
+      PAIR_REVISION: ${{ inputs.revision }}
+      PAIR_PROFILE: ${{ inputs.profile }}
+      PAIR_CANDIDATE: ${{ inputs.candidate }}
+      PAIR_SMOKE: ${{ inputs.smoke }}
+      PAIR_WARM: ${{ inputs.warm }}
+      PAIR_SAMPLE: ${{ inputs.sample }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - name: Record the hosted VM and prepare the isolated bridge
+        id: pair
+        env:
+          PAIR_ARCH: ${{ runner.arch }}
+        run: bash .github/scripts/ci-image-paired-lane.sh prepare
+      - name: Measure the first lane
+        id: first
+        uses: ./.github/actions/ci-image-paired-lane
+        with:
+          role: ${{ steps.pair.outputs.first }}
+          archive-path: ${{ steps.pair.outputs.archive_path }}
+      - name: Measure the second lane
+        id: second
+        uses: ./.github/actions/ci-image-paired-lane
+        with:
+          role: ${{ steps.pair.outputs.second }}
+          archive-path: ${{ steps.pair.outputs.archive_path }}
+      - name: Save baseline proof cache
+        if: ${{ !inputs.warm && inputs.sample == 1 && inputs.profile == 'native-acceptance' }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        env:
+          PATH: ${{ steps.pair.outputs.archive_path }}
+          PAIR_CACHE_ROLE: baseline
+        with:
+          path: ${{ steps.first.outputs.proof-path }}
+          key: ${{ steps.first.outputs.key }}-proof
+      - name: Save baseline application cache
+        if: ${{ !inputs.warm && inputs.sample == 1 }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        env:
+          PATH: ${{ steps.pair.outputs.archive_path }}
+          PAIR_CACHE_ROLE: baseline
+        with:
+          path: ${{ steps.first.outputs.application-paths }}
+          key: ${{ steps.first.outputs.key }}-application
+      - name: Save candidate application cache
+        if: ${{ !inputs.warm && inputs.sample == 1 }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        env:
+          PATH: ${{ steps.pair.outputs.archive_path }}
+          PAIR_CACHE_ROLE: candidate
+        with:
+          path: ${{ steps.second.outputs.application-paths }}
+          key: ${{ steps.second.outputs.key }}-application
+      - name: Record final evidence and clean up owned daemons
+        if: always()
+        run: bash .github/scripts/ci-image-paired-lane.sh finalize
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: ci-image-pair-${{ github.run_attempt }}-${{ inputs.warm && 'warm' || 'cold' }}-${{ inputs.sample }}
+          path: ${{ runner.temp }}/fabric-ci-pair/evidence/
+          if-no-files-found: error
+          retention-days: 7
