@@ -1,0 +1,82 @@
+name: CI tool images
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - '.github/ci-images/**'
+      - '.github/scripts/check-ci-image-tools.sh'
+      - '.github/scripts/install-*-tools.sh'
+      - '.github/scripts/install-toolchain.sh'
+      - '.github/workflows/ci-images.yml'
+      - 'rust-toolchain.toml'
+      - 'verification/aeneas.opam.lock'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-tool-images-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    if: github.repository == 'kmosoti/FabricO11y' && github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/kmosoti/fabrico11y-ci
+      TMPDIR: /var/tmp
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - name: Build common and native tool images
+        run: |
+          set -euo pipefail
+          context=$(mktemp -d "$TMPDIR/fabrico11y-ci-images.XXXXXXXX")
+          trap 'rm -rf -- "$context"' EXIT
+          git archive HEAD -- .github/ci-images/Containerfile \
+            .github/scripts/check-ci-image-tools.sh \
+            .github/scripts/install-engine-tools.sh \
+            .github/scripts/install-schema-tools.sh \
+            .github/scripts/install-toolchain.sh \
+            .github/scripts/install-verification-tools.sh \
+            rust-toolchain.toml verification/aeneas.opam.lock | tar -x -C "$context"
+          for target in common native; do
+            docker buildx build --platform linux/amd64 --load --target "$target" \
+              --file "$context/.github/ci-images/Containerfile" \
+              --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+              --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+              --tag "$IMAGE:$target-$GITHUB_SHA" "$context"
+          done
+      - name: Verify the installed tools offline
+        run: |
+          set -euo pipefail
+          for target in common native; do
+            docker run --rm --network none --env HOME=/github/home "$IMAGE:$target-$GITHUB_SHA" \
+              sh /opt/fabrico11y/bootstrap/.github/scripts/check-ci-image-tools.sh "$target"
+          done
+      - name: Publish verified images and record their digests
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          docker_config=$(mktemp -d "$TMPDIR/fabrico11y-docker-config.XXXXXXXX")
+          export DOCKER_CONFIG="$docker_config"
+          trap 'rm -rf -- "$docker_config"' EXIT
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          {
+            printf '## FabricO11y CI tool images\n\nSource commit `%s`\n\n' "$GITHUB_SHA"
+            for target in common native; do
+              tagged="$IMAGE:$target-$GITHUB_SHA"
+              docker push "$tagged" >&2
+              digest=$(docker image inspect "$tagged" --format '{{range .RepoDigests}}{{println .}}{{end}}' | grep -E "^$IMAGE@sha256:[0-9a-f]{64}$")
+              size=$(docker image inspect "$tagged" --format '{{.Size}}')
+              printf -- '- %s: `%s` (%s uncompressed bytes)\n' "$target" "$digest" "$size"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,33 @@
+FROM registry.fedoraproject.org/fedora@sha256:d68cae9185777603262e0a7094f792ffed9326b22e1a03e2d2a1731fc3f94733 AS common
+
+ENV RUSTUP_HOME=/opt/fabrico11y/rustup \
+    FABRIC_SCHEMA_TOOLS=/opt/fabrico11y/schema-tools \
+    PATH=/opt/fabrico11y/.cargo/bin:/opt/fabrico11y/.local/bin:$PATH \
+    TMPDIR=/var/tmp
+
+WORKDIR /opt/fabrico11y/bootstrap
+COPY rust-toolchain.toml ./
+COPY .github/scripts/install-toolchain.sh .github/scripts/install-schema-tools.sh .github/scripts/check-ci-image-tools.sh .github/scripts/
+RUN HOME=/opt/fabrico11y CARGO_HOME=/opt/fabrico11y/.cargo sh .github/scripts/install-toolchain.sh \
+    && sh .github/scripts/install-schema-tools.sh \
+    && dnf clean all
+RUN rustup default 1.100.0 && sh .github/scripts/check-ci-image-tools.sh common
+
+FROM common AS native
+
+ENV FABRIC_PROOF_TOOLS=/opt/fabrico11y/proof-tools \
+    FABRIC_ENGINE_TOOLS=/opt/fabrico11y/engine-tools
+
+COPY verification/aeneas.opam.lock verification/
+COPY .github/scripts/install-verification-tools.sh .github/scripts/install-engine-tools.sh .github/scripts/
+RUN HOME=/opt/fabrico11y CARGO_HOME=/opt/fabrico11y/.cargo OPAMJOBS=4 sh .github/scripts/install-verification-tools.sh \
+    && sh .github/scripts/install-engine-tools.sh \
+    && proof_source="$FABRIC_PROOF_TOOLS/aeneas-ab34bd2" \
+    && rm -rf "$FABRIC_PROOF_TOOLS/downloads" "$FABRIC_PROOF_TOOLS/opam-root" "$proof_source/_opam" \
+        /opt/fabrico11y/.cargo/registry /opt/fabrico11y/.cargo/git /opt/fabrico11y/.cache \
+    && find "$proof_source/charon/charon/target" -mindepth 1 ! -path '*/release' ! -path '*/release/charon' ! -path '*/release/charon-driver' -delete \
+    && find "$proof_source/src/_build" -mindepth 1 ! -path '*/default' ! -path '*/default/main.exe' -delete \
+    && sh .github/scripts/check-ci-image-tools.sh native \
+    && dnf clean all
+
+ENV FABRIC_ENGINE_BINARY=/opt/fabrico11y/engine-tools/greptime-linux-amd64-v1.2.1/greptime
