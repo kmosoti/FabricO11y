@@ -174,23 +174,47 @@ jobs:
           set -euo pipefail
           fingerprint_root="$RUNNER_TEMP/ci-image-trial-environments"
           expected=''
+          memory_min=''
+          memory_max=0
           for variant in baseline candidate; do
             for state in cold warm; do
               for ((sample=1; sample <= SAMPLES; sample++)); do
                 name="$variant-$state-$sample"
-                path="$fingerprint_root/ci-image-trial-$GITHUB_RUN_ATTEMPT-$name-environment/environment.sha256"
+                sample_dir="$fingerprint_root/ci-image-trial-$GITHUB_RUN_ATTEMPT-$name-environment"
+                path="$sample_dir/environment.sha256"
                 if [[ ! -f "$path" ]]; then
                   printf 'No environment fingerprint for %s\n' "$name" >&2
                   exit 1
                 fi
                 fingerprint=$(<"$path")
                 [[ "$fingerprint" =~ ^[0-9a-f]{64}$ ]]
-                printf '%s %s\n' "$name" "$fingerprint"
                 expected=${expected:-$fingerprint}
                 if [[ "$fingerprint" != "$expected" ]]; then
                   printf 'Environment differs from baseline-cold-1 for %s\n' "$name" >&2
                   exit 1
                 fi
+                if [[ ! -f "$sample_dir/memory-total-kib" ]]; then
+                  printf 'No physical memory record for %s\n' "$name" >&2
+                  exit 1
+                fi
+                memory=$(<"$sample_dir/memory-total-kib")
+                if [[ ! "$memory" =~ ^[1-9][0-9]{0,17}$ ]]; then
+                  printf 'Invalid physical memory record for %s\n' "$name" >&2
+                  exit 1
+                fi
+                printf '%s %s (%s KiB physical memory)\n' "$name" "$fingerprint" "$memory"
+                if [[ -z "$memory_min" ]] || ((memory < memory_min)); then
+                  memory_min=$memory
+                fi
+                if ((memory > memory_max)); then
+                  memory_max=$memory
+                fi
               done
             done
           done
+          spread=$((memory_max - memory_min))
+          printf 'Physical memory range: %s–%s KiB (%s KiB spread)\n' "$memory_min" "$memory_max" "$spread"
+          if ((spread > 1024)); then
+            printf 'Physical memory spread exceeds 1024 KiB.\n' >&2
+            exit 1
+          fi
