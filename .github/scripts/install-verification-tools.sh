@@ -149,7 +149,26 @@ if ! (
 ); then
     (
         cd "$aeneas_dir/backends/lean"
-        "$lake_bin" exe cache get
+        set --
+        if [ "${FABRIC_CI_LEAN_IMPORT_CACHE:-}" = 1 ]; then
+            # The image needs the cache closure of the bundled Aeneas libraries.
+            # Lake still builds every missing dependency from its pinned sources.
+            imports=$(git grep -h -E '^((public|meta)[[:space:]]+)*import[[:space:]]' -- Aeneas.lean Aeneas AeneasMeta)
+            cache_modules=$(printf '%s\n' "$imports" | awk '
+                {
+                    field = 1
+                    while ($field == "public" || $field == "meta") field++
+                    if ($field != "import") next
+                    field++
+                    if ($field == "all") field++
+                    if ($field ~ /^(Mathlib|Batteries)[.][[:alnum:]_.]+$/) print $field
+                }
+            ' | LC_ALL=C sort -u)
+            test -n "$cache_modules"
+            set -f
+            set -- $cache_modules
+        fi
+        "$lake_bin" exe cache get "$@"
         LEAN_NUM_THREADS="$lean_threads" "$lake_bin" build Aeneas
     )
 fi
