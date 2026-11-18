@@ -205,3 +205,60 @@ fn image_qualification_runs_the_develop_push_workload() {
     assert_eq!(paired_cache.matches("fail-on-cache-miss: true").count(), 2);
     assert!(!paired_cache.contains("restore-keys:"));
 }
+
+#[test]
+fn compiler_seed_publication_and_qualification_keep_the_trusted_boundaries() {
+    let workflows = repo_root().join(".github/workflows");
+    let publisher = fs::read_to_string(workflows.join("ci-images.yml")).unwrap();
+    let qualification =
+        fs::read_to_string(workflows.join("ci-image-paired-qualification.yml")).unwrap();
+    let lane =
+        fs::read_to_string(repo_root().join(".github/scripts/ci-image-paired-lane.sh")).unwrap();
+
+    assert!(publisher.contains("options: [standard, common-seeded, all]"));
+    assert!(publisher.contains("default: standard"));
+    assert!(publisher.contains("github.event_name == 'push' && 'standard'"));
+    assert!(!publisher.contains("      - 'Cargo.lock'"));
+    assert!(publisher.contains(
+        "if: github.repository == 'kmosoti/FabricO11y' && github.ref == 'refs/heads/develop'"
+    ));
+    for standard_step in [
+        "Build common and native tool images",
+        "Verify the installed tools offline",
+        "Publish verified images and record their digests",
+    ] {
+        assert!(publisher.contains(&format!(
+            "- name: {standard_step}\n        if: env.PUBLISH_VARIANT != 'common-seeded'"
+        )));
+    }
+    let seeded = publisher
+        .split_once("- name: Build the common image with a release compiler seed")
+        .unwrap()
+        .1;
+    let (seed_steps, _) = seeded
+        .split_once("- name: Publish the verified common compiler-seed image")
+        .unwrap();
+    assert!(seed_steps.contains("--target common-seeded"));
+    assert!(seed_steps.contains("docker run --rm --network none"));
+    assert!(seed_steps.contains("release-build --preflight"));
+    assert!(seed_steps.contains("grep -Fxq 'compiler-seed ready'"));
+    assert!(qualification.contains("permissions:\n  contents: read"));
+    assert_eq!(
+        qualification
+            .matches("variant: ${{ needs.plan.outputs.variant }}")
+            .count(),
+        2
+    );
+    assert!(lane.contains("candidate:common-seeded"));
+    assert!(lane.contains("measure release_build measure_seeded_release"));
+    assert!(
+        lane.contains(
+            "measure workspace_checks in_container 0 cargo xtask check --group workspace"
+        )
+    );
+    assert!(
+        lane.contains(
+            "measure restart_smoke in_container 120 target/release/xtask collection smoke"
+        )
+    );
+}

@@ -13,6 +13,18 @@ RUN HOME=/opt/fabrico11y CARGO_HOME=/opt/fabrico11y/.cargo sh .github/scripts/in
     && dnf clean all
 RUN rustup default 1.100.0 && sh .github/scripts/check-ci-image-tools.sh common
 
+FROM common AS common-seed-builder
+ARG SOURCE_REVISION
+WORKDIR /__w/FabricO11y/FabricO11y
+COPY . .
+RUN bash .github/ci-images/compiler-seed-build.sh
+
+FROM common AS common-seeded
+COPY --from=common-seed-builder /opt/fabrico11y/compiler-seed/sccache /opt/fabrico11y/compiler-seed/release-build \
+    /opt/fabrico11y/compiler-seed/registry-rustc /opt/fabrico11y/compiler-seed/
+COPY --from=common-seed-builder /opt/fabrico11y/compiler-seed/provenance/ /opt/fabrico11y/compiler-seed/provenance/
+COPY --from=common-seed-builder /opt/fabrico11y/compiler-seed/cache/ /opt/fabrico11y/compiler-seed/cache/
+
 FROM common AS native
 
 ENV FABRIC_PROOF_TOOLS=/opt/fabrico11y/proof-tools \

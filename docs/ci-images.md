@@ -3,9 +3,13 @@
 The `CI tool images` workflow builds common and native Fedora images from trusted
 `develop` revisions that change the image or a tool pin. Rerun a failed
 publisher job at its original revision. Dispatch on `develop` is available
-when `main` contains the workflow. The workflow verifies installed tools in
-network-disabled containers before publishing commit-tagged images to GitHub
-Container Registry. The run summary records both immutable digests.
+when `main` contains the workflow. The default `standard` dispatch builds common
+and native. Select `common-seeded` to build only the compiler-seed variant, or
+`all` to build all three using the shared common build stage. Ordinary source
+and lockfile changes leave the publisher idle. The workflow verifies the
+selected images in network-disabled containers before publishing
+commit-tagged images to GitHub Container Registry. The run summary records
+each immutable digest.
 
 The common image contains Rust 1.100.0, Jujutsu, Weaver, and native build
 prerequisites. The native image adds Verus and its Z3, Charon and Aeneas,
@@ -171,6 +175,36 @@ Record run links, outcomes and cache sizes before cleanup. For paired runs,
 list by the specific branch ref with `--key ci-image-pair-v1-<run-id>-`, then
 delete only those reviewed cache IDs. A new full workflow run or attempt
 creates new seed keys.
+
+## Qualify the common compiler-seed variant
+
+Use the `common-seeded` publisher dispatch on trusted `develop`. The separate
+`common-seeded-<revision>` tag points to a common tool image with a release
+compiler cache for registry dependencies. The publisher requires the seeded
+launcher to accept the archived source and installed tools in its offline
+preflight. Common and native tags retain their tool-only contents.
+
+For a separate paired `verify` run, use this variant and its published digest.
+
+```json
+{
+  "revision": "<publisher develop commit SHA>",
+  "profile": "verify",
+  "candidate": "ghcr.io/kmosoti/fabrico11y-ci@sha256:<common-seeded image digest>",
+  "variant": "common-seeded",
+  "mode": "qualification"
+}
+```
+
+The seeded lane runs the same checks and release command. Only the release
+command uses the compiler seed. The lane records the preflight and raw
+sccache counters. An active cold seeded lane must register Rust cache hits.
+A warm lane still restores its exact role-specific Actions application cache
+and may already have fresh release outputs. Cold lanes begin with empty
+application and proof caches. The seed stays part of the image and never
+enters those caches. The workflow times the complete image pull and release
+launcher, including its cache initialization. Report this variant separately
+from tool-only results and use the same cold and warm timing gates.
 
 ## Adopt or revert
 
