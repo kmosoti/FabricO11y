@@ -40,8 +40,14 @@ forward triggered recompilation in a single-binary fixture. Extracting the
 exact Git archive restored the original file time and Cargo reused the
 binary. Another fixture changed the source from A to an equal-length B
 while preserving its earlier modification time. Restoring A's target
-directory allowed Cargo to run A again. The target must be bound to the
-tested source or cleaned of workspace output before use across sources.
+directory allowed Cargo to run A again.
+
+Both debug and release forms of a deleted auto-discovered binary and example
+survived separate Cargo workspace cleans. The next release build still
+succeeded, and the old executables remained runnable. The collection smoke
+runs the built `agent_harness` example directly, so a stale example could report
+a false pass. Compiled archives require an exact source match. Registry and
+Git dependency downloads can use a separate cache across source revisions.
 
 ## Hosted isolation and restore smoke
 
