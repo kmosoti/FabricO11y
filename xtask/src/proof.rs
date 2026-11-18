@@ -610,6 +610,11 @@ fn telemetry(root: &Path) -> Result<(), String> {
         "watermark_failed_flush_unchanged",
         "watermark_step_monotone",
         "watermark_trace_monotone",
+        "auto_budget_partition",
+        "lease_return_preserves_live",
+        "lease_return_fails_closed",
+        "lease_return_reclaims_idle_under_pressure",
+        "lease_return_preserves_desired_without_pressure",
     ];
     if report.lines().count() != names.len() {
         return Err(format!("unexpected Telemetry axiom audit count: {report}"));
@@ -637,33 +642,54 @@ fn telemetry(root: &Path) -> Result<(), String> {
     }
     let original =
         std::fs::read_to_string(root.join("proofs/Telemetry.lean")).map_err(|e| e.to_string())?;
-    let needle = "  if flushOk && decide (candidate > committed) then candidate else committed";
-    if original.matches(needle).count() != 1 {
-        return Err("Telemetry Lean mutant boundary no longer matches".into());
-    }
-    let mutant = original.replace(needle, "  candidate");
     let temp = evidence::non_tmp_tempdir()?;
-    let file = temp.path().join("TelemetryMutant.lean");
-    std::fs::write(&file, mutant).map_err(|e| e.to_string())?;
-    let output = Command::new("timeout")
-        .arg("60")
-        .arg(&lean)
-        .args(["-E", "warning"])
-        .arg(&file)
-        .current_dir(root)
-        .output()
-        .map_err(|e| e.to_string())?;
-    let diagnostic = format!(
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    if output.status.success() || output.status.code() == Some(124) || !diagnostic.contains("error")
-    {
-        return Err(format!(
-            "telemetry failed-flush mutant was not rejected: {diagnostic}"
-        ));
+    for (name, needle, replacement) in [
+        (
+            "failed-flush",
+            "  if flushOk && decide (candidate > committed) then candidate else committed",
+            "  candidate",
+        ),
+        (
+            "return-live-lease",
+            "  leased - (if pressure then owned else max owned desired)",
+            "  if pressure then leased else leased - max owned desired",
+        ),
+        (
+            "omit-budget-rounding",
+            "  limit / 4 + if limit % 4 = 0 then 0 else 1",
+            "  limit / 4",
+        ),
+    ] {
+        if original.matches(needle).count() != 1 {
+            return Err(format!(
+                "Telemetry Lean {name} mutant boundary no longer matches"
+            ));
+        }
+        let file = temp.path().join("TelemetryMutant.lean");
+        std::fs::write(&file, original.replace(needle, replacement)).map_err(|e| e.to_string())?;
+        let output = Command::new("timeout")
+            .arg("60")
+            .arg(&lean)
+            .args(["-E", "warning"])
+            .arg(&file)
+            .current_dir(root)
+            .output()
+            .map_err(|e| e.to_string())?;
+        let diagnostic = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        if output.status.success()
+            || output.status.code() == Some(124)
+            || !diagnostic.contains("error")
+        {
+            return Err(format!(
+                "Telemetry Lean {name} mutant was not rejected: {diagnostic}"
+            ));
+        }
+        println!("Telemetry Lean {name} mutant rejected");
     }
-    println!("{report}\nTelemetry failed-flush mutant rejected");
+    println!("{report}");
     Ok(())
 }
