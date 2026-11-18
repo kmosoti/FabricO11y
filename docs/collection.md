@@ -14,6 +14,26 @@ See the [SDK](contracts/sdk.md) and [collector](contracts/spindle.md) contracts.
 | Single host, co-located receiver | `install-stack` provisions Spindle, the local collector, and Fabric Server. The local and canonical projections have separate progress. |
 | Multiple hosts, one receiver | Spindle forwards each origin through a loopback tunnel to one Fabric Server. Each host can run its own collector. Use `fabric-query` for source-fenced receiver queries. |
 
+## Check live readiness
+
+`fabric production-ready --json` checks the resident collector's Doctor report
+and the local Spindle status. The default check stays on this host. Use
+`fabric production-ready --require-canonical --json` when this host
+must also reach its authenticated receiver and find its exact Spindle origin in
+the receiver's current progress. The receiver authority must match the running
+Spindle's configured forwarding authority. The supplied credential must
+authorize reading this origin. Use `--server-endpoint` and
+`--reader-credential-file` to override service settings. The Spindle socket
+follows the explicit option or environment, the collector profile, the Spindle
+settings, and then the default socket.
+
+JSON, `--table`, and `--arrow` report each probe and its reason. Exit status is
+0 for ready, 2 for an observed unhealthy collector, missing canonical origin,
+unconfigured forwarding authority, or authority mismatch,
+and 3 when required evidence is unavailable. These results describe current
+service responses. Use `fabric projection-ready` for a particular receipt and
+`fabric guide` for the documented proof scope.
+
 For local-only host collection, start Spindle with the
 [local installer](#install-and-configure). Install [the repository slice unit](../config/fabrico11y.slice)
 in the user unit directory and reload the user manager. Create the data and

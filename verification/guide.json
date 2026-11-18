@@ -4,7 +4,7 @@
     {
       "id": "local",
       "title": "Single-host observability",
-      "summary": "Inspect current Linux host and agent observations from the local collector without connecting to a receiver.",
+      "summary": "Inspect local host and agent observations; fabric production-ready checks the resident collector and Spindle without requiring a receiver.",
       "scenarios": [
         {
           "description": "Read a locally collected metric",
@@ -40,7 +40,7 @@
     {
       "id": "custody",
       "title": "Spindle and canonical custody",
-      "summary": "Inspect durable local Spindle and optional receiver custody. Each contiguous receiver frontier belongs to one configured origin.",
+      "summary": "Inspect durable local Spindle and optional receiver custody. fabric production-ready --require-canonical checks progress for the local origin; each contiguous frontier belongs to one configured origin.",
       "scenarios": [
         {
           "description": "Compare the Spindle, receiver, and collector frontiers",

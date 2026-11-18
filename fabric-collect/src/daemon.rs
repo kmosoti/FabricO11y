@@ -35,7 +35,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use tokio::io::{AsyncWriteExt, BufReader as TokioBufReader};
-use tokio::net::UnixListener;
+use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::Semaphore;
 
 const MAX_SPINDLE_STAGED_ITEMS: usize = 1024;
@@ -444,6 +444,30 @@ pub fn query_daemon_socket(sock_path: &Path, req: &DaemonRequest) -> Option<Daem
 #[must_use]
 pub fn query_running_daemon(layout: &StorageLayout, req: &DaemonRequest) -> Option<DaemonResponse> {
     query_daemon_socket(&default_daemon_socket(layout), req)
+}
+
+/// Read one resident Doctor response with a bounded size and total I/O deadline.
+#[must_use]
+pub async fn query_running_doctor(layout: &StorageLayout) -> Option<fabric_core::DoctorReport> {
+    let socket = default_daemon_socket(layout);
+    tokio::time::timeout(Duration::from_millis(750), async {
+        let mut stream = UnixStream::connect(socket).await.ok()?;
+        let mut request = serde_json::to_vec(&DaemonRequest::Doctor).ok()?;
+        request.push(b'\n');
+        stream.write_all(&request).await.ok()?;
+        let mut reader = TokioBufReader::new(stream);
+        let line = read_bounded_line(&mut reader, RPC_LINE_LIMIT_BYTES)
+            .await
+            .ok()?
+            .flatten()?;
+        match serde_json::from_str::<DaemonResponse>(&line).ok()? {
+            DaemonResponse::Doctor(report) => Some(report),
+            _ => None,
+        }
+    })
+    .await
+    .ok()
+    .flatten()
 }
 
 /// Performs a single deterministic collection cycle without starting the resident daemon.
