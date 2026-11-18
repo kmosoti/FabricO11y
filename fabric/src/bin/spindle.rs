@@ -1,8 +1,7 @@
 use fabric::spindle::{Config, Daemon, Reply, Request, transport};
 use std::{
     env,
-    fs::File,
-    io::{Read, Write},
+    io::Write,
     path::Path,
     time::{Duration, Instant},
 };
@@ -57,7 +56,7 @@ fn export(socket: &str) -> Result<(), String> {
 fn run() -> Result<(), String> {
     let args: Vec<String> = env::args().skip(1).collect();
     match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice(){
-        ["serve",path]=>{let mut bytes=Vec::new();File::open(path).map_err(|e|e.to_string())?.take(65537).read_to_end(&mut bytes).map_err(|e|e.to_string())?;fabric::observation::check_json(&bytes,65536)?;let config:Config=serde_json::from_slice(&bytes).map_err(|e|e.to_string())?;let mut daemon=Daemon::open(config)?;if daemon.enable_self_telemetry().is_err() {eprintln!("spindle: self-telemetry configuration unavailable");}fabric::spindle::notify_systemd_ready();daemon.run()},
+        ["serve",path]=>{let config = fabric::config::load::<Config>(Path::new(path))?;let mut daemon=Daemon::open(config)?;if daemon.enable_self_telemetry().is_err() {eprintln!("spindle: self-telemetry configuration unavailable");}fabric::spindle::notify_systemd_ready();daemon.run()},
         ["status",socket]=>print_reply(request(socket,&Request::Status)?),
         ["stop",socket]=>print_reply(request(socket,&Request::Stop)?),
         ["read",socket]=>print_reply(request(socket,&Request::Read{after:0,limit:1})?),

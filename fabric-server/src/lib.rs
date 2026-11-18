@@ -900,17 +900,7 @@ pub fn cli() -> Result<(), String> {
         .as_slice()
     {
         ["serve", config] => {
-            use std::io::Read;
-            let mut bytes = Vec::new();
-            fs::File::open(config)
-                .map_err(|e| e.to_string())?
-                .take(65537)
-                .read_to_end(&mut bytes)
-                .map_err(|e| e.to_string())?;
-            if bytes.len() > 65536 {
-                return Err("configuration limit".into());
-            }
-            let server = Server::open(serde_json::from_slice(&bytes).map_err(|e| e.to_string())?)?;
+            let server = Server::open(fabric::config::load(Path::new(config))?)?;
             let stop = server.stop_handle();
             let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel::<Result<(), String>>(1);
             thread::Builder::new()
@@ -1163,5 +1153,23 @@ mod receipt_tests {
                 ..
             }
         ));
+    }
+}
+
+#[cfg(test)]
+mod config_example_test {
+    #[test]
+    fn receiver_example_uses_executable_schema() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../config/server.toml");
+        let config: super::Config = fabric::config::load(&path).unwrap();
+        assert!(
+            config
+                .listen
+                .parse::<std::net::SocketAddr>()
+                .unwrap()
+                .ip()
+                .is_loopback()
+        );
+        assert_eq!(config.nodes.len(), 1);
     }
 }

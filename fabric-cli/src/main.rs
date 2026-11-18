@@ -4,22 +4,21 @@ use arrow::array::{BooleanArray, StringArray, UInt64Array};
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::record_batch::RecordBatch;
 use chrono::Utc;
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand};
 use fabric::canonical::{self, Request as CanonicalRequest, Response as CanonicalResponse};
 use fabric::spindle::{Reply as SpindleReply, Request as SpindleRequest, transport};
 use fabric_collect::{
-    CollectedState, DaemonConfig, DaemonRequest, DaemonResponse, IngestEnvelope,
-    SelfPreservationGuard, collect_once, configured_host_export_node, default_spindle_socket,
-    is_forwarded_host_signal, poll_spindle_projection_records, query_running_daemon, run_daemon,
-    run_spindle_only_daemon,
+    CollectedState, DaemonRequest, DaemonResponse, IngestEnvelope, SelfPreservationGuard,
+    collect_once, configured_host_export_node, default_spindle_socket, is_forwarded_host_signal,
+    poll_spindle_projection_records, query_running_daemon, run_daemon, run_spindle_only_daemon,
 };
 use fabric_core::arrow_schemas::{
     blame_to_record_batch, doctor_to_record_batch, drift_to_record_batch,
     encode_batches_to_ipc_stream, snapshot_to_record_batch,
 };
 use fabric_core::{
-    BlameReport, BlameResource, CliEnvelope, DEFAULT_DATA_DIR, DEFAULT_TMP_DIR, DoctorReport,
-    DriftReport, HostSnapshot, PillarKind, StorageLayout,
+    BlameReport, BlameResource, CliEnvelope, DEFAULT_TMP_DIR, DoctorReport, DriftReport,
+    HostSnapshot, PillarKind, StorageLayout,
 };
 use fabric_graph::{Direction, LineageSubgraph, lineage_to_record_batch};
 use fabric_query::unified::{
@@ -36,6 +35,7 @@ use std::time::{Duration, Instant};
 
 mod guide;
 mod projection_ready;
+mod settings;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OutputFormat {
@@ -52,12 +52,16 @@ enum OutputFormat {
 )]
 struct Cli {
     /// Non-tmpfs directory for redb OLTP state and ZSTD Parquet partitions.
-    #[arg(long, env = "FABRIC_DATA_DIR", default_value = DEFAULT_DATA_DIR, global = true)]
-    data_dir: PathBuf,
+    #[arg(long, env = "FABRIC_DATA_DIR", global = true)]
+    data_dir: Option<PathBuf>,
 
     /// Non-tmpfs temporary scratch directory.
     #[arg(long, env = "FABRIC_TMP_DIR", global = true)]
     tmp_dir: Option<PathBuf>,
+
+    /// Versioned Fabric TOML settings. Defaults to the user configuration directory.
+    #[arg(long, env = "FABRIC_CONFIG_FILE", global = true)]
+    config: Option<PathBuf>,
 
     /// Emit structured versioned JSON (default when stdout is not a TTY).
     #[arg(long, global = true, conflicts_with_all = ["arrow", "table"])]
@@ -79,6 +83,8 @@ struct Cli {
 enum Commands {
     /// Look up features, tested scenarios, and scoped proof references offline.
     Guide(guide::GuideArgs),
+    /// Inspect effective configuration as TOML or JSON without starting a daemon.
+    Settings(DaemonArgs),
     /// Capture or inspect the latest live host, slice, cgroup, unit, and storage snapshot.
     Snapshot,
     /// Query historical ZSTD Parquet + hot RAM ring/live state via DataFusion.
@@ -147,10 +153,10 @@ struct DriftArgs {
 
 #[derive(Debug, Clone, Args)]
 struct CustodyArgs {
-    /// Path to Spindle Unix socket (defaults to spindle.json or XDG_RUNTIME_DIR/spindle/spindle.sock).
+    /// Path to Spindle Unix socket (defaults to the Spindle settings file or XDG_RUNTIME_DIR/spindle/spindle.sock).
     #[arg(long, env = "SPINDLE_SOCKET")]
     spindle_socket: Option<PathBuf>,
-    /// HTTP endpoint of fabric-server (defaults to spindle.json forwarding.endpoint or server.json listen).
+    /// HTTP endpoint of fabric-server (defaults to Spindle forwarding or server listen settings).
     #[arg(long, env = "FABRIC_SERVER_ENDPOINT")]
     server_endpoint: Option<String>,
     /// Reader credential file used to query canonical progress from fabric-server.
@@ -161,13 +167,19 @@ struct CustodyArgs {
 #[derive(Debug, Args)]
 struct DaemonArgs {
     /// Collection tick interval in milliseconds.
-    #[arg(long, default_value_t = 2000)]
-    interval_ms: u64,
+    #[arg(long)]
+    interval_ms: Option<u64>,
+    /// Maximum hot metric ring payload in bytes.
+    #[arg(long)]
+    ring_budget_bytes: Option<usize>,
+    /// Maximum retained local Parquet data in bytes.
+    #[arg(long)]
+    max_disk_bytes: Option<u64>,
     /// Run a single collection & persistence cycle and exit.
     #[arg(long)]
     once: bool,
     /// Project from a dedicated Spindle socket without collecting host or ingest data.
-    #[arg(long, requires = "spindle_socket", conflicts_with = "once")]
+    #[arg(long, conflicts_with = "once")]
     spindle_only: bool,
     /// Stop automatically after N ticks.
     #[arg(long)]
@@ -206,14 +218,8 @@ fn resolve_cli_tmp_dir(explicit: Option<&Path>) -> Result<PathBuf, String> {
 }
 
 async fn run() -> Result<(), String> {
-    let cli = Cli::parse();
-    if let Commands::ProjectionReady(args) = cli.command {
-        std::process::exit(projection_ready::run(
-            args,
-            cli.data_dir,
-            cli.arrow || cli.table,
-        ));
-    }
+    let matches = Cli::command().get_matches();
+    let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|error| error.exit());
     let format = if cli.json {
         OutputFormat::Json
     } else if cli.arrow {
@@ -227,14 +233,25 @@ async fn run() -> Result<(), String> {
     if let Commands::Guide(args) = &cli.command {
         return guide::run(args, format);
     }
-    let tmp_dir = resolve_cli_tmp_dir(cli.tmp_dir.as_deref())?;
-    let layout = validated_storage_layout(&cli.data_dir)?;
+    let (profile_path, profile) = settings::load_profile(cli.config.as_deref())?;
+    let (data_dir, _) = settings::data_dir(&cli, &matches, &profile);
+    if let Commands::ProjectionReady(args) = cli.command {
+        std::process::exit(projection_ready::run(
+            args,
+            data_dir,
+            cli.arrow || cli.table,
+        ));
+    }
+    if let Commands::Settings(args) = &cli.command {
+        let effective = settings::effective(&cli, &matches, &profile, args)?;
+        return settings::print(&cli, args, effective, profile_path.as_deref());
+    }
+    let (tmp_dir, _) = settings::tmp_dir(&cli, &matches, &profile)?;
+    let layout = validated_storage_layout(&data_dir)?;
 
     match &cli.command {
-        Commands::Guide(_) | Commands::ProjectionReady(_) => {
-            unreachable!(
-                "offline guide and projection readiness dispatch before storage resolution"
-            )
+        Commands::Guide(_) | Commands::ProjectionReady(_) | Commands::Settings(_) => {
+            unreachable!("commands dispatched before storage access")
         }
         Commands::Snapshot => {
             let snap = fetch_snapshot(&layout, &tmp_dir)?;
@@ -380,20 +397,15 @@ async fn run() -> Result<(), String> {
             }
         }
         Commands::Daemon(args) => {
-            let cli_spindle_sock = non_empty_path(args.spindle_socket.clone());
-            if args.spindle_only && cli_spindle_sock.is_none() {
-                return Err("Spindle-only projection requires a nonempty Spindle socket".into());
-            }
-            if let Some(ref sock) = cli_spindle_sock {
-                validate_non_tmp_path_on_disk(sock).map_err(|e| e.to_string())?;
-            }
+            let mut daemon_config = settings::effective(&cli, &matches, &profile, args)?.config;
+            daemon_config.data_dir = layout.data_dir().to_path_buf();
             if args.once {
                 let export_node = configured_host_export_node()?;
                 let catalog = CatalogStore::open(layout.data_dir())?;
                 let _writer_lock = fabric_store::try_acquire_writer_lock(catalog.layout())?;
                 let state = collect_once(catalog.layout().data_dir(), &tmp_dir)?;
                 let olap = fabric_store::OlapParquetStore::new(catalog.layout().clone());
-                let spindle_sock = cli_spindle_sock.or_else(default_spindle_socket);
+                let spindle_sock = daemon_config.spindle_socket.clone();
                 let mut spindle_range = None;
                 let mut spindle_error = None;
                 let mut spindle_metrics = Vec::new();
@@ -485,16 +497,6 @@ async fn run() -> Result<(), String> {
                     return Err(error);
                 }
                 return emit_json("daemon_once", &state.snapshot.self_health);
-            }
-            let mut daemon_config = DaemonConfig {
-                data_dir: layout.data_dir().to_path_buf(),
-                tmp_dir,
-                interval_ms: args.interval_ms,
-                max_ticks: args.max_ticks,
-                ..Default::default()
-            };
-            if let Some(spindle_sock) = cli_spindle_sock {
-                daemon_config.spindle_socket = Some(spindle_sock);
             }
             if args.spindle_only {
                 run_spindle_only_daemon(daemon_config).await
@@ -849,21 +851,36 @@ fn truncate(s: &str, max: usize) -> String {
     }
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Serialize, Default)]
 struct SpindleFileConfigHint {
     socket: Option<PathBuf>,
     forwarding: Option<SpindleForwardHint>,
+    quota_bytes: Option<u64>,
+    max_connections: Option<usize>,
+    client_timeout_ms: Option<u64>,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Serialize, Default)]
 struct SpindleForwardHint {
     endpoint: Option<String>,
+    authority: Option<String>,
+    credential_file: Option<PathBuf>,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Serialize, Default)]
 struct ServerFileConfigHint {
     listen: Option<String>,
     reader_credential_file: Option<PathBuf>,
+    quota_bytes: Option<u64>,
+    projection_quota_bytes: Option<u64>,
+    max_connections: Option<usize>,
+    nodes: Option<Vec<NodeCredentialHint>>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct NodeCredentialHint {
+    origin: String,
+    credential_file: PathBuf,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -905,13 +922,13 @@ fn fabrico11y_config_dir() -> Option<PathBuf> {
         .map(|h| PathBuf::from(h).join(".config").join("fabrico11y"))
 }
 
-fn read_optional_json<T: for<'de> Deserialize<'de> + Default>(path: &Path) -> Result<T, String> {
-    match std::fs::read_to_string(path) {
-        Ok(raw) => serde_json::from_str::<T>(&raw)
-            .map_err(|e| format!("invalid JSON in {}: {e}", path.display())),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(T::default()),
-        Err(err) => Err(format!("failed reading {}: {err}", path.display())),
-    }
+fn read_service_hint<T: serde::de::DeserializeOwned + Default>(
+    directory: &Path,
+    stem: &str,
+) -> Result<T, String> {
+    Ok(fabric::config::discover(directory, stem)?
+        .map(|(_, settings)| settings)
+        .unwrap_or_default())
 }
 
 fn normalize_canonical_endpoint(raw: String) -> Result<String, String> {
@@ -938,7 +955,7 @@ fn fetch_custody_status(
     let config_dir = fabrico11y_config_dir();
     let mut spindle_error: Option<String> = None;
     let spindle_hint = match config_dir.as_ref() {
-        Some(d) => match read_optional_json::<SpindleFileConfigHint>(&d.join("spindle.json")) {
+        Some(d) => match read_service_hint::<SpindleFileConfigHint>(d, "spindle") {
             Ok(h) => h,
             Err(err) => {
                 spindle_error = Some(err);
@@ -949,7 +966,7 @@ fn fetch_custody_status(
     };
     let mut server_error: Option<String> = None;
     let server_hint = match config_dir.as_ref() {
-        Some(d) => match read_optional_json::<ServerFileConfigHint>(&d.join("server.json")) {
+        Some(d) => match read_service_hint::<ServerFileConfigHint>(d, "server") {
             Ok(h) => h,
             Err(err) => {
                 server_error = Some(err);
@@ -1074,7 +1091,7 @@ fn fetch_custody_status(
             },
             None if report.server_error.is_none() => {
                 report.server_error = Some(
-                    "reader_credential_file not configured (pass --reader-credential-file or set server.json)"
+                    "reader_credential_file not configured (pass --reader-credential-file or set the server settings file)"
                         .into(),
                 );
             }
