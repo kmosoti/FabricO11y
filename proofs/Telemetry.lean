@@ -122,6 +122,47 @@ theorem watermark_trace_monotone (initial : Nat) (steps : List (Nat × Bool)) :
       have h2 := ih (watermarkStep initial step.1 step.2)
       omega
 
+/- A quarter of a known capacity stays outside elastic admission. Compute
+   the ceiling by quotient and remainder so a machine implementation can
+   avoid adding to the original capacity. -/
+def autoHeadroom (limit : Nat) : Nat :=
+  limit / 4 + if limit % 4 = 0 then 0 else 1
+
+def autoSpendable (limit : Nat) : Nat := limit - autoHeadroom limit
+
+theorem auto_budget_partition (limit : Nat) :
+    autoSpendable limit + autoHeadroom limit = limit ∧
+    limit ≤ 4 * autoHeadroom limit ∧
+    4 * autoHeadroom limit < limit + 4 := by
+  unfold autoSpendable autoHeadroom
+  split <;> omega
+
+/- Ownership covers queued, borrowed, and in-flight charges until their
+   normal disposition completes. Pressure releases idle capacity only. -/
+def leaseReturn (leased owned desired : Nat) (pressure : Bool) : Nat :=
+  leased - (if pressure then owned else max owned desired)
+
+theorem lease_return_preserves_live (leased owned desired : Nat) (pressure : Bool)
+    (accounted : owned ≤ leased) :
+    owned ≤ leased - leaseReturn leased owned desired pressure := by
+  cases pressure <;> simp [leaseReturn] <;> omega
+
+theorem lease_return_fails_closed (leased owned desired : Nat) (pressure : Bool)
+    (inconsistent : leased < owned) : leaseReturn leased owned desired pressure = 0 := by
+  cases pressure <;> simp [leaseReturn] <;> omega
+
+theorem lease_return_reclaims_idle_under_pressure (leased owned desired : Nat)
+    (accounted : owned ≤ leased) :
+    leased - leaseReturn leased owned desired true = owned := by
+  simp [leaseReturn]
+  omega
+
+theorem lease_return_preserves_desired_without_pressure (leased owned desired : Nat)
+    (fits : desired ≤ leased) :
+    desired ≤ leased - leaseReturn leased owned desired false := by
+  simp [leaseReturn]
+  omega
+
 #print axioms gorilla_step_roundtrip
 #print axioms gorilla_stream_roundtrip
 #print axioms rollup_bucket_aligned
@@ -131,4 +172,9 @@ theorem watermark_trace_monotone (initial : Nat) (steps : List (Nat × Bool)) :
 #print axioms watermark_failed_flush_unchanged
 #print axioms watermark_step_monotone
 #print axioms watermark_trace_monotone
+#print axioms auto_budget_partition
+#print axioms lease_return_preserves_live
+#print axioms lease_return_fails_closed
+#print axioms lease_return_reclaims_idle_under_pressure
+#print axioms lease_return_preserves_desired_without_pressure
 end Telemetry
