@@ -211,14 +211,18 @@ flowchart LR
     Native --> Offline
     Offline --> Registry["Publish images and record digests"]
     Registry --> Plan["Validate source and public digest on a trial branch"]
-    Plan --> Cold["Compare baseline and candidate with fresh hosted runners"]
+    Plan --> Cold["Compare both lanes on each hosted VM"]
     Cold --> Warm["Repeat with exact cache hits on fresh hosted runners"]
     Warm --> Review["Review adoption in development checks"]
 ```
 
-The qualification workflow runs isolated cold and warm samples for both required
-job profiles. Warm samples reuse their variant’s immutable cache seed. The development jobs continue to use their current Fedora image
-until the candidate digests pass hosted qualification. See
+The qualification workflow runs both variants on the same hosted VM for each
+cold or warm pair. Each lane uses a fresh container store. Warm lanes restore
+only their exact trial cache. The development jobs use the current Fedora image
+until candidate digests pass hosted qualification. The workflow reuses
+dependency downloads across source revisions. Its compiled Cargo and fuzz
+archives require the exact tested commit and compatible build inputs.
+Only successful `develop` pushes publish these caches. See
 [CI image qualification](ci-images.md) for the comparison and adoption procedure.
 
 ## 4. Single-Host and Distributed Deployment
