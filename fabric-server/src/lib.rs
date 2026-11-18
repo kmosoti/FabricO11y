@@ -42,6 +42,9 @@ pub struct Config {
     pub projection_quota_bytes: u64,
     pub reader_credential_file: PathBuf,
     pub nodes: Vec<NodeGrant>,
+    /// Optional retained payload limits for dedicated telemetry origins.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub node_quota_bytes: BTreeMap<String, u64>,
     #[serde(default)]
     pub engine_endpoint: Option<String>,
     #[serde(default = "connections")]
@@ -143,10 +146,18 @@ impl Server {
             }
             nodes.insert(node.origin.clone(), token);
         }
-        let ledger = Arc::new(Mutex::new(Ledger::open_with_engine(
+        if config
+            .node_quota_bytes
+            .keys()
+            .any(|origin| !nodes.contains_key(origin))
+        {
+            return Err("canonical node quota requires a configured origin".into());
+        }
+        let ledger = Arc::new(Mutex::new(Ledger::open_with_node_quotas(
             &config.storage,
             config.quota_bytes,
             config.engine_endpoint.as_deref(),
+            config.node_quota_bytes,
         )?));
         ledger::private_dir(&config.projection)?;
         let mut projection_state =

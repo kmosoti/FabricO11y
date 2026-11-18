@@ -149,3 +149,23 @@ flowchart LR
     DMN -->|"persist spindle_watermark_id post-Parquet flush"| SPN
     CLI["fabric custody --json & fabric doctor --json"] -->|"inspect socket + HTTP frontier + slice self-health"| Slice
 ```
+
+## Service self-telemetry custody
+
+Service exporters submit observations through the local SDK into a dedicated
+Spindle socket and custody directory. Each service instance owns a bounded SDK
+queue. The telemetry Spindle owns a separate persistent origin and can forward
+through the existing canonical protocol. Use separate local projection storage
+when inspecting this origin alongside the workload Spindle origin.
+
+```mermaid
+flowchart LR
+    SPN["Workload Spindle"] -->|"bounded SDK queue"| TELE["Telemetry Spindle socket and custody"]
+    SRV["Fabric Server"] -->|"bounded SDK queue"| TELE
+    TELE -->|"distinct origin and credential"| SRV
+    TELE -->|"origin-bound reads"| LOCAL["Local telemetry projection"]
+```
+
+The telemetry Spindle runs with self-telemetry export disabled. Services suppress
+per-record telemetry for activity on this lane and report queue and delivery
+diagnostics locally.

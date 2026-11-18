@@ -66,12 +66,10 @@ impl SelfTelemetry {
         exclude_socket: Option<&Path>,
     ) -> Result<Self, String> {
         let socket = private_socket_path(socket)?;
-        if let Some(excluded) = exclude_socket {
-            if socket == private_socket_path(excluded)? {
-                return Err(
-                    "self-telemetry Spindle socket must differ from the service socket".into(),
-                );
-            }
+        if let Some(excluded) = exclude_socket
+            && socket == private_socket_path(excluded)?
+        {
+            return Err("self-telemetry Spindle socket must differ from the service socket".into());
         }
         let name = service.name();
         let mut config = sdk::Config::local(socket, format!("{name}.self"))?;
