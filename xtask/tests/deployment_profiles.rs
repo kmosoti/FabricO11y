@@ -73,7 +73,9 @@ impl Node {
     fn open(bins: &Path, root: &Path, name: &str, credential: &str) -> Self {
         let path = root.join(name);
         fs::create_dir(&path).unwrap();
-        let config = collection_lab::config(&path);
+        let mut config = collection_lab::config(&path);
+        // The 15% CPU slice is shared by all four service processes.
+        config.client_timeout_ms = 2_000;
         let credential_file = path.join("credential");
         private_file(&credential_file, credential);
         let mut node = Self {
@@ -121,7 +123,7 @@ impl Node {
             record.as_bytes(),
             Instant::now() + Duration::from_secs(3),
         )
-        .unwrap()
+        .unwrap_or_else(|error| panic!("submit to {}: {error}", self.config.socket.display()))
     }
 }
 
@@ -372,22 +374,23 @@ fn canonical_rows(endpoint: &str, authority: &str, snapshot: BTreeMap<String, u6
     response.rows
 }
 
-fn read_lane(lane: &Node) -> Vec<(u64, Vec<u8>)> {
-    let mut records = Vec::new();
-    let mut after = 0;
-    for _ in 0..100 {
-        let mut reply = spindle::transport::read_raw(
+fn read_lane(lane: &Node, through: u64, records: &mut Vec<(u64, Vec<u8>)>) -> Result<(), String> {
+    let mut after = records.last().map_or(0, |(id, _)| *id);
+    while after < through {
+        let mut reply = spindle::transport::read_raw_for_origin(
             &lane.config.socket,
+            &lane.origin,
             after,
-            Instant::now() + Duration::from_secs(2),
-        )
-        .unwrap();
-        let Some((id, raw)) = reply.pop() else { break };
+            Instant::now() + Duration::from_secs(3),
+        )?;
+        let (id, raw) = reply
+            .pop()
+            .expect("missing record inside durable lane prefix");
         assert_eq!(id, after + 1);
         after = id;
         records.push((id, raw));
     }
-    records
+    Ok(())
 }
 
 fn signal_coverage(records: &[(u64, Vec<u8>)]) -> BTreeMap<String, BTreeSet<&'static str>> {
@@ -584,12 +587,17 @@ fn local_and_canonical_deployment_profiles() {
     // Exercise one application operation while the restarted receiver measures new work.
     assert_eq!(alpha.submit(&observations("alpha-after-recovery", 4)).id, 4);
     let complete = BTreeSet::from(["metric", "event", "log", "trace"]);
-    let melt = until("both services emit MELT", Duration::from_secs(100), || {
-        let records = read_lane(&lane);
-        let coverage = signal_coverage(&records);
+    let mut melt = Vec::new();
+    until("both services emit MELT", Duration::from_secs(120), || {
+        let through = status(&lane.config)?.highest_record_id.min(100);
+        if let Err(error) = read_lane(&lane, through, &mut melt) {
+            eprintln!("retrying a read-only MELT lane snapshot: {error}");
+            return None;
+        }
+        let coverage = signal_coverage(&melt);
         (coverage.get("spindle.self") == Some(&complete)
             && coverage.get("fabric-server.self") == Some(&complete))
-        .then_some(records)
+        .then_some(())
     });
     let through = melt.last().unwrap().0;
     until(
@@ -607,16 +615,36 @@ fn local_and_canonical_deployment_profiles() {
         assert!(
             canonical_melt.iter().any(|row| {
                 row["origin"] == lane.origin
-                    && row["source_id"] == id.to_string()
+                    && row["source_id"]
+                        .as_str()
+                        .and_then(|source| source.parse().ok())
+                        == Some(id)
                     && row["raw"].as_str().unwrap().as_bytes() == raw
             }),
             "missing exact canonical MELT row {id}"
         );
     }
     let local_melt = root.join("local-melt");
-    for _ in 0..through.div_ceil(64) {
-        project(&bins, root, &local_melt, &lane.config.socket);
-    }
+    let projection = local(
+        &bins,
+        root,
+        &local_melt,
+        &[
+            "daemon",
+            "--spindle-only",
+            "--interval-ms",
+            "500",
+            "--max-ticks",
+            "32",
+            "--spindle-socket",
+            lane.config.socket.to_str().unwrap(),
+        ],
+    );
+    assert!(
+        projection.status.success(),
+        "{}",
+        String::from_utf8_lossy(&projection.stderr)
+    );
     for domain in ["metrics", "logs", "traces"] {
         let query = parse_output(
             local(
