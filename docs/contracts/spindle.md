@@ -113,3 +113,24 @@ submissions. Receipts and lease replies are published after the outer commit
 succeeds; a failed commit closes queued replies so clients retain unknown outcomes.
 The commit-latency metric measures that durable batch. Idle and waiting iterations
 sleep; successful admission can immediately progress committed replies.
+
+## Self-telemetry
+
+Set `FABRIC_SELF_TELEMETRY_SOCKET` on the workload Spindle process to send its
+metrics, events, logs, and sampled custody commit traces to a separate local
+Spindle instance. The telemetry instance owns its own store and origin. Leave
+the variable unset for that instance and give it the telemetry origin's own
+forwarding credentials if canonical delivery is configured. The workload
+Spindle refuses to export to its own socket and still serves if exporter
+configuration or delivery is unavailable.
+
+Spindle emits a sample every 30 seconds, covering ingestion, queue pressure,
+and forwarding lag and failure. A sample includes the last successful durable
+connection batch's commit latency when available. Forwarding failure and
+recovery transitions use fixed messages. Telemetry carries service identity
+and operation names without workload payloads or credentials.
+
+When configured, `spindle status` includes `self_telemetry` with accepted,
+confirmed, queued and dropped counts and a blocked indicator. Acceptance is
+in-process queue admission. Confirmation means local telemetry custody; that
+instance reports canonical forwarding progress separately.

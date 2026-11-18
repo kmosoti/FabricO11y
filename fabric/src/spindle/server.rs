@@ -1,9 +1,13 @@
 use super::{
-    Config, Health, READ_ORIGIN_MISMATCH, Reply, Request,
+    Config, Health, READ_ORIGIN_MISMATCH, Reply, Request, SelfTelemetryHealth,
     custody::Store,
     sources::{self, FileSource, HostSource, JournalSource},
 };
-use crate::observation;
+use crate::{
+    observation::{self, Data, Level, MetricType, Outcome},
+    sdk::Admission,
+    self_telemetry::{SelfTelemetry, Service},
+};
 use rustix::net::sockopt::socket_peercred;
 use std::{
     fs,
@@ -36,6 +40,156 @@ struct ForwardReceipt {
     through: u64,
     sent_through: u64,
 }
+
+const SELF_TELEMETRY_INTERVAL: Duration = Duration::from_secs(30);
+
+struct SelfReporter {
+    lane: SelfTelemetry,
+    next_report: Instant,
+    forwarding_failed: bool,
+    commit_ns: Option<u64>,
+    start_event: bool,
+    start_log: bool,
+}
+
+impl SelfReporter {
+    fn new(lane: SelfTelemetry) -> Self {
+        Self {
+            lane,
+            next_report: Instant::now(),
+            forwarding_failed: false,
+            commit_ns: None,
+            start_event: false,
+            start_log: false,
+        }
+    }
+
+    fn emit(&self, data: Data) -> bool {
+        matches!(self.lane.try_emit(data), Admission::Accepted { .. })
+    }
+
+    fn health(&self) -> SelfTelemetryHealth {
+        let status = self.lane.status();
+        SelfTelemetryHealth {
+            accepted: status.delivery.accepted,
+            confirmed: status.delivery.confirmed,
+            queued: status.delivery.charged_slots,
+            dropped: status.dropped,
+            blocked: status.delivery.last_error.is_some(),
+        }
+    }
+
+    fn metric(&self, name: &str, unit: &str, value: u64, metric_type: MetricType) {
+        self.lane.try_emit(Data::Metric {
+            name: name.into(),
+            unit: unit.into(),
+            value: value as f64,
+            metric_type,
+            reset: false,
+        });
+    }
+
+    fn report(&mut self, health: &Health, store: &Store, forwarding_enabled: bool) {
+        self.next_report = Instant::now() + SELF_TELEMETRY_INTERVAL;
+        if !self.start_event {
+            self.start_event = self.emit(Data::Event {
+                name: "spindle.self_telemetry.started".into(),
+                message: "Spindle self-telemetry started".into(),
+            });
+        }
+        if !self.start_log {
+            self.start_log = self.emit(Data::Log {
+                level: Level::Info,
+                message: "Spindle reports to its configured telemetry lane".into(),
+            });
+        }
+        for (name, value) in [
+            ("spindle.ingestion.accepted", health.ingestion),
+            ("spindle.ingestion.refused", health.refusals),
+            ("spindle.ingestion.retries", health.retries),
+            ("spindle.connections.errors", health.errors),
+        ] {
+            self.metric(name, "1", value, MetricType::Counter);
+        }
+        self.metric(
+            "spindle.connections.active",
+            "1",
+            health.active_connections as u64,
+            MetricType::Gauge,
+        );
+        self.metric(
+            "spindle.connections.queue_bytes",
+            "By",
+            health.queue_bytes as u64,
+            MetricType::Gauge,
+        );
+        self.metric(
+            "spindle.self_telemetry.dropped",
+            "1",
+            self.health().dropped,
+            MetricType::Counter,
+        );
+        if forwarding_enabled {
+            if let (Ok(highest), Ok(forwarded)) = (store.highest_record_id(), store.forwarded()) {
+                self.metric(
+                    "spindle.forwarding.backlog",
+                    "1",
+                    highest.saturating_sub(forwarded),
+                    MetricType::Gauge,
+                );
+            }
+            let failed = health.forwarding_error.is_some();
+            self.metric(
+                "spindle.forwarding.failed",
+                "1",
+                u64::from(failed),
+                MetricType::Gauge,
+            );
+            if self.forwarding_failed != failed {
+                self.forwarding_failed = failed;
+                let (name, message, level) = if failed {
+                    (
+                        "spindle.forwarding.failed",
+                        "Spindle workload forwarding is blocked",
+                        Level::Warn,
+                    )
+                } else {
+                    (
+                        "spindle.forwarding.recovered",
+                        "Spindle workload forwarding recovered",
+                        Level::Info,
+                    )
+                };
+                self.lane.try_emit(Data::Event {
+                    name: name.into(),
+                    message: message.into(),
+                });
+                self.lane.try_emit(Data::Log {
+                    level,
+                    message: message.into(),
+                });
+            }
+        }
+        if let Some(duration_ns) = self.commit_ns {
+            self.metric(
+                "spindle.custody.commit_latency",
+                "ns",
+                duration_ns,
+                MetricType::Gauge,
+            );
+            if self.emit(Data::ServiceRequest {
+                service: "spindle".into(),
+                operation: "custody.commit".into(),
+                duration_ns,
+                status: Outcome::Ok,
+                trace_id: None,
+            }) {
+                self.commit_ns = None;
+            }
+        }
+    }
+}
+
 pub struct Daemon {
     config: Config,
     store: Store,
@@ -51,6 +205,7 @@ pub struct Daemon {
     next_source: usize,
     forward_worker: Option<std::sync::mpsc::Receiver<Result<ForwardReceipt, String>>>,
     next_forward: Instant,
+    self_reporter: Option<SelfReporter>,
 }
 impl Daemon {
     pub fn open(config: Config) -> Result<Self, String> {
@@ -111,8 +266,17 @@ impl Daemon {
             next_source: 0,
             forward_worker: None,
             next_forward: Instant::now(),
+            self_reporter: None,
         })
     }
+
+    /// Enables best-effort telemetry from the configured independent Spindle socket.
+    pub fn enable_self_telemetry(&mut self) -> Result<(), String> {
+        self.self_reporter = SelfTelemetry::from_env(Service::Spindle, Some(&self.config.socket))?
+            .map(SelfReporter::new);
+        Ok(())
+    }
+
     pub fn run(&mut self) -> Result<(), String> {
         while !self.stopping || !self.connections.is_empty() {
             let ingestion_before = self.health.ingestion;
@@ -183,6 +347,9 @@ impl Daemon {
             // its durable outer RELEASE, rather than only an inner savepoint.
             self.health.last_commit_latency_ns =
                 batch_started.elapsed().as_nanos().min(u64::MAX as u128) as u64;
+            if let Some(reporter) = &mut self.self_reporter {
+                reporter.commit_ns = Some(self.health.last_commit_latency_ns);
+            }
         }
         if !self.stopping {
             let total = self.files.len()
@@ -201,6 +368,13 @@ impl Daemon {
                 } else if let Some(host) = &mut self.host {
                     host.poll(&mut self.store)
                 }
+            }
+            if let Some(reporter) = &mut self.self_reporter
+                && Instant::now() >= reporter.next_report
+            {
+                self.health.active_connections = self.connections.len();
+                self.health.queue_bytes = connection_queue_bytes(&self.connections);
+                reporter.report(&self.health, &self.store, self.config.forwarding.is_some());
             }
         }
         Ok(())
@@ -280,13 +454,10 @@ impl Daemon {
         self.health.highest_record_id = self.store.highest_record_id().unwrap_or(0);
         self.health.custody_bytes = self.store.disk_bytes().unwrap_or(0);
         self.health.active_connections = self.connections.len();
-        self.health.queue_bytes = self
-            .connections
-            .iter()
-            .map(|c| c.body.capacity() + c.output.capacity())
-            .sum();
+        self.health.queue_bytes = connection_queue_bytes(&self.connections);
         self.health.uptime_ms = self.start.elapsed().as_millis() as u64;
         self.health.process_resident_bytes = sources::process_resident_bytes();
+        self.health.self_telemetry = self.self_reporter.as_ref().map(SelfReporter::health);
         self.health.source_status = self.files.iter().map(|s| s.status.clone()).collect();
         if let Some(j) = &self.journal {
             self.health.source_status.push(j.status.clone())
@@ -508,6 +679,13 @@ impl Daemon {
     pub fn socket(&self) -> &std::path::Path {
         &self.config.socket
     }
+}
+
+fn connection_queue_bytes(connections: &[Connection]) -> usize {
+    connections
+        .iter()
+        .map(|connection| connection.body.capacity() + connection.output.capacity())
+        .sum()
 }
 impl Drop for Daemon {
     fn drop(&mut self) {
@@ -1034,6 +1212,86 @@ mod batch_publication_tests {
         let store = Store::open(&config.storage, config.quota_bytes).unwrap();
         assert_eq!(store.count().unwrap(), 0);
         assert_eq!(store.highest_record_id().unwrap(), 0);
+    }
+
+    #[test]
+    fn self_telemetry_uses_separate_store_without_delaying_workload_custody() {
+        let temp = tempfile::Builder::new()
+            .prefix("spindle-melt-")
+            .tempdir_in(std::env::var_os("TMPDIR").unwrap_or_else(|| "/var/tmp".into()))
+            .unwrap();
+        let lane_path = temp.path().join("lane");
+        fs::create_dir(&lane_path).unwrap();
+        let lane_config = config(&lane_path);
+        let workload_config = config(temp.path());
+        let mut daemon = Daemon::open(workload_config.clone()).unwrap();
+        let lane =
+            SelfTelemetry::open(Service::Spindle, &lane_config.socket, Some(daemon.socket()))
+                .unwrap();
+        daemon.self_reporter = Some(SelfReporter::new(lane));
+        let mut client = submission(&workload_config);
+
+        // The telemetry socket is absent. Workload storage and receipt
+        // publication must still advance independently on consecutive ticks.
+        daemon.tick().unwrap();
+        daemon.tick().unwrap();
+        client.set_nonblocking(false).unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_secs(1)))
+            .unwrap();
+        let mut header = [0; 4];
+        client.read_exact(&mut header).unwrap();
+        let mut body = vec![0; u32::from_be_bytes(header) as usize];
+        client.read_exact(&mut body).unwrap();
+        assert!(matches!(
+            serde_json::from_slice::<Reply>(&body).unwrap(),
+            Reply::Receipt { receipt } if receipt.id == 1
+        ));
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !daemon.health().self_telemetry.unwrap().blocked {
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(5));
+        }
+
+        // Restore the dedicated store and drive both daemons. If a nonblocking
+        // SDK admission contends during a sample, a later sample retries.
+        let mut sink = Daemon::open(lane_config).unwrap();
+        let mut found = [false; 4];
+        let mut after = 0;
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while found.contains(&false) {
+            sink.tick().unwrap();
+            let status = daemon.health().self_telemetry.unwrap();
+            if status.queued == 0 {
+                daemon.self_reporter.as_mut().unwrap().next_report = Instant::now();
+            }
+            daemon.tick().unwrap();
+            while let Some((id, raw)) = sink.store.read_raw(after, 1).unwrap().pop() {
+                after = id;
+                let record = observation::decode_versioned(&raw).unwrap();
+                assert_eq!(record.identity().producer, "spindle.self");
+                match record.data() {
+                    Data::Metric { .. } => found[0] = true,
+                    Data::Event { .. } => found[1] = true,
+                    Data::Log { .. } => found[2] = true,
+                    Data::ServiceRequest { operation, .. } if operation == "custody.commit" => {
+                        found[3] = true;
+                    }
+                    data => panic!("unexpected self-telemetry: {data:?}"),
+                }
+            }
+            assert!(Instant::now() < deadline, "missing signal types: {found:?}");
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert_eq!(daemon.store.highest_record_id().unwrap(), 1);
+        let lane_origin = sink.store.origin().to_owned();
+        assert_ne!(daemon.store.origin(), lane_origin);
+        assert!(sink.health().self_telemetry.is_none());
+        drop(daemon.self_reporter.take());
+        drop(sink);
+        let reopened = Store::open(&lane_path.join("store"), 2 * 1024 * 1024).unwrap();
+        assert_eq!(reopened.origin(), lane_origin);
+        assert!(reopened.highest_record_id().unwrap() >= after);
     }
 }
 
