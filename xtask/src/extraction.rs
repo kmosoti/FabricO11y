@@ -182,6 +182,7 @@ pub fn check(root: &Path) -> Result<(), String> {
                     "projection_frontier_contract",
                     "projection_aborted_unchanged",
                     "elastic_spendable_contract",
+                    "elastic_can_admit_contract",
                     "elastic_lease_return_contract",
                     "ring_can_buffer_contract",
                     "disk_needs_eviction_contract",

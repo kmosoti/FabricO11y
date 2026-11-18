@@ -65,6 +65,14 @@ pub fn elastic_spendable(limit: u64) -> (spendable: u64)
     }
 }
 
+/// Admits one new owner only if the lease has room, even at maximum capacity.
+pub fn elastic_can_admit(leased: u64, owned: u64) -> (admitted: bool)
+    ensures
+        admitted == (owned as int + 1 <= leased as int),
+{
+    owned < leased
+}
+
 /// Releases only unused elastic charges. Stale accounting fails closed.
 pub fn elastic_lease_return(leased: u64, owned: u64, desired: u64, pressure: bool) -> (returned: u64)
     ensures

@@ -338,14 +338,15 @@ again once pressure clears. The cgroup headroom formula is a policy for the
 collector's optional work. It cannot reserve kernel memory for competing
 processes.
 
-At startup Spindle uses the process's soft descriptor limit, when known, to
-reserve a quarter of the descriptors rounded up. It subtracts the observed
-open descriptors from the remaining capacity and caps admission at the
-smaller of that result (with a minimum of one) and `max_connections`.
-This leaves room for normal storage and connection turnover when the
-descriptor limit permits it. `spindle status` reports `connection_limit`.
+At startup Spindle and Fabric Server reserve a quarter of the process's soft
+`RLIMIT_NOFILE`, rounded up. They subtract the number of open descriptors,
+including the directory scan itself, from the spendable count and cap admission
+at the smaller of that result (with a minimum of one) and `max_connections`.
+When the soft limit or descriptor count is unavailable, the configured cap still
+bounds admission. `spindle status` and the `fabric-server serve` readiness record
+report the effective `connection_limit`.
+
 On transient accept pressure, Spindle services its existing connections
 before trying to accept again. Replies and deadlines release the occupied
-descriptors. Receiver admission and projection already retry transient
-descriptor pressure. Neither mechanism changes custody collection rights or
-advances a durable frontier before its normal commit.
+descriptors. See [receiver resource pressure](canonical-custody.md#resource-pressure)
+for Fabric Server's analytical admission and recovery behavior.

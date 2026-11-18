@@ -184,6 +184,12 @@ theorem elastic_spendable_contract (limit : U64) :
   simp_all
   omega
 
+theorem elastic_can_admit_contract (leased owned : U64) :
+    telemetry.elastic_can_admit leased owned ⦃ admitted =>
+      admitted = true ↔ owned.val + 1 ≤ leased.val ⦄ := by
+  simp [telemetry.elastic_can_admit]
+  omega
+
 private theorem u64_saturating_sub_val (x y : U64) :
     (core.num.U64.saturating_sub x y).val = x.val - y.val := by
   change (BitVec.ofNat 64 (max 0 (x.val - y.val))).toNat = _
@@ -252,6 +258,7 @@ theorem rss_shedding_decision_contract (rss_bytes shed_limit_bytes : U64) :
 #print axioms projection_frontier_contract
 #print axioms projection_aborted_unchanged
 #print axioms elastic_spendable_contract
+#print axioms elastic_can_admit_contract
 #print axioms elastic_lease_return_contract
 #print axioms ring_can_buffer_contract
 #print axioms disk_needs_eviction_contract
