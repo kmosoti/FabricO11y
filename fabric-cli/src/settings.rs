@@ -298,17 +298,19 @@ pub(super) fn print(
     if let Some(fields) = server.fields.as_mut() {
         fields.listen = listener_address(fields.listen.take());
     }
-    let receiver_resources = server
-        .fields
-        .as_ref()
-        .map(|fields| ReceiverResourcePreview {
+    let receiver_resources = server.fields.as_ref().and_then(|fields| {
+        let configured = fields
+            .max_connections
+            .unwrap_or(resources::DEFAULT_RECEIVER_CONNECTIONS);
+        if !(1..=resources::MAX_RECEIVER_CONNECTIONS).contains(&configured) {
+            server.status = "invalid_connection_limit";
+            return None;
+        }
+        Some(ReceiverResourcePreview {
             scope: "settings_process",
-            resources: resources::receiver_resources(
-                fields
-                    .max_connections
-                    .unwrap_or(resources::DEFAULT_RECEIVER_CONNECTIONS),
-            ),
-        });
+            resources: resources::receiver_resources(configured),
+        })
+    });
     let report = Report {
         version: config::VERSION,
         profile,
