@@ -99,6 +99,79 @@ gh cache list --ref "refs/heads/ci/tool-image-qualification/<trial>" \
   --key "ci-image-trial-v1-<run-id>-" --json id,key,ref,sizeInBytes
 ```
 
+## Compare on matched hosted VMs
+
+The `Paired CI image qualification` workflow controls for the CPU and runner
+image variation between standard `ubuntu-24.04` jobs. Each job measures the
+Fedora baseline and the candidate sequentially on the same runner. Three cold
+jobs and three warm jobs give each variant the same runner mix in a cache
+state. Cold order is baseline/candidate, candidate/baseline, baseline/candidate.
+Warm order reverses that sequence. A small host-level cache can persist across
+lanes. Separate workspaces, homes, containers, and fresh Docker and containerd
+stores prevent direct reuse of source, build outputs, or image layers. Both
+images are pulled anonymously by digest, including for warm samples.
+
+Use the source SHA and published profile digest as above. Put this file in
+`.github/ci-images/paired-qualification.json` on a same-repository branch named
+`ci/tool-image-paired-qualification/<trial>`:
+
+```json
+{
+  "revision": "<publisher develop commit SHA>",
+  "profile": "native-acceptance",
+  "candidate": "ghcr.io/kmosoti/fabrico11y-ci@sha256:<native image digest>",
+  "mode": "smoke"
+}
+```
+
+1. Run `smoke` with the native image before measuring full workloads. One cold
+   pair seeds application and baseline proof fixture caches, and one warm pair
+   restores the exact keys. Inspect both pulls, the empty-store inventories
+   and the fixture's DNS and cache assertions. The fixture checks executable
+   bytes, ownership, permission modes, and symlink and hardlink behavior in
+   fresh containers. It exercises ownership and path mechanics at small scale.
+   Keep quota and full native proof archive readback as qualification checks.
+2. Run `qualification` for each profile on separate trial branches,
+   sequentially. The first cold pair saves one application cache per variant
+   and the baseline native proof cache after both measurements. Other cold
+   pairs skip both restore and save. Warm pairs use the pinned Actions cache
+   action, require exact sample-one hits and run one pair at a time. Keys bind
+   the profile, host architecture, role, image digest, exact source revision,
+   and run attempt. The versioned prefix identifies the build flags and path
+   contract of this harness.
+3. Inspect each artifact's `pair.json`, `host.txt`, compiler/package records,
+   and per-lane `timings.tsv`. Lanes must have identical source archive bytes
+   and compiler/hardware identity within each pair. Different pairs can use
+   different CPUs and image revisions. The cohort includes three complete
+   pairs in each cache state or fails. The report shows baseline and candidate
+   medians and ranges, and the signed candidate-minus-baseline deltas.
+4. Compare measured wall from anonymous image pull through the last check,
+   including the original build, native engine and 60-second fuzz workloads.
+   Report daemon provision and cache save separately. The timer also breaks
+   down pull and startup, immutable source download/extraction, application
+   and baseline proof cache restore, tool setup, and verification. Use job
+   and step logs for queue and dependency time, cache byte counts, CPU and
+   Ubuntu image versions, and the action SHA readback. A candidate cold median
+   must improve and the candidate warm median must be at or below the baseline
+   warm maximum. Review missing caches and partial results before adoption.
+
+Both roles independently extract the same immutable GitHub archive with its
+verified commit header and preserved source mtimes. The paired runner uses
+Ubuntu GNU tar and zstd for Actions cache archive I/O, and its manually
+created containers use a Docker bridge. The earlier separate-job cohort ran
+the GitHub service's job container startup and checked out Fedora by archive
+and the prebuilt image by Git. Keep the two cohorts labeled separately. Use
+paired warm evidence for an adoption path with the same source mtimes and
+exact source-qualified compiled artifact keys. A first-time PR or cross-source
+cache hit has a different warm condition. Cargo decides freshness from source
+mtimes, so dependency source cache sharing and compiled-artifact reuse have
+different correctness requirements.
+
+Record run links, outcomes and cache sizes before cleanup. For paired runs,
+list by the specific branch ref with `--key ci-image-pair-v1-<run-id>-`, then
+delete only those reviewed cache IDs. A new full workflow run or attempt
+creates new seed keys.
+
 ## Adopt or revert
 
 Use the validated `ghcr.io/kmosoti/fabrico11y-ci@sha256:…` digests in a separate
