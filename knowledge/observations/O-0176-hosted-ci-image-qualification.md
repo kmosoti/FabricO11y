@@ -49,6 +49,15 @@ runs the built `agent_harness` example directly, so a stale example could report
 a false pass. Compiled archives require an exact source match. Registry and
 Git dependency downloads can use a separate cache across source revisions.
 
+All six cold workloads and one complete warm workload in each lane passed
+in the [initial native trial](https://github.com/kmosoti/FabricO11y/actions/runs/44398403873).
+Its only matched cold stratum contained one Fedora sample at 38m15s and
+two candidate samples at 25m45s and 26m40s. The matched warm Fedora and
+candidate jobs took 13m25s and 13m19s. Fedora's native proof cache held
+5,014,784,568 compressed bytes. The cold cohort could no longer meet the
+three-pair criterion, so the remaining warm repeats were cancelled after
+both first warm workloads completed.
+
 ## Hosted isolation and restore smoke
 
 The [paired native smoke](https://github.com/kmosoti/FabricO11y/actions/runs/44405033343)
