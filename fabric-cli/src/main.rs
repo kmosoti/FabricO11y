@@ -90,7 +90,7 @@ enum Commands {
     Doctor,
     /// Inspect unified Spindle custody store, Server canonical frontiers, and collector watermark.
     Custody(CustodyArgs),
-    /// Check whether an exact Spindle receipt can be queried from committed local projection.
+    /// Check whether an exact Spindle receipt is queryable from committed projection.
     ProjectionReady(projection_ready::Args),
     /// Run the converged telemetry daemon (inside fabrico11y.slice).
     Daemon(DaemonArgs),

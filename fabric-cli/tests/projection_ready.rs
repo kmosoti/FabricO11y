@@ -116,3 +116,98 @@ fn blocked_standard_input_respects_the_process_deadline() {
     assert_eq!(result["data"]["reason"], "evidence_deadline");
     assert!(!scratch.0.join("absent-data").exists());
 }
+
+#[test]
+fn canonical_receipt_uses_the_authenticated_receiver_without_local_storage() {
+    use fabric::canonical::{
+        self, Authenticated, ProjectionReadiness, ProjectionReason, ProjectionStatus, Request,
+        Response,
+    };
+    use std::net::TcpListener;
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let scratch = Scratch::new();
+    let data_dir = scratch.0.join("unused-local-data");
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let endpoint = listener.local_addr().unwrap().to_string();
+    listener.set_nonblocking(true).unwrap();
+    let server = std::thread::spawn(move || {
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let mut socket = loop {
+            match listener.accept() {
+                Ok((socket, _)) => break socket,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    assert!(Instant::now() < deadline, "CLI did not connect");
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                Err(error) => panic!("accept: {error}"),
+            }
+        };
+        let authenticated: Authenticated =
+            serde_json::from_slice(&canonical::read_frame(&mut socket, deadline).unwrap()).unwrap();
+        assert_eq!(authenticated.credential, "receiver-test-reader");
+        let Request::ProjectionReady { request } = authenticated.request else {
+            panic!("unexpected receiver request");
+        };
+        assert_eq!(request.authority, "authority-test");
+        assert_eq!(request.origin, "origin-test");
+        assert_eq!(request.source_id, 1);
+        assert_eq!(request.identity.producer, "ready-test");
+        assert!(request.timeout_ms <= 1000);
+        let response = Response::ProjectionReady {
+            readiness: ProjectionReadiness {
+                authority: Some("authority-test".into()),
+                status: ProjectionStatus::Visible,
+                reason: ProjectionReason::CommittedRow,
+                custody_frontier: Some(2),
+                projection_frontier: Some(1),
+            },
+        };
+        canonical::write_frame(
+            &mut socket,
+            &serde_json::to_vec(&response).unwrap(),
+            deadline,
+        )
+        .unwrap();
+    });
+    let receipt = scratch.0.join("receipt.json");
+    fs::write(&receipt, RECEIPT).unwrap();
+    let credential = scratch.0.join("reader.key");
+    fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .mode(0o600)
+        .open(&credential)
+        .unwrap()
+        .write_all(b"receiver-test-reader")
+        .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_fabric"))
+        .arg("--data-dir")
+        .arg(&data_dir)
+        .args([
+            "projection-ready",
+            "--target",
+            "canonical",
+            "--origin",
+            "origin-test",
+            "--authority",
+            "authority-test",
+            "--receipt",
+        ])
+        .arg(receipt)
+        .arg("--server-endpoint")
+        .arg(endpoint)
+        .arg("--reader-credential-file")
+        .arg(credential)
+        .arg("--json")
+        .output()
+        .unwrap();
+    server.join().unwrap();
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(result["data"]["authority"], "authority-test");
+    assert_eq!(result["data"]["status"], "visible");
+    assert_eq!(result["data"]["custody_frontier"], 2);
+    assert_eq!(result["data"]["projection_frontier"]["record_id"], 1);
+    assert!(!data_dir.exists());
+}

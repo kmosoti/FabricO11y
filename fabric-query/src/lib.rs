@@ -24,7 +24,7 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, File, OpenOptions},
-    io::{Read, Write},
+    io::{Read, Seek, Write},
     os::unix::fs::OpenOptionsExt,
     path::{Path, PathBuf},
     sync::{
@@ -40,6 +40,7 @@ const MAX_MANIFEST_BYTES: usize = 16 * 1024 * 1024;
 const MAX_MANIFEST_DEPTH: usize = 16;
 const MAX_APPLY_ROWS: usize = 8192;
 const MAX_APPLY_RAW_BYTES: usize = 8 * 1024 * 1024;
+const MAX_RECEIPT_SEGMENT_BYTES: u64 = 32 * 1024 * 1024;
 const RESERVE: u64 = 64 * 1024;
 const POOL: usize = 256 * 1024 * 1024;
 const SPILL: u64 = 512 * 1024 * 1024;
@@ -248,6 +249,124 @@ impl Projection {
             .frontiers
             .retain(|origin, _| scope.contains(origin));
         progress
+    }
+
+    /// Returns only the projection frontier for the selected origin.
+    pub fn source_frontier(&self, origin: &str) -> Result<u64> {
+        if self.poisoned {
+            return Err("projection publication uncertain; reopen required".into());
+        }
+        Ok(self
+            .manifest
+            .progress
+            .frontiers
+            .get(origin)
+            .copied()
+            .unwrap_or(0))
+    }
+
+    /// Confirms one raw canonical receipt against its full typed row in the
+    /// committed manifest. It reads one bounded segment and never spills.
+    pub fn proves_projected_row(
+        &self,
+        row: &CanonicalRow,
+        cancel: &AtomicBool,
+        deadline: Instant,
+    ) -> Result<bool> {
+        let check_budget = || -> Result<()> {
+            if cancel.load(Ordering::Acquire) || Instant::now() >= deadline {
+                Err("receipt projection inspection interrupted".into())
+            } else {
+                Ok(())
+            }
+        };
+        check_budget()?;
+        if row.source_id > self.source_frontier(&row.origin)? {
+            return Ok(false);
+        }
+        let mut segments = self.manifest.segments.iter().filter(|segment| {
+            segment.origin == row.origin
+                && segment.min_source <= row.source_id
+                && row.source_id <= segment.max_source
+        });
+        let Some(segment) = segments.next() else {
+            return Ok(false);
+        };
+        if segments.next().is_some()
+            || segment.bytes == 0
+            || segment.bytes > MAX_RECEIPT_SEGMENT_BYTES
+            || segment.rows as usize > MAX_APPLY_ROWS
+        {
+            return Err("ambiguous or oversized receipt projection segment".into());
+        }
+        let path = self.dir.join(&segment.file);
+        use rustix::fs::{Mode, OFlags};
+        let handle = rustix::fs::open(
+            &path,
+            OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
+            Mode::empty(),
+        )
+        .map_err(err)?;
+        let mut file = File::from(handle);
+        use std::os::unix::fs::MetadataExt;
+        let metadata = file.metadata().map_err(err)?;
+        if !metadata.is_file()
+            || metadata.uid() != rustix::process::geteuid().as_raw()
+            || metadata.len() != segment.bytes
+        {
+            return Err("receipt projection segment metadata mismatch".into());
+        }
+
+        // Verify the bytes of the same descriptor passed to the guarded decoder.
+        let mut hasher = Sha256::new();
+        let mut bytes = Read::by_ref(&mut file).take(segment.bytes);
+        let mut buffer = [0; 64 * 1024];
+        loop {
+            check_budget()?;
+            let count = bytes.read(&mut buffer).map_err(err)?;
+            if count == 0 {
+                break;
+            }
+            hasher.update(&buffer[..count]);
+        }
+        if bytes.limit() != 0 || hex(&hasher.finalize()) != segment.digest {
+            return Err("receipt projection segment digest mismatch".into());
+        }
+        file.rewind().map_err(err)?;
+        check_budget()?;
+        let expected = to_batch(&[TypedRow::decode(row)?])?;
+        let reader = fabric_store::parquet_guard::open_verified_parquet_batch_reader_from_file(
+            file,
+            Some(&schema()),
+            128,
+        )?;
+        let mut matched = false;
+        let mut total_rows = 0;
+        for batch in reader {
+            check_budget()?;
+            let batch = batch.map_err(err)?;
+            total_rows += batch.num_rows();
+            if total_rows > segment.rows as usize {
+                return Err("receipt projection segment row count mismatch".into());
+            }
+            let source_ids = batch
+                .column_by_name("source_id")
+                .and_then(|column| column.as_any().downcast_ref::<UInt64Array>())
+                .ok_or("invalid projected source ID column")?;
+            for (index, source_id) in source_ids.iter().enumerate() {
+                if source_id == Some(row.source_id) {
+                    if matched || batch.slice(index, 1) != expected {
+                        return Err("receipt projection row mismatch".into());
+                    }
+                    matched = true;
+                }
+            }
+        }
+        check_budget()?;
+        if total_rows != segment.rows as usize {
+            return Err("receipt projection segment row count mismatch".into());
+        }
+        Ok(matched)
     }
 
     pub fn apply(&mut self, rows: &[CanonicalRow]) -> Result<ProjectionProgress> {
