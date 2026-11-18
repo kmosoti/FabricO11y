@@ -21,6 +21,8 @@ filesystem does not represent physical storage costs. Build time is outside the
 reported measurements. Debug/release, hardware, filesystem and cache state must
 accompany any comparison; these small runs do not rank implementations.
 
+For local-only and multi-origin deployment acceptance, see [deployment verification](deployment-verification.md).
+
 ## What is proved
 
 Verus checks the executable `admission-kernel/src/delivery.rs` functions called by
