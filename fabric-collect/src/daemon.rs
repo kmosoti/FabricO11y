@@ -2466,6 +2466,28 @@ mod tests {
         };
 
         let ts_ms = 1_700_000_000_100i64;
+        assert!(enqueue_test_spindle_record(
+            1,
+            IngestEnvelope::Log(LogRecord {
+                timestamp_ms: ts_ms - 1,
+                level: "info".into(),
+                source: "spindle".into(),
+                unit: "spindle.service".into(),
+                message: "earlier committed log".into(),
+                attributes_json: "{}".into(),
+            }),
+            &runtime,
+        ));
+        assert_eq!(runtime.flush_to_olap().expect("commit earlier batch"), 1);
+        let committed_logs = runtime.olap.list_parquet_files("logs", None).unwrap();
+        assert_eq!(committed_logs.len(), 1);
+        assert_eq!(
+            runtime
+                .catalog
+                .read_watermark("spindle_watermark_id")
+                .unwrap(),
+            Some(1)
+        );
         runtime.ring.write().push_batch(&[MetricPoint {
             timestamp_ms: ts_ms,
             name: "volatile.cpu".into(),
@@ -2485,7 +2507,7 @@ mod tests {
             attributes_json: "{}".into(),
         });
         assert!(enqueue_test_spindle_record(
-            1,
+            2,
             IngestEnvelope::Metric(MetricPoint {
                 timestamp_ms: ts_ms,
                 name: "spindle.latency".into(),
@@ -2499,7 +2521,7 @@ mod tests {
             &runtime,
         ));
         assert!(enqueue_test_spindle_record(
-            2,
+            3,
             IngestEnvelope::Log(LogRecord {
                 timestamp_ms: ts_ms,
                 level: "info".into(),
@@ -2536,16 +2558,16 @@ mod tests {
         );
         assert_eq!(
             before_l.len(),
-            2,
-            "expected separate volatile + spindle logs files"
+            3,
+            "expected separate earlier, volatile, and deferred log files"
         );
 
         fs::remove_dir(layout.catalog_redb()).expect("remove catalog obstruction");
         fs::rename(&catalog_backup, layout.catalog_redb()).expect("restore catalog binding");
         drop(runtime);
 
-        // Next writer startup runs uncommitted Spindle crash recovery: Spindle files roll back,
-        // while volatile host/socket files published without a Spindle watermark stay intact.
+        // Restart rolls back the later Spindle range and keeps the earlier durable
+        // prefix and independent host/socket files.
         let recovered_lock =
             fabric_store::try_acquire_writer_lock(&layout).expect("re-acquire writer lock");
         let olap_after = OlapParquetStore::new(layout.clone());
@@ -2560,9 +2582,15 @@ mod tests {
             1,
             "only volatile metrics file should survive"
         );
-        assert_eq!(after_l.len(), 1, "only volatile logs file should survive");
+        assert_eq!(after_l.len(), 2, "earlier and volatile logs should survive");
+        assert!(after_l.contains(&committed_logs[0]));
         assert!(before_m.contains(&after_m[0]));
-        assert!(before_l.contains(&after_l[0]));
+        assert!(after_l.iter().all(|path| before_l.contains(path)));
+        let reopened = CatalogStore::open(layout.data_dir()).unwrap();
+        assert_eq!(
+            reopened.read_watermark("spindle_watermark_id").unwrap(),
+            Some(1)
+        );
         drop(recovered_lock);
     }
 
