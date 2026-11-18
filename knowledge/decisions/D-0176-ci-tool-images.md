@@ -29,5 +29,10 @@ per variant, run the other independent cold samples without a cache, and
 require every warm sample to restore its variant's exact seed. This reduces
 cache writes and separates runner variation from variation in cache contents.
 Repository cache pressure can invalidate a sample and evict development caches.
+On 2026-11-18 the repository had 8.78 GB cached, including 5.02 GB of native
+proof tools. Qualification cache seeds share the default 10 GB repository
+allowance. Run profiles sequentially and reclaim only each completed trial's
+cache keys after recording the cache sizes. See the
+[GitHub Actions limits](https://docs.github.com/en/actions/reference/limits).
 
 See [CI image qualification](../../docs/ci-images.md).
