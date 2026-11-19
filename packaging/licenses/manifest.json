@@ -1,0 +1,59 @@
+[
+  {
+    "name": "alloc-stdlib",
+    "version": "0.2.4",
+    "commit": "ae42d22078b98549e987d2f03d12df7b984fde47",
+    "url": "https://raw.githubusercontent.com/dropbox/rust-alloc-no-stdlib/ae42d22078b98549e987d2f03d12df7b984fde47/LICENSE",
+    "sha256": "c0c56f26d9c051cac4d200c34c84e7ae9aaa853e01a982a1df08b09931e518ae"
+  },
+  {
+    "name": "rmcp",
+    "version": "3.5.1",
+    "commit": "79437f291b2c44053d00dcd5db969fd0cca7c887",
+    "url": "https://raw.githubusercontent.com/modelcontextprotocol/rust-sdk/79437f291b2c44053d00dcd5db969fd0cca7c887/LICENSE",
+    "sha256": "0382b0057770ca05e9c350a50aa3b1c1fea84da0bc81d723bf00b9aa841be58a"
+  },
+  {
+    "name": "verus_builtin",
+    "version": "0.0.0-2026-10-11-0230",
+    "commit": "5946bf4cfebd037978a785cb65d4f4cd892500d3",
+    "url": "https://raw.githubusercontent.com/verus-lang/verus/5946bf4cfebd037978a785cb65d4f4cd892500d3/LICENSE",
+    "sha256": "ab78fc657425500bc64f617e36bb6819c6b0d039c573642f603dd594b12fe0d3"
+  },
+  {
+    "name": "verus_builtin_macros",
+    "version": "0.0.0-2026-10-25-0158",
+    "commit": "9be4c4300440e393a54d3397a7443c2a34e8293e",
+    "url": "https://raw.githubusercontent.com/verus-lang/verus/9be4c4300440e393a54d3397a7443c2a34e8293e/LICENSE",
+    "sha256": "ab78fc657425500bc64f617e36bb6819c6b0d039c573642f603dd594b12fe0d3"
+  },
+  {
+    "name": "verus_state_machines_macros",
+    "version": "0.0.0-2026-10-25-0158",
+    "commit": "9be4c4300440e393a54d3397a7443c2a34e8293e",
+    "url": "https://raw.githubusercontent.com/verus-lang/verus/9be4c4300440e393a54d3397a7443c2a34e8293e/LICENSE",
+    "sha256": "ab78fc657425500bc64f617e36bb6819c6b0d039c573642f603dd594b12fe0d3"
+  },
+  {
+    "name": "vstd",
+    "version": "0.0.0-2026-10-25-0158",
+    "commit": "9be4c4300440e393a54d3397a7443c2a34e8293e",
+    "url": "https://raw.githubusercontent.com/verus-lang/verus/9be4c4300440e393a54d3397a7443c2a34e8293e/LICENSE",
+    "sha256": "ab78fc657425500bc64f617e36bb6819c6b0d039c573642f603dd594b12fe0d3"
+  },
+  {
+    "name": "flatbuffers",
+    "version": "25.12.19",
+    "commit": "7e163021e59cca4f8e1e35a7c828b5c6b7915953",
+    "url": "https://raw.githubusercontent.com/google/flatbuffers/7e163021e59cca4f8e1e35a7c828b5c6b7915953/LICENSE",
+    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+  },
+  {
+    "name": "convert_case",
+    "version": "0.4.0",
+    "commit": "300d9eef9e8c970e15f324afbc3df8b6a4ebbf71",
+    "url": "https://mirrors.maine.edu/Fedora/development/rawhide/Everything/source/tree/Packages/r/rust-convert_case0.4-0.4.0-7.fc44.src.rpm",
+    "sha256": "797087750c4103075e96bb7a60202a040812f8679ae2f7263148a1cc0b298d28",
+    "provenance": "Fedora 0.4.0-7.fc44 source RPM sha256 48f409772ff4a7a978e43cd768656b0575c052431906d0cb56e880aba811e080; spec adds LICENSE from upstream master, not the published commit. The source RPM crate checksum 6245d59a3e82a7fc217c5828a6692dbc6dfb63a0c8c90495621f7b9d79704a0e matches Cargo.lock. Fedora uses this later upstream notice for 0.4.0; it was absent at the published commit. The same bytes occur in the first upstream license addition at f72ca63c9d579fbab22e361c76e39d31d1e86a2e, after the published commit; see https://github.com/rutrum/convert-case/compare/300d9eef9e8c970e15f324afbc3df8b6a4ebbf71...f72ca63c9d579fbab22e361c76e39d31d1e86a2e and https://raw.githubusercontent.com/rutrum/convert-case/f72ca63c9d579fbab22e361c76e39d31d1e86a2e/LICENSE."
+  }
+]
