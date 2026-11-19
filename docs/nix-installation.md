@@ -2,12 +2,14 @@
 
 The FabricO11y flake builds six executables for `x86_64-linux` using Rust
 1.100.0 and the repository's Cargo lockfile. Run these commands from the
-release checkout or supply the release tag as the flake reference.
+release checkout or use `github:kmosoti/FabricO11y/v0.1.0-alpha.2` as the
+flake reference. The default package uses the NixOS 26.11 package set. Use
+`fabrico11y-26_05` to select the package or app built with NixOS 26.05.
 
 ```sh
 nix build .#fabrico11y --no-link
 nix run .#fabrico11y -- --help
-nix profile add .#fabrico11y
+nix profile add .#fabrico11y-26_05
 ```
 
 The profile exposes `fabric`, `spindle`, `fabric-server`, `fabric-adapter`,
@@ -18,9 +20,17 @@ services on Linux. Packaged TOML examples are in
 
 ## NixOS user services
 
-Import `inputs.fabrico11y.nixosModules.fabrico11y` in your NixOS host's
-`modules` list. Point the flake input at the published FabricO11y release
-tag and use the corresponding Nixpkgs 26.11 release input for the host.
+Point `inputs.fabrico11y` at the published FabricO11y tag. In the host's
+`modules` list, choose the FabricO11y module that matches its Nixpkgs release.
+
+| Host release | Module |
+| --- | --- |
+| NixOS 26.11 | `inputs.fabrico11y.nixosModules.fabrico11y` |
+| NixOS 26.05 | `inputs.fabrico11y.nixosModules.fabrico11y-26_05` |
+
+Both modules expose the same options. When upgrading the host from 26.05
+to 26.11, switch the module alongside the host's Nixpkgs input and keep the
+host's existing `system.stateVersion`.
 
 ```nix
 {
@@ -79,10 +89,11 @@ store backup.
 
 The development flake uses a locked Nixpkgs 26.11-pre revision while the
 stable branch is pending. Before publication, update the pin to the
-official `nixos-26.11` branch, lock its tested revision, and rerun the
-package and VM checks with that lock.
+official `nixos-26.11` branch, lock its tested revision, and qualify both
+package and VM variants from the release candidate. Each VM check builds
+and exercises the package for its own NixOS release.
 
 ```sh
 nix flake check --no-build
-nix build .#checks.x86_64-linux.nixos --no-link
+nix build --no-link .#checks.x86_64-linux.nixos .#checks.x86_64-linux.nixos-26_05
 ```

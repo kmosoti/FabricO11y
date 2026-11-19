@@ -2,6 +2,7 @@
   lib,
   module,
   system,
+  stateVersion,
 }:
 let
   base = lib.nixosSystem {
@@ -9,7 +10,7 @@ let
     modules = [
       module
       {
-        system.stateVersion = "26.11";
+        system.stateVersion = stateVersion;
         users.users.fabrictest.isNormalUser = true;
         services.fabrico11y = {
           enable = true;
