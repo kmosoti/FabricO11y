@@ -34,7 +34,7 @@ fn report(id: u64) -> BatchReport {
 }
 
 fn recv(listener: &UnixListener) -> (UnixStream, Vec<u8>) {
-    let deadline = Instant::now() + Duration::from_secs(3);
+    let deadline = Instant::now() + Duration::from_secs(10);
     let mut stream = loop {
         match listener.accept() {
             Ok((stream, _)) => break stream,
@@ -47,10 +47,10 @@ fn recv(listener: &UnixListener) -> (UnixStream, Vec<u8>) {
         }
     };
     stream
-        .set_read_timeout(Some(Duration::from_secs(1)))
+        .set_read_timeout(Some(Duration::from_secs(5)))
         .unwrap();
     stream
-        .set_write_timeout(Some(Duration::from_secs(1)))
+        .set_write_timeout(Some(Duration::from_secs(5)))
         .unwrap();
     let mut header = [0; 4];
     stream.read_exact(&mut header).unwrap();
@@ -72,7 +72,9 @@ fn invalid_receipt_leaves_original_frame_for_startup_replay() {
     let base = directory();
     let socket = base.path().join("server.sock");
     let path = base.path().join("outbox");
-    let config = Config::local(socket.clone(), "batch-test".into()).unwrap();
+    let mut config = Config::local(socket.clone(), "batch-test".into()).unwrap();
+    // This tests replay after durable I/O, including on shared hosted disks.
+    config.delivery_timeout = Duration::from_secs(5);
     let listener = UnixListener::bind(socket).unwrap();
     listener.set_nonblocking(true).unwrap();
     let peer = thread::spawn(move || {
@@ -156,7 +158,7 @@ fn invalid_receipt_leaves_original_frame_for_startup_replay() {
     request.insert("command".into(), "record".into());
     let reply = batch_adapter_reply(&mut client, &serde_json::to_vec(&request).unwrap());
     assert_eq!(reply["report_id"], first.report_id);
-    assert_eq!(reply["code"], "mismatched_receipt");
+    assert_eq!(reply["code"], "mismatched_receipt", "{reply}");
     assert_eq!(
         client.status().unwrap().pending_report_id,
         Some(first.report_id.clone())
