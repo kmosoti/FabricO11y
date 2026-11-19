@@ -1,7 +1,6 @@
 {
   lib,
   makeRustPlatform,
-  pkg-config,
   python3,
   rust-bin,
 }:
@@ -26,10 +25,10 @@ rustPlatform.buildRustPackage {
   src = lib.cleanSource ../..;
   cargoLock.lockFile = ../../Cargo.lock;
 
-  nativeBuildInputs = [
-    pkg-config
-    python3
-  ];
+  # Keep the workspace's bundled SQLite and Zstandard sources. The Nixpkgs
+  # Cargo hook otherwise forces pkg-config to replace them with system libraries.
+  dontCargoUseSystemLibs = true;
+  nativeBuildInputs = [ python3 ];
   cargoBuildFlags = [ "--workspace" "--locked" ] ++ lib.concatMap (bin: [ "--bin" bin ]) binaries;
 
   # Host custody and service tests run in the NixOS VM and existing product suites.
