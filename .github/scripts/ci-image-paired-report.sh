@@ -46,8 +46,45 @@ assert_pull() {
   test -s "$lane/empty-store.txt"
   jq -e 'type == "array" and length > 0' "$lane/layers.json" >/dev/null
   time_ms "$lane" daemon_setup >/dev/null
-  time_ms "$lane" image_pull_and_start >/dev/null
-  time_ms "$lane" source >/dev/null
+}
+
+assert_workload() {
+  local lane=$1 role=$2 workload=$3 phase duration subtotal=0
+  local -a phases=(image_pull_and_start source)
+  if [[ "$warm" == true ]]; then
+    phases+=(application_restore)
+    if [[ "$role:$PROFILE" == baseline:native-acceptance ]]; then
+      phases+=(proof_restore)
+    fi
+  fi
+  if [[ "$role:$VARIANT" == candidate:common-seeded ]]; then
+    phases+=(compiler_seed_preflight)
+  fi
+  if [[ "$smoke" == true ]]; then
+    phases+=(smoke_fixture)
+  else
+    phases+=(environment)
+    case "$role:$PROFILE" in
+      baseline:native-acceptance) phases+=(rust_bootstrap proof_bootstrap) ;;
+      baseline:verify) phases+=(rust_bootstrap schema_bootstrap) ;;
+      candidate:*) phases+=(image_preflight) ;;
+    esac
+    if [[ "$PROFILE" == native-acceptance ]]; then
+      phases+=(initialize_jj native_verification engine fuzz_smoke)
+    else
+      phases+=(workspace_checks release_build restart_smoke)
+    fi
+  fi
+  # These phases are disjoint, measured within workload using one monotonic
+  # clock. Daemon setup precedes the workload and is checked separately.
+  for phase in "${phases[@]}"; do
+    duration=$(time_ms "$lane" "$phase") || return 1
+    subtotal=$((subtotal + duration))
+  done
+  if ((subtotal > workload)); then
+    printf 'Measured phases total %s ms, exceeding %s ms workload in %s\n' "$subtotal" "$workload" "$lane" >&2
+    return 1
+  fi
 }
 
 {
@@ -96,10 +133,8 @@ for state in cold warm; do
       [[ "$(<"$lane/cache-key")" == "$expected_key" ]]
       if [[ "$state" == warm ]]; then
         [[ "$(<"$lane/application-hit")" == true ]]
-        time_ms "$lane" application_restore >/dev/null
         if [[ "$role:$PROFILE" == baseline:native-acceptance ]]; then
           [[ "$(<"$lane/proof-hit")" == true ]]
-          time_ms "$lane" proof_restore >/dev/null
         fi
       fi
     done
@@ -107,7 +142,6 @@ for state in cold warm; do
       bash .github/scripts/ci-image-paired-seed.sh revision \
         "$entry/candidate/compiler-seed-revision" "$REVISION"
       grep -Fxq 'compiler-seed ready' "$entry/candidate/compiler-seed-preflight.log"
-      time_ms "$entry/candidate" compiler_seed_preflight >/dev/null
       if [[ "$smoke" == false ]]; then
         hits=$(bash .github/scripts/ci-image-paired-seed.sh hits \
           "$entry/candidate/compiler-seed-stats.json" "$warm")
@@ -116,6 +150,8 @@ for state in cold warm; do
     fi
     baseline_ms=$(time_ms "$entry/baseline" workload)
     candidate_ms=$(time_ms "$entry/candidate" workload)
+    assert_workload "$entry/baseline" baseline "$baseline_ms"
+    assert_workload "$entry/candidate" candidate "$candidate_ms"
     printf '| %s | %s | %s | %s | %s | %s | %+d |\n' \
       "$state" "$sample" "$first" "$image_version" "$baseline_ms" "$candidate_ms" "$((candidate_ms - baseline_ms))" \
       | tee -a "$GITHUB_STEP_SUMMARY"
