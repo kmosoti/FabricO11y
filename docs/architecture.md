@@ -238,6 +238,22 @@ Only successful `develop` pushes publish these caches. See
 
 The local Spindle and collector path can run without a receiver. A fleet runs the same local path on each host and forwards multiple persistent origins to one canonical authority. Both ends of a remote handoff use loopback listeners and the tunnel supplies the authenticated cross-host transport. The receiver's original-byte ledger and rebuildable analytical projection report separate per-origin progress. See [local collection](collection.md#choose-a-deployment) and [multi-host setup](canonical-custody.md#connect-multiple-hosts).
 
+The opt-in [batch adapter](collection.md#sequential-terminal-reports) persists
+one terminal report before submission. It reuses a Spindle generation across
+different run identities. If a receipt is lost, the same wire identity and
+bytes are submitted again while the generation remains valid. Confirmed
+receipts are retained within the outbox limit.
+
+```mermaid
+flowchart LR
+    Client["Terminal run report"] --> Pending["Commit report to private outbox"]
+    Pending --> Spindle["Submit exact bytes to Spindle"]
+    Spindle --> Receipt["Persist matching custody receipt"]
+    Spindle -->|Outcome unknown| Replay["Reopen and replay within lease"]
+    Replay --> Spindle
+    Replay -->|Lease expired| Recovery["Retain unresolved report"]
+```
+
 ```mermaid
 flowchart LR
     subgraph HostA["Host A · fabrico11y.slice"]
