@@ -62,21 +62,23 @@ fn main_human_gate_and_ci_workflows_enforce_promotion_invariants() {
     assert!(dev.contains("timeout-minutes:"));
     assert!(dev.contains("./.github/actions/restore-ci-cache"));
     assert!(dev.contains("./.github/actions/save-ci-cache"));
-    assert!(dev.contains("actions/cache/restore@v4"));
-    assert!(dev.contains("actions/cache/save@v4"));
-    assert!(!dev.contains("uses: actions/cache@v4"));
+    let restore_pin = "actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9";
+    let save_pin = "actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9";
+    assert!(dev.contains(restore_pin));
+    assert!(dev.contains(save_pin));
+    assert!(!dev.contains("uses: actions/cache@"));
     assert!(dev.contains("github.event_name == 'push' && github.ref == 'refs/heads/develop'"));
 
     let restore_path = repo_root().join(".github/actions/restore-ci-cache/action.yml");
     let restore = fs::read_to_string(&restore_path).expect("read restore-ci-cache action");
-    assert!(restore.contains("actions/cache/restore@v4"));
+    assert!(restore.contains(restore_pin));
     assert!(restore.contains("profile:"));
     assert!(restore.contains("key:"));
     assert!(restore.contains("hit:"));
 
     let save_path = repo_root().join(".github/actions/save-ci-cache/action.yml");
     let save = fs::read_to_string(&save_path).expect("read save-ci-cache action");
-    assert!(save.contains("actions/cache/save@v4"));
+    assert!(save.contains(save_pin));
     assert!(save.contains("if: github.event_name == 'push' && github.ref == 'refs/heads/develop'"));
 
     for cached_path in [
