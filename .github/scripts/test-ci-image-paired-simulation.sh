@@ -136,6 +136,21 @@ make_report() {
         printf 'ci-image-pair-v1-%s-%s-%s-X64-%s-%s-%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
           "$PROFILE" "$role" "${image#*@sha256:}" "$REVISION" > "$phase/cache-key"
         printf 'daemon_setup\t0\nimage_pull_and_start\t5\nsource\t0\nworkload\t%s\n' "$workload" > "$phase/timings.tsv"
+        if [[ "$smoke" == true ]]; then
+          printf 'smoke_fixture\t9\n' >> "$phase/timings.tsv"
+        else
+          printf 'environment\t1\n' >> "$phase/timings.tsv"
+          case "$role:$PROFILE" in
+            baseline:native-acceptance) printf 'rust_bootstrap\t1\nproof_bootstrap\t1\n' ;;
+            baseline:verify) printf 'rust_bootstrap\t1\nschema_bootstrap\t1\n' ;;
+            candidate:*) printf 'image_preflight\t1\n' ;;
+          esac >> "$phase/timings.tsv"
+          if [[ "$PROFILE" == native-acceptance ]]; then
+            printf 'initialize_jj\t1\nnative_verification\t5\nengine\t4\nfuzz_smoke\t5\n' >> "$phase/timings.tsv"
+          else
+            printf 'workspace_checks\t5\nrelease_build\t4\nrestart_smoke\t1\n' >> "$phase/timings.tsv"
+          fi
+        fi
         if [[ "$state" == warm ]]; then
           printf 'true\n' > "$phase/application-hit"
           printf 'application_restore\t5\n' >> "$phase/timings.tsv"
@@ -198,6 +213,19 @@ done
 reset_case
 printf 'workload\tbogus\n' >> "$cold_one/candidate/timings.tsv"
 assert_status 1 'duplicate malformed workload line' run_report
+for phase in workspace_checks release_build restart_smoke image_preflight; do
+  reset_case
+  sed -i "/^$phase\s/d" "$cold_one/candidate/timings.tsv"
+  assert_status 1 "missing verify candidate phase $phase" run_report
+  grep -Fq "Invalid or missing $phase timing" "$scratch/log"
+done
+reset_case
+sed -i '/^schema_bootstrap\s/d' "$cold_one/baseline/timings.tsv"
+assert_status 1 'missing verify baseline bootstrap' run_report
+reset_case
+set_workload "$cold_one/candidate" 8
+assert_status 1 'reported workload cannot be shorter than its phases' run_report
+grep -Fq 'exceeding 8 ms workload' "$scratch/log"
 reset_case
 : > "$cold_one/baseline/source.sha256"
 : > "$cold_one/candidate/source.sha256"
@@ -232,10 +260,20 @@ cp -a -- "$scratch/native" "$case_dir"
 PROFILE=native-acceptance VARIANT=native assert_status 0 'valid native exact proof and application restore' run_report
 rm -- "$warm_one/baseline/proof-hit"
 PROFILE=native-acceptance VARIANT=native assert_status 1 'baseline native proof cache miss' run_report
+for phase in native_verification engine fuzz_smoke; do
+  rm -rf -- "$case_dir"
+  cp -a -- "$scratch/native" "$case_dir"
+  sed -i "/^$phase\s/d" "$cold_one/baseline/timings.tsv"
+  PROFILE=native-acceptance VARIANT=native assert_status 1 "missing native baseline phase $phase" run_report
+  grep -Fq "Invalid or missing $phase timing" "$scratch/log"
+done
 MODE=smoke PROFILE=native-acceptance VARIANT=native make_report "$scratch/smoke"
 rm -rf -- "$case_dir"
 cp -a -- "$scratch/smoke" "$case_dir"
 MODE=smoke PROFILE=native-acceptance VARIANT=native assert_status 0 'one-pair smoke report without timing eligibility' run_report
 grep -Fq 'Full workloads did not run' "$GITHUB_STEP_SUMMARY"
 ! grep -Fq 'passed both timing thresholds' "$GITHUB_STEP_SUMMARY"
+sed -i '/^smoke_fixture\s/d' "$warm_one/candidate/timings.tsv"
+MODE=smoke PROFILE=native-acceptance VARIANT=native assert_status 1 'missing smoke fixture phase' run_report
+grep -Fq 'Invalid or missing smoke_fixture timing' "$scratch/log"
 printf 'Paired simulation passed. All jobs, cache events and timings were fixtures.\n'
