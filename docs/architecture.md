@@ -215,14 +215,16 @@ flowchart LR
     Native --> Offline
     Seed --> Offline
     Offline --> Registry["Publish images and record digests"]
-    Registry --> Plan["Validate source and public digest on a trial branch"]
+    Harness["Qualification workflow changes"] --> Sim["Run deterministic plan and report fixtures"]
+    Registry --> Plan["Validate source and public digest on explicit live dispatch"]
     Plan --> Cold["Compare both lanes on each hosted VM"]
     Cold --> Warm["Repeat with exact cache hits on fresh hosted runners"]
     Warm --> Review["Review adoption in development checks"]
 ```
 
-The qualification workflow runs both variants on the same hosted VM for each
-cold or warm pair. Each lane uses a fresh container store. Warm lanes restore
+Routine qualification checks simulate plan and report behavior with offline
+fixtures. An explicit live comparison runs both variants on the same hosted
+VM for each cold or warm pair. Each lane uses a fresh container store. Warm lanes restore
 only their exact trial cache. The development jobs use the current Fedora image
 until candidate digests pass hosted qualification. The workflow reuses
 dependency downloads across source revisions. Its compiled Cargo and fuzz
