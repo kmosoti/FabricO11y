@@ -292,6 +292,38 @@ records and retries are refused. The service permits at most 128 retained
 generations and fails lease decisions closed if wall time falls behind its
 persisted clock floor.
 
+### Sequential terminal reports
+
+Use one batch adapter and one private disk-backed outbox when a producer
+reports many separate runs. Create a private parent directory first, then
+launch the adapter with an absolute outbox path.
+
+```sh
+fabric-adapter SOCKET PRODUCER --batch-outbox /absolute/private/batch-outbox
+```
+
+Send one JSON line per report. Generate the report UUID once and keep the
+context, data, and timestamp unchanged if retrying that report.
+
+```json
+{"command":"record","report_id":"edd65cef-e5aa-4f95-8ae6-6b30f9edb662","context":{"run_id":"f404b128-2c19-412f-bcd0-823f9c1f1b31"},"data":{"kind":"agent_run","agent":"batch","run_id":"f404b128-2c19-412f-bcd0-823f9c1f1b31","duration_ns":1000,"status":"ok"},"timestamp_ns":1795014000000000000}
+```
+
+A returned receipt confirms local Spindle custody. The batch adapter
+serializes delivery through one authenticated generation and retains one
+unresolved report at a time. Reopen the same outbox with the same producer and
+Spindle origin after a restart. The adapter replays the saved bytes before
+accepting a different report. It can return the original confirmed receipt
+for the same report UUID. Use `status` to inspect pending delivery and
+`flush` to retry within a caller-supplied deadline.
+
+The outbox can report that it is full, locked, or waiting for custody. Preserve
+an unresolved outbox after lease expiry. Automatic replay uses the original
+lease and stops at expiry. Inspect custody using the original origin and
+report details before deciding how to recover. Back up completed receipt
+history and provision a new outbox only after all reports in the old one
+have resolved.
+
 Configure canonical forwarding explicitly in the Spindle JSON configuration:
 
 ```json

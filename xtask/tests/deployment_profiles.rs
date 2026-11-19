@@ -9,9 +9,12 @@ use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
+    io::{BufRead, BufReader, Read, Write},
     net::TcpListener,
+    os::unix::net::{UnixListener, UnixStream},
     path::{Path, PathBuf},
-    process::{Command, Output, Stdio},
+    process::{ChildStdout, Command, Output, Stdio},
+    sync::mpsc,
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -353,7 +356,10 @@ fn canonical_rows(endpoint: &str, authority: &str, snapshot: BTreeMap<String, u6
         snapshot: snapshot.clone(),
         filter: Filter::default(),
         operation: Operation::Evidence,
-        budgets: Budgets::default(),
+        budgets: Budgets {
+            rows: 256,
+            ..Budgets::default()
+        },
         cursor: None,
     };
     let response = canonical::exchange(
@@ -410,6 +416,221 @@ fn signal_coverage(records: &[(u64, Vec<u8>)]) -> BTreeMap<String, BTreeSet<&'st
             .insert(kind);
     }
     signals
+}
+
+fn open_batch_adapter(
+    bins: &Path,
+    socket: &Path,
+    outbox: &Path,
+) -> (OwnedChild, BufReader<ChildStdout>) {
+    let mut child = OwnedChild(
+        Command::new(bins.join("fabric-adapter"))
+            .arg(socket)
+            .args(["batch-fixture", "--batch-outbox"])
+            .arg(outbox)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap(),
+    );
+    let stdout = BufReader::new(child.0.stdout.take().unwrap());
+    (child, stdout)
+}
+
+fn batch_record(sequence: u64) -> Value {
+    let run_id = format!("00000000-0000-4000-8000-{sequence:012x}");
+    json!({
+        "command": "record",
+        "report_id": format!("00000000-0000-4001-8000-{sequence:012x}"),
+        "context": { "run_id": run_id },
+        "data": {
+            "kind": "agent_run", "run_id": run_id, "agent": "batch-fixture",
+            "duration_ns": sequence, "status": "ok",
+        },
+        "timestamp_ns": observation::now_ns(),
+    })
+}
+
+fn batch_send(adapter: &mut OwnedChild, request: &Value) {
+    writeln!(adapter.0.stdin.as_mut().unwrap(), "{request}").unwrap();
+}
+
+fn batch_reply(stdout: &mut BufReader<ChildStdout>) -> Value {
+    let mut response = String::new();
+    assert_ne!(stdout.read_line(&mut response).unwrap(), 0);
+    serde_json::from_str(&response).unwrap()
+}
+
+fn read_spindle_frame(socket: &mut UnixStream) -> Vec<u8> {
+    let mut length = [0; 4];
+    socket.read_exact(&mut length).unwrap();
+    let length = u32::from_be_bytes(length) as usize;
+    assert!(length <= 256 * 1024);
+    let mut data = vec![0; length];
+    socket.read_exact(&mut data).unwrap();
+    data
+}
+
+fn write_spindle_frame(socket: &mut UnixStream, bytes: &[u8]) {
+    socket
+        .write_all(&(bytes.len() as u32).to_be_bytes())
+        .unwrap();
+    socket.write_all(bytes).unwrap();
+}
+
+#[test]
+#[ignore = "requires exact release executables and fabrico11y.slice"]
+fn batch_adapter_replays_a_committed_report_and_projects_130_runs() {
+    assert!(
+        fs::read_to_string("/proc/self/cgroup")
+            .unwrap()
+            .contains("/fabrico11y.slice/"),
+        "run this test in fabrico11y.slice"
+    );
+    let bins =
+        PathBuf::from(std::env::var_os("FABRIC_TEST_BIN_DIR").expect("release binary directory"));
+    assert!(bins.is_absolute());
+    let sandbox = xtask::evidence::non_tmp_tempdir().unwrap();
+    let root = sandbox.path();
+    let mut source = Node::open(&bins, root, NODE[0].0, NODE[0].1);
+    let spare = Node::open(&bins, root, NODE[1].0, NODE[1].1);
+    let telemetry = Node::open(&bins, root, NODE[2].0, NODE[2].1);
+    let endpoint = TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .to_string();
+    let reader = root.join("reader");
+    private_file(&reader, READER);
+    let (mut server, authority) = receiver(
+        &bins,
+        root,
+        &endpoint,
+        [&source, &spare, &telemetry],
+        &reader,
+    );
+    source.forward(&bins, &endpoint, &authority, None);
+    server.kill_wait();
+
+    let proxy_path = root.join("receipt-proxy.sock");
+    let proxy = UnixListener::bind(&proxy_path).unwrap();
+    proxy.set_nonblocking(true).unwrap();
+    let real_socket = source.config.socket.clone();
+    let (observed, committed) = mpsc::sync_channel(1);
+    let (release_proxy, adapter_killed) = mpsc::sync_channel(1);
+    let fault = thread::spawn(move || {
+        loop {
+            let mut adapter =
+                until(
+                    "batch proxy connection",
+                    Duration::from_secs(10),
+                    || match proxy.accept() {
+                        Ok((socket, _)) => Some(socket),
+                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => None,
+                        Err(e) => panic!("proxy accept: {e}"),
+                    },
+                );
+            let mut spindle = UnixStream::connect(&real_socket).unwrap();
+            for socket in [&adapter, &spindle] {
+                socket
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                socket
+                    .set_write_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+            }
+            let request = read_spindle_frame(&mut adapter);
+            write_spindle_frame(&mut spindle, &request);
+            let response = read_spindle_frame(&mut spindle);
+            if let Reply::Receipt { receipt } = serde_json::from_slice(&response).unwrap() {
+                assert!(!receipt.duplicate);
+                observed.send(receipt).unwrap();
+                adapter_killed.recv_timeout(Duration::from_secs(5)).unwrap();
+                break;
+            }
+            write_spindle_frame(&mut adapter, &response);
+        }
+    });
+    let outbox = root.join("outbox");
+    let (mut adapter, _lost_stdout) = open_batch_adapter(&bins, &proxy_path, &outbox);
+    let first_request = batch_record(1);
+    batch_send(&mut adapter, &first_request);
+    let first_receipt = committed.recv_timeout(Duration::from_secs(15)).unwrap();
+    adapter.kill_wait();
+    release_proxy.send(()).unwrap();
+    fault.join().unwrap();
+    assert_eq!(first_receipt.id, 1);
+    assert_eq!(source.health().canonical_through, 0);
+
+    let (mut adapter, mut responses) = open_batch_adapter(&bins, &source.config.socket, &outbox);
+    batch_send(&mut adapter, &json!({ "command": "status" }));
+    let status = batch_reply(&mut responses);
+    assert_eq!(status["status"]["confirmed"], 1, "{status}");
+    batch_send(&mut adapter, &first_request);
+    let repeated = batch_reply(&mut responses);
+    let replayed: Receipt = serde_json::from_value(repeated["receipt"].clone()).unwrap();
+    assert_eq!(replayed.id, first_receipt.id);
+    assert_eq!(replayed.identity, first_receipt.identity);
+    let mut conflict = first_request;
+    conflict["data"]["duration_ns"] = json!(1_000);
+    batch_send(&mut adapter, &conflict);
+    let conflicting = batch_reply(&mut responses);
+    assert!(conflicting.get("error").is_some(), "{conflicting}");
+
+    let mut runs = BTreeSet::from([batch_record(1)["context"]["run_id"]
+        .as_str()
+        .unwrap()
+        .to_owned()]);
+    for sequence in 2..=130 {
+        let report = batch_record(sequence);
+        runs.insert(report["context"]["run_id"].as_str().unwrap().to_owned());
+        batch_send(&mut adapter, &report);
+        let reply = batch_reply(&mut responses);
+        let receipt: Receipt = serde_json::from_value(reply["receipt"].clone())
+            .unwrap_or_else(|error| panic!("report {sequence}: {reply}: {error}"));
+        assert_eq!(receipt.id, sequence);
+        assert_eq!(
+            receipt.identity.generation,
+            first_receipt.identity.generation
+        );
+        assert_eq!(receipt.identity.sequence, sequence);
+    }
+    adapter.0.stdin.take();
+    let drained = batch_reply(&mut responses);
+    assert_eq!(drained["eof_receipt"]["id"], 130, "{drained}");
+    assert!(adapter.0.wait().unwrap().success());
+    assert_eq!(source.health().canonical_through, 0);
+    let mut stored = Vec::new();
+    read_lane(&source, 130, &mut stored).unwrap();
+
+    let (_server, resumed_authority) = receiver(
+        &bins,
+        root,
+        &endpoint,
+        [&source, &spare, &telemetry],
+        &reader,
+    );
+    assert_eq!(authority, resumed_authority);
+    until(
+        "batch canonical acknowledgement",
+        Duration::from_secs(45),
+        || (source.health().canonical_through == 130).then_some(()),
+    );
+    let rows = canonical_rows(
+        &endpoint,
+        &authority,
+        BTreeMap::from([(source.origin, 130)]),
+    );
+    assert_eq!(rows.len(), 130);
+    for row in rows {
+        let source_id = row["source_id"].as_str().unwrap().parse::<usize>().unwrap();
+        let raw = row["raw"].as_str().unwrap().as_bytes();
+        assert_eq!(raw, stored[source_id - 1].1);
+        let observation = observation::decode_versioned(raw).unwrap();
+        let run_id = &observation.context().unwrap().run_id;
+        assert!(runs.remove(run_id), "unexpected or repeated run {run_id}");
+    }
+    assert!(runs.is_empty(), "{runs:?}");
 }
 
 #[test]
