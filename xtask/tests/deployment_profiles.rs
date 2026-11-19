@@ -13,7 +13,7 @@ use std::{
     net::TcpListener,
     os::unix::net::{UnixListener, UnixStream},
     path::{Path, PathBuf},
-    process::{ChildStdout, Command, Output, Stdio},
+    process::{Command, Output, Stdio},
     sync::mpsc,
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -422,7 +422,7 @@ fn open_batch_adapter(
     bins: &Path,
     socket: &Path,
     outbox: &Path,
-) -> (OwnedChild, BufReader<ChildStdout>) {
+) -> (OwnedChild, mpsc::Receiver<Value>) {
     let mut child = OwnedChild(
         Command::new(bins.join("fabric-adapter"))
             .arg(socket)
@@ -434,7 +434,16 @@ fn open_batch_adapter(
             .unwrap(),
     );
     let stdout = BufReader::new(child.0.stdout.take().unwrap());
-    (child, stdout)
+    let (replies, responses) = mpsc::sync_channel(1);
+    thread::spawn(move || {
+        for line in stdout.lines() {
+            let json = serde_json::from_str(&line.unwrap()).unwrap();
+            if replies.send(json).is_err() {
+                break;
+            }
+        }
+    });
+    (child, responses)
 }
 
 fn batch_record(sequence: u64) -> Value {
@@ -455,10 +464,10 @@ fn batch_send(adapter: &mut OwnedChild, request: &Value) {
     writeln!(adapter.0.stdin.as_mut().unwrap(), "{request}").unwrap();
 }
 
-fn batch_reply(stdout: &mut BufReader<ChildStdout>) -> Value {
-    let mut response = String::new();
-    assert_ne!(stdout.read_line(&mut response).unwrap(), 0);
-    serde_json::from_str(&response).unwrap()
+fn batch_reply(responses: &mpsc::Receiver<Value>) -> Value {
+    responses
+        .recv_timeout(Duration::from_secs(5))
+        .expect("batch adapter response")
 }
 
 fn read_spindle_frame(socket: &mut UnixStream) -> Vec<u8> {
@@ -562,19 +571,19 @@ fn batch_adapter_replays_a_committed_report_and_projects_130_runs() {
     assert_eq!(first_receipt.id, 1);
     assert_eq!(source.health().canonical_through, 0);
 
-    let (mut adapter, mut responses) = open_batch_adapter(&bins, &source.config.socket, &outbox);
+    let (mut adapter, responses) = open_batch_adapter(&bins, &source.config.socket, &outbox);
     batch_send(&mut adapter, &json!({ "command": "status" }));
-    let status = batch_reply(&mut responses);
+    let status = batch_reply(&responses);
     assert_eq!(status["status"]["confirmed"], 1, "{status}");
     batch_send(&mut adapter, &first_request);
-    let repeated = batch_reply(&mut responses);
+    let repeated = batch_reply(&responses);
     let replayed: Receipt = serde_json::from_value(repeated["receipt"].clone()).unwrap();
     assert_eq!(replayed.id, first_receipt.id);
     assert_eq!(replayed.identity, first_receipt.identity);
     let mut conflict = first_request;
     conflict["data"]["duration_ns"] = json!(1_000);
     batch_send(&mut adapter, &conflict);
-    let conflicting = batch_reply(&mut responses);
+    let conflicting = batch_reply(&responses);
     assert!(conflicting.get("error").is_some(), "{conflicting}");
 
     let mut runs = BTreeSet::from([batch_record(1)["context"]["run_id"]
@@ -585,7 +594,7 @@ fn batch_adapter_replays_a_committed_report_and_projects_130_runs() {
         let report = batch_record(sequence);
         runs.insert(report["context"]["run_id"].as_str().unwrap().to_owned());
         batch_send(&mut adapter, &report);
-        let reply = batch_reply(&mut responses);
+        let reply = batch_reply(&responses);
         let receipt: Receipt = serde_json::from_value(reply["receipt"].clone())
             .unwrap_or_else(|error| panic!("report {sequence}: {reply}: {error}"));
         assert_eq!(receipt.id, sequence);
@@ -596,9 +605,12 @@ fn batch_adapter_replays_a_committed_report_and_projects_130_runs() {
         assert_eq!(receipt.identity.sequence, sequence);
     }
     adapter.0.stdin.take();
-    let drained = batch_reply(&mut responses);
+    let drained = batch_reply(&responses);
     assert_eq!(drained["eof_receipt"]["id"], 130, "{drained}");
-    assert!(adapter.0.wait().unwrap().success());
+    let exit = until("batch adapter exit", Duration::from_secs(5), || {
+        adapter.0.try_wait().unwrap()
+    });
+    assert!(exit.success(), "{exit}");
     assert_eq!(source.health().canonical_through, 0);
     let mut stored = Vec::new();
     read_lane(&source, 130, &mut stored).unwrap();
