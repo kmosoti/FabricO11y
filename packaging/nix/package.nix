@@ -2,6 +2,7 @@
   lib,
   makeRustPlatform,
   pkg-config,
+  python3,
   rust-bin,
 }:
 let
@@ -25,7 +26,10 @@ rustPlatform.buildRustPackage {
   src = lib.cleanSource ../..;
   cargoLock.lockFile = ../../Cargo.lock;
 
-  nativeBuildInputs = [ pkg-config ];
+  nativeBuildInputs = [
+    pkg-config
+    python3
+  ];
   cargoBuildFlags = [ "--workspace" "--locked" ] ++ lib.concatMap (bin: [ "--bin" bin ]) binaries;
 
   # Host custody and service tests run in the NixOS VM and existing product suites.
@@ -41,7 +45,9 @@ rustPlatform.buildRustPackage {
   '';
 
   postInstall = ''
-    install -Dm644 LICENSE "$out/share/licenses/fabrico11y/LICENSE"
+    licenseDir="$out/share/licenses/fabrico11y"
+    install -Dm644 -t "$licenseDir" LICENSE NOTICE
+    python3 packaging/dependency-notices.py "$licenseDir/dependencies"
     install -Dm644 -t "$out/share/fabrico11y/config" config/*.toml
   '';
 
