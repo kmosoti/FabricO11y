@@ -4,7 +4,7 @@ This package targets x86_64 Fedora 44, built with Rust 1.100.0 and the checked-i
 
 ## Build from a source checkout
 
-Install `rpm-build`, Rust 1.100.0, GCC, `pkgconf-pkg-config`, and Python 3. The build fails until every dependency notice is available and validated by `packaging/dependency-notices.py`. The selected locked graph builds bundled SQLite and Zstandard with a C compiler. The spec defaults its build target to `/data/cargo-target`; set `CARGO_BUILD_TARGET_DIR` to a writable disk-backed directory if that path is unavailable. Set `CANDIDATE_COMMIT` to the exact committed revision to package. Populate Cargo's cache in advance. The build is offline and fails if required crates are missing. Use disk-backed paths with sufficient space; this example does not require `/data` on an installed system.
+Install `rpm-build`, `systemd-rpm-macros`, Rust 1.100.0, GCC, `pkgconf-pkg-config`, and Python 3. The build verifies the dependency notices with `packaging/dependency-notices.py`. The locked crates build bundled SQLite and Zstandard with a C compiler. Set `CANDIDATE_COMMIT` to the exact committed revision and populate Cargo's cache before building. The spec uses offline Cargo and defaults its build target to `/data/cargo-target`. You can set `CARGO_BUILD_TARGET_DIR` to any writable disk-backed directory with sufficient space.
 
 ```sh
 export TMPDIR=/path/on/disk/tmp CARGO_BUILD_TARGET_DIR=/path/on/disk/cargo-target

@@ -8,23 +8,30 @@ It leaves the installed stack running as configured.
 
 Run this on a Linux host with the repository's
 [`fabrico11y.slice`](../config/fabrico11y.slice) installed in the user manager.
-Use Bash for the commands below. The Rust test runs the actual `spindle`, `fabric-server`, and `fabric` executables.
+Use Bash for the commands below. The fixture runs `spindle`, `fabric-server`,
+`fabric`, and `fabric-adapter`. Set `FABRIC_TEST_BIN_DIR` to the directory
+containing the packaged or previously built executables from the same source
+candidate to reuse them.
 
 ```sh
 set -o pipefail
 export TMPDIR=/data/tmp CARGO_BUILD_TARGET_DIR=/data/cargo-target
 export FABRIC_DATA_DIR=/data/fabrico11y
-cargo +1.100.0 build --locked --release --workspace --bins -j 2 --target-dir /data/cargo-target
+if [[ -z "${FABRIC_TEST_BIN_DIR:-}" ]]; then
+  cargo +1.100.0 build --locked --release -p fabric -p fabric-cli -p fabric-server \
+    --bin fabric --bin fabric-adapter --bin spindle --bin fabric-server -j 2
+  FABRIC_TEST_BIN_DIR=$CARGO_BUILD_TARGET_DIR/release
+fi
 test_bin=$(
   cargo +1.100.0 test --locked -j 2 -p xtask --features deployment-qualification \
     --test deployment_profiles --no-run \
     --target-dir /data/cargo-target --message-format=json |
     jq -er 'select(.reason == "compiler-artifact" and .target.name == "deployment_profiles" and .executable != null) | .executable'
 )
-sha256sum "$test_bin" /data/cargo-target/release/{fabric,spindle,fabric-server}
+sha256sum "$test_bin" "$FABRIC_TEST_BIN_DIR"/{fabric,spindle,fabric-server,fabric-adapter}
 systemd-run --user --collect --wait --pipe --slice=fabrico11y.slice \
   --setenv=TMPDIR=/data/tmp --setenv=FABRIC_DATA_DIR=/data/fabrico11y \
-  --setenv=FABRIC_TEST_BIN_DIR=/data/cargo-target/release \
+  --setenv="FABRIC_TEST_BIN_DIR=$FABRIC_TEST_BIN_DIR" \
   timeout 300 "$test_bin" --ignored --nocapture --test-threads=1
 ```
 
@@ -36,6 +43,7 @@ The fixture checks these observable boundaries.
 | Two originating workloads | Distinct Spindle stores admit overlapping IDs and producer identities. A credential for one origin cannot read the other. The receiver returns exact source bytes at a fixed snapshot. |
 | Receiver failure and recovery | Cut the receiver process, accept and query another observation locally, and observe canonical unavailability. Restart against the same custody and projection directories. The authority remains stable and the new record becomes visible exactly once. |
 | Self-observability | A separate telemetry origin collects both services' metrics, events, logs, and traces. Compare the receiver's exact raw rows with the local durable prefix and query metrics, logs, and traces through the local projection. |
+| Batch replay | Spindle commits a report and the fixture withholds its receipt. Kill and reopen the adapter, recover the original receipt, then verify that 130 distinct runs share one generation and project with exact bytes and no duplicates after the receiver restarts. |
 
 A passing fixture emits `passed: true`, the authority and origins, the canonical
 telemetry frontier, and elapsed time. Record the source revision, hashes, and
