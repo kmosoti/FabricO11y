@@ -22,7 +22,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: actions/cache/save@v4
+    - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       if: github.event_name == 'push' && github.ref == 'refs/heads/develop' && inputs.sources-hit != 'true'
       with:
         path: |
@@ -31,12 +31,12 @@ runs:
           /github/home/.local/share/fabrico11y/schema-tools
           /github/home/.local/share/fabrico11y/engine-tools
         key: ${{ inputs.sources-key }}
-    - uses: actions/cache/save@v4
+    - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       if: github.event_name == 'push' && github.ref == 'refs/heads/develop' && inputs.hit != 'true'
       with:
         path: target
         key: ${{ inputs.key }}
-    - uses: actions/cache/save@v4
+    - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       if: github.event_name == 'push' && github.ref == 'refs/heads/develop' && inputs.fuzz-key != '' && inputs.fuzz-hit != 'true'
       with:
         path: /github/home/.cache/fabrico11y-fuzz-target
