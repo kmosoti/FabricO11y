@@ -13,6 +13,7 @@ BuildRequires:  cargo >= 1.100.0
 BuildRequires:  gcc
 BuildRequires:  pkgconf-pkg-config
 BuildRequires:  python3
+BuildRequires:  systemd-rpm-macros
 
 %description
 FabricO11y local telemetry collection, custody, and query tools.
