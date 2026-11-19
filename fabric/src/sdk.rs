@@ -12,6 +12,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod batch;
+pub use batch::{BatchClient, BatchError, BatchReport, BatchStatus, batch_adapter_reply};
+
 #[derive(Clone, Debug)]
 pub struct Config {
     pub socket: PathBuf,
@@ -617,50 +620,64 @@ pub struct FabricReceipt {
     pub origin: String,
     pub through: u64,
 }
+fn validate_context_config(config: &Config) -> Result<(), String> {
+    if config.slots == 0
+        || config.slots > 4096
+        || config.max_record < 256
+        || config.max_record > observation::MAX_FRAME
+        || config.delivery_timeout.is_zero()
+        || config.delivery_timeout > Duration::from_secs(5)
+        || observation::reserved_producer(&config.producer)
+    {
+        return Err("invalid context client configuration".into());
+    }
+    Observation {
+        version: 2,
+        registry: observation::REGISTRY.into(),
+        identity: Identity {
+            producer: config.producer.clone(),
+            generation: "validation".into(),
+            sequence: 1,
+        },
+        timestamp_ns: 0,
+        resource: config.resource.clone(),
+        data: Data::Event {
+            name: "probe".into(),
+            message: "probe".into(),
+        },
+    }
+    .validate()
+}
+
+fn request_lease(
+    config: &Config,
+    expected_origin: Option<&str>,
+    deadline: Instant,
+) -> Result<(String, u64), String> {
+    let producer = config.producer.clone();
+    let request = match expected_origin {
+        Some(origin) => Request::LeaseForOrigin {
+            producer,
+            expected_origin: origin.to_owned(),
+        },
+        None => Request::Lease { producer },
+    };
+    match transport::request(&config.socket, &request, deadline)? {
+        Reply::Lease {
+            generation,
+            expires_unix_s,
+        } => Ok((generation, expires_unix_s)),
+        Reply::Error { error } => Err(error),
+        _ => Err("unexpected lease response".into()),
+    }
+}
+
 impl RunClient {
     pub fn new(mut config: Config, context: crate::run::RunContext) -> Result<Self, String> {
         context.validate()?;
-        if config.slots == 0
-            || config.slots > 4096
-            || config.max_record < 256
-            || config.max_record > observation::MAX_FRAME
-            || config.delivery_timeout.is_zero()
-            || config.delivery_timeout > Duration::from_secs(5)
-            || observation::reserved_producer(&config.producer)
-        {
-            return Err("invalid context client configuration".into());
-        }
-        Observation {
-            version: 2,
-            registry: observation::REGISTRY.into(),
-            identity: Identity {
-                producer: config.producer.clone(),
-                generation: "validation".into(),
-                sequence: 1,
-            },
-            timestamp_ns: 0,
-            resource: config.resource.clone(),
-            data: Data::Event {
-                name: "probe".into(),
-                message: "probe".into(),
-            },
-        }
-        .validate()?;
-        let deadline = Instant::now() + config.delivery_timeout;
-        let (generation, expires) = match transport::request(
-            &config.socket,
-            &Request::Lease {
-                producer: config.producer.clone(),
-            },
-            deadline,
-        )? {
-            Reply::Lease {
-                generation,
-                expires_unix_s,
-            } => (generation, expires_unix_s),
-            Reply::Error { error } => return Err(error),
-            _ => return Err("unexpected lease response".into()),
-        };
+        validate_context_config(&config)?;
+        let (generation, expires) =
+            request_lease(&config, None, Instant::now() + config.delivery_timeout)?;
         let (authority, origin) = match transport::request(
             &config.socket,
             &Request::FabricProgress,
