@@ -1,0 +1,7 @@
+{
+  "revision": "b8f1cddd9831a1b12c41bc58c3287f95823e094d",
+  "profile": "native-acceptance",
+  "candidate": "ghcr.io/kmosoti/fabrico11y-ci@sha256:2a609c7c15f4ad58498abd29c0bcb4671fad8d805fb3f8cc0200875c01a1229f",
+  "variant": "native",
+  "mode": "qualification"
+}
