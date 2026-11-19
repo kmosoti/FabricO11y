@@ -295,8 +295,9 @@ persisted clock floor.
 ### Sequential terminal reports
 
 Use one batch adapter and one private disk-backed outbox when a producer
-reports many separate runs. Create a private parent directory first, then
-launch the adapter with an absolute outbox path.
+reports many separate runs. Use a private directory under trusted ancestors
+and launch the adapter with an absolute path. Root-owned sticky directories
+such as a disk-backed `/var/tmp` can hold a private parent.
 
 ```sh
 fabric-adapter SOCKET PRODUCER --batch-outbox /absolute/private/batch-outbox
@@ -315,14 +316,22 @@ unresolved report at a time. Reopen the same outbox with the same producer and
 Spindle origin after a restart. The adapter replays the saved bytes before
 accepting a different report. It can return the original confirmed receipt
 for the same report UUID. Use `status` to inspect pending delivery and
-`flush` to retry within a caller-supplied deadline.
+read the persisted Spindle `origin` that scopes the receipt. Use `flush`
+to retry within a caller-supplied deadline.
 
 The outbox can report that it is full, locked, or waiting for custody. Preserve
 an unresolved outbox after lease expiry. Automatic replay uses the original
 lease and stops at expiry. Inspect custody using the original origin and
-report details before deciding how to recover. Back up completed receipt
-history and provision a new outbox only after all reports in the old one
-have resolved.
+report details before deciding how to recover. The outbox retains up to
+4,096 distinct report IDs in a 16 MiB SQLite database. SQLite also needs
+disk headroom for its rollback journal. After resolving all pending
+reports, back up the completed receipt history before provisioning a new
+outbox. Duplicate detection starts over in the new outbox.
+
+Batch mode requires a Spindle that supports origin-qualified leases. If the
+initial lease reply is lost before the client records it, Spindle can retain
+an unused lease in its 128-generation budget until expiry. The client has
+yet to accept a report at that point.
 
 Configure canonical forwarding explicitly in the Spindle JSON configuration:
 
