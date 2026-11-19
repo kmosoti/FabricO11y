@@ -167,13 +167,13 @@ pkgs.testers.runNixOSTest {
     machine.succeed(as_fabric("systemctl --user restart spindle.service fabric-daemon.service"))
     receiver = f"--server-endpoint {endpoint} --reader-credential-file {reader_key}"
     production = f"{local_ready} --require-canonical {receiver}"
-    ready = json.loads(machine.wait_until_succeeds(as_fabric(production), timeout=deadline))
+    ready = json.loads(machine.wait_until_succeeds(as_fabric(production), timeout=deadline))["data"]
     assert ready["canonical_authority"] == authority
     projected = json.loads(machine.wait_until_succeeds(as_fabric(
         f"printf '%s\n' {shlex.quote(json.dumps(receipt))} | "
         f"{fabric} projection-ready --target canonical --authority {shlex.quote(authority)} "
         f"--origin {shlex.quote(origin)} --receipt - --wait 15s --json {receiver}"
-    ), timeout=deadline))
+    ), timeout=deadline))["data"]
     assert projected["status"] == "visible", projected
     assert projected["record_id"] == receipt["id"] and projected["identity"] == receipt["identity"], projected
     assert projected["origin"] == origin and projected["authority"] == authority, projected
