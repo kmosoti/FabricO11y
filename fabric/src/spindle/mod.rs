@@ -156,11 +156,16 @@ pub enum Request {
     Lease {
         producer: String,
     },
+    LeaseForOrigin {
+        producer: String,
+        expected_origin: String,
+    },
     FabricProgress,
 }
 
-/// Returned when a qualified read reaches a different local custody store.
-pub const READ_ORIGIN_MISMATCH: &str = "spindle origin mismatch";
+/// Returned when a qualified request reaches a different local custody store.
+pub const ORIGIN_MISMATCH: &str = "spindle origin mismatch";
+pub const READ_ORIGIN_MISMATCH: &str = ORIGIN_MISMATCH;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "result", rename_all = "snake_case", deny_unknown_fields)]
