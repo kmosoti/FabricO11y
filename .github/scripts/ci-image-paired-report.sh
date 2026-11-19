@@ -1,13 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# shellcheck source=.github/scripts/ci-image-paired-settings.sh
+source "$(dirname -- "${BASH_SOURCE[0]}")/ci-image-paired-settings.sh"
+
 root=$1
+cold_times=()
+warm_times=()
 samples=3
 smoke=false
-if [[ "$MODE" == smoke ]]; then
-  smoke=true
-  samples=1
-fi
+# These are the hosted trial job budgets in milliseconds.
+case "$MODE:$PROFILE:$VARIANT" in
+  qualification:verify:common|qualification:verify:common-seeded) limit_ms=6000000 ;;
+  qualification:native-acceptance:native) limit_ms=21600000 ;;
+  smoke:verify:common|smoke:verify:common-seeded|smoke:native-acceptance:native)
+    smoke=true; samples=1; limit_ms=1800000 ;;
+  *) printf 'Invalid report mode, profile or variant: %s:%s:%s\n' "$MODE" "$PROFILE" "$VARIANT" >&2; exit 1 ;;
+esac
 
 if [[ "$COLD_RESULT" != success || "$WARM_RESULT" != success ]]; then
   printf 'Paired qualification incomplete (cold=%s, warm=%s).\n' "$COLD_RESULT" "$WARM_RESULT" |
@@ -16,10 +25,17 @@ if [[ "$COLD_RESULT" != success || "$WARM_RESULT" != success ]]; then
 fi
 
 time_ms() {
-  awk -F '\t' -v phase="$2" '
-    $1 == phase && $2 ~ /^[0-9]+$/ { value=$2; count++ }
-    END { if (count != 1) exit 1; print value }
-  ' "$1/timings.tsv"
+  awk -F '\t' -v phase="$2" -v limit="$limit_ms" '
+    $1 == phase {
+      count++
+      if (NF != 2 || $2 !~ /^(0|[1-9][0-9]*)$/ || $2 > limit || (phase == "workload" && $2 == 0)) invalid = 1
+      value = $2
+    }
+    END { if (invalid || count != 1) exit 1; print value }
+  ' "$1/timings.tsv" || {
+    printf 'Invalid or missing %s timing in %s\n' "$2" "$1" >&2
+    return 1
+  }
 }
 
 assert_pull() {
@@ -53,16 +69,20 @@ for state in cold warm; do
       first=candidate
       second=baseline
     fi
-    jq -e --arg revision "$REVISION" --arg candidate "$CANDIDATE" --arg profile "$PROFILE" \
+    jq -se --arg baseline "$paired_baseline" --arg revision "$REVISION" --arg candidate "$CANDIDATE" --arg profile "$PROFILE" \
       --arg variant "$VARIANT" --arg run "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT" --arg first "$first" --arg second "$second" \
       --argjson warm "$warm" --argjson sample "$sample" --argjson smoke "$smoke" '
-      .revision == $revision and .candidate == $candidate and .profile == $profile and .variant == $variant and
+      length == 1 and (.[0] | .baseline == $baseline and .revision == $revision and .candidate == $candidate and .profile == $profile and .variant == $variant and
       .run_id == $run and .attempt == $attempt and .first == $first and .second == $second and
       .warm == $warm and .smoke == $smoke and .number == $sample and
-      (.image_os | length > 0) and (.image_version | length > 0)
+      (.image_os | type == "string" and length > 0) and (.image_version | type == "string" and length > 0))
     ' "$entry/pair.json" >/dev/null
     image_version=$(jq -er '.image_os + "/" + .image_version' "$entry/pair.json")
-    cmp "$entry/baseline/source.sha256" "$entry/candidate/source.sha256"
+    if [[ ! "$(<"$entry/baseline/source.sha256")" =~ ^[0-9a-f]{64}$ ]] ||
+      ! cmp "$entry/baseline/source.sha256" "$entry/candidate/source.sha256"; then
+      printf 'Invalid or unmatched source digest in %s\n' "$entry" >&2
+      exit 1
+    fi
     if [[ "$smoke" == false ]]; then
       test -s "$entry/baseline/environment.txt"
       cmp "$entry/baseline/environment.txt" "$entry/candidate/environment.txt"
@@ -72,13 +92,13 @@ for state in cold warm; do
       assert_pull "$lane"
       image=$(jq -er --arg role "$role" '.[$role]' "$entry/pair.json")
       grep -Fqx "Digest: ${image#*@}" "$lane/pull.log"
-      grep -Fqx "ci-image-pair-v1-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$PROFILE-X64-$role-${image#*@sha256:}-$REVISION" \
-        "$lane/cache-key"
+      expected_key="ci-image-pair-v1-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$PROFILE-X64-$role-${image#*@sha256:}-$REVISION"
+      [[ "$(<"$lane/cache-key")" == "$expected_key" ]]
       if [[ "$state" == warm ]]; then
-        grep -Fxq true "$lane/application-hit"
+        [[ "$(<"$lane/application-hit")" == true ]]
         time_ms "$lane" application_restore >/dev/null
         if [[ "$role:$PROFILE" == baseline:native-acceptance ]]; then
-          grep -Fxq true "$lane/proof-hit"
+          [[ "$(<"$lane/proof-hit")" == true ]]
           time_ms "$lane" proof_restore >/dev/null
         fi
       fi
@@ -99,7 +119,12 @@ for state in cold warm; do
     printf '| %s | %s | %s | %s | %s | %s | %+d |\n' \
       "$state" "$sample" "$first" "$image_version" "$baseline_ms" "$candidate_ms" "$((candidate_ms - baseline_ms))" \
       | tee -a "$GITHUB_STEP_SUMMARY"
-    printf '%s %s %s\n' "$baseline_ms" "$candidate_ms" "$((candidate_ms - baseline_ms))" >> "$root/$state.tsv"
+    row="$baseline_ms $candidate_ms $((candidate_ms - baseline_ms))"
+    if [[ "$state" == cold ]]; then
+      cold_times+=("$row")
+    else
+      warm_times+=("$row")
+    fi
   done
 done
 
@@ -109,16 +134,17 @@ if [[ "$smoke" == true ]]; then
 fi
 
 statistics() {
-  local state=$1 column=$2
-  cut -d ' ' -f "$column" "$root/$state.tsv" | sort -n | tr '\n' ' '
+  local column=$1
+  shift
+  printf '%s\n' "$@" | cut -d ' ' -f "$column" | sort -n | paste -sd ' '
 }
 
-read -r cold_base_min cold_base_median cold_base_max < <(statistics cold 1; echo)
-read -r cold_candidate_min cold_candidate_median cold_candidate_max < <(statistics cold 2; echo)
-read -r warm_base_min warm_base_median warm_base_max < <(statistics warm 1; echo)
-read -r warm_candidate_min warm_candidate_median warm_candidate_max < <(statistics warm 2; echo)
-read -r cold_delta_min cold_delta_median cold_delta_max < <(statistics cold 3; echo)
-read -r warm_delta_min warm_delta_median warm_delta_max < <(statistics warm 3; echo)
+read -r cold_base_min cold_base_median cold_base_max < <(statistics 1 "${cold_times[@]}")
+read -r cold_candidate_min cold_candidate_median cold_candidate_max < <(statistics 2 "${cold_times[@]}")
+read -r warm_base_min warm_base_median warm_base_max < <(statistics 1 "${warm_times[@]}")
+read -r warm_candidate_min warm_candidate_median warm_candidate_max < <(statistics 2 "${warm_times[@]}")
+read -r cold_delta_min cold_delta_median cold_delta_max < <(statistics 3 "${cold_times[@]}")
+read -r warm_delta_min warm_delta_median warm_delta_max < <(statistics 3 "${warm_times[@]}")
 
 {
   printf '\n| State | Baseline median (range), ms | Candidate median (range), ms | Paired delta median (range), ms |\n'

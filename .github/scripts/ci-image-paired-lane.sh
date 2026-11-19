@@ -5,7 +5,9 @@ run_root="$RUNNER_TEMP/fabric-ci-pair"
 workspace=/__w/FabricO11y/FabricO11y
 product_root="$GITHUB_WORKSPACE/.paired-product"
 seeded_release=/opt/fabrico11y/compiler-seed/release-build
-baseline=registry.fedoraproject.org/fedora@sha256:d68cae9185777603262e0a7094f792ffed9326b22e1a03e2d2a1731fc3f94733
+# shellcheck source=.github/scripts/ci-image-paired-settings.sh
+source "$(dirname -- "${BASH_SOURCE[0]}")/ci-image-paired-settings.sh"
+baseline=$paired_baseline
 timeout_seconds=2700
 if [[ "$PAIR_PROFILE" == native-acceptance ]]; then
   timeout_seconds=18000

@@ -43,7 +43,12 @@ jq -e --arg revision "$revision" --arg variant "$variant" '
   ($variant != "common-seeded" or .config.Labels["io.fabrico11y.ci.variant"] == $variant)
 ' <<< "$config"
 compressed_bytes=$(docker buildx imagetools inspect "$candidate" --raw |
-  jq -er '.layers | map(.size) | add | select(. > 0)')
+  jq -er '.layers | select(type == "array" and length > 0) |
+    map(.size) | select(all(.[]; type == "number" and . == floor and . > 0)) |
+    add | select(. <= 9007199254740991)') || {
+  printf 'Invalid image layer sizes for %s\n' "$candidate" >&2
+  exit 1
+}
 printf 'revision=%s\nprofile=%s\ncandidate=%s\nmode=%s\nvariant=%s\n' "$revision" "$profile" "$candidate" "$mode" "$variant" >> "$GITHUB_OUTPUT"
 {
   printf '## Paired CI image qualification\n\n'
