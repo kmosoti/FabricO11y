@@ -31,7 +31,9 @@ permissions:
 jobs:
   pair:
     name: pair-${{ inputs.warm && 'warm' || 'cold' }}-${{ inputs.sample }}
-    if: github.repository == 'kmosoti/FabricO11y' && github.event_name == 'push' && startsWith(github.ref, 'refs/heads/ci/tool-image-paired-qualification/')
+    if: >-
+      github.repository == 'kmosoti/FabricO11y' && github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.run_live == 'true' && startsWith(github.ref, 'refs/heads/ci/tool-image-paired-qualification/')
     runs-on: ubuntu-24.04
     timeout-minutes: ${{ inputs.smoke && 30 || (inputs.profile == 'verify' && 100 || 360) }}
     env:
