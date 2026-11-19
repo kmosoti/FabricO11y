@@ -1,0 +1,20 @@
+[Unit]
+Description=FabricO11y Canonical Custody & Analytical Projection Server
+Documentation=https://github.com/kmosoti/FabricO11y
+
+[Service]
+Type=notify
+NotifyAccess=main
+Slice=fabrico11y.slice
+KillMode=control-group
+EnvironmentFile=%h/.config/fabrico11y-rpm/environment
+ExecStart=/usr/bin/fabric-server serve %h/.config/fabrico11y-rpm/server.json
+UMask=0077
+NoNewPrivileges=yes
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=10
+SyslogIdentifier=fabric-server
+
+[Install]
+WantedBy=default.target
