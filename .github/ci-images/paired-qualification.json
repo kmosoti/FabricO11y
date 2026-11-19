@@ -1,0 +1,7 @@
+{
+  "revision": "b8f1cddd9831a1b12c41bc58c3287f95823e094d",
+  "profile": "verify",
+  "candidate": "ghcr.io/kmosoti/fabrico11y-ci@sha256:65f2ea4b0e1fa702259853d9d4f9db2b44274e3cda50beb747743de614a9ca4e",
+  "variant": "common-seeded",
+  "mode": "qualification"
+}
