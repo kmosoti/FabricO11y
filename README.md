@@ -1,40 +1,58 @@
 # FabricO11y
 
-`FabricO11y` is a **CLI-first, zero-UI Fedora/Linux host, agent, and OTLP telemetry sensory plane** backed by a pure-Rust converged storage and causal attribution engine. It tracks cgroup v2 resource pressure, PSI stalls, `zram0`/swap saturation, systemd transient unit hygiene (`--collect` leaks), high-churn filesystem paths (`/tmp`, `/data/tmp`, `~/.cache`, `target/`), optional GPU sysfs metrics, and OTLP/Spindle envelopes inside a single bounded daemon and deterministic `fabric` CLI.
+FabricO11y is a Linux observability toolkit you use from the command line.
+See where CPU, memory, or disk pressure comes from, and investigate host and
+application activity alongside telemetry from jobs and agents. Start on one
+machine, or forward observations from several machines to a shared receiver.
 
-## Converged Engine & CLI (`fabric`)
+## Quick start
 
-All data lives locally under `FABRIC_DATA_DIR` (default `/data/fabrico11y`) with **zero external database containers** and **zero `/tmp` or `/dev/shm` usage**:
+1. **Install FabricO11y.** On x86-64 Fedora Workstation 44 or 45, get the
+   signed RPM from [Releases](https://github.com/kmosoti/FabricO11y/releases)
+   and follow the [Fedora setup guide](packaging/rpm/README.md#configure-a-fresh-rootless-instance).
+   For a Linux Nix profile or the stable NixOS 26.05 module, use the
+   [Nix installation guide](docs/nix-installation.md).
+2. **Set up local collection.** Follow the
+   [single-host instructions](docs/collection.md#choose-a-deployment) to
+   configure Spindle and the collector as user services.
+3. **Check the services and read your first metrics.** Once the services are
+   running, use the CLI from the same user account.
 
-- **`fabric-core` & `fabric-graph` (Sans-I/O):** Domain models, non-`/tmp` path enforcement, `DDSketch` quantiles, `EwmaMadDetector`, Five Data Observability Pillars (`Freshness`, `Volume`, `Schema`, `Distribution`, `Lineage`), causal graph BFS (`lineage`), and ranked resource attribution (`blame`).
-- **`fabric-store`:** Embedded `redb` ACID catalog + adjacency graph (`catalog.redb`), `32 MiB` Gorilla delta/XOR `HotMetricRing`, ZSTD-compressed date-partitioned Arrow/Parquet OLAP store, and `4 GiB` `RetentionJanitor`.
-- **`fabric-collect`:** Bounded `tokio` async collectors (`try_send` drop-with-counter) confined to `fabrico11y.slice` (`MemoryHigh=256M`, `MemoryMax=512M`, `CPUQuota=15%`, `IOWeight=30`, `TasksMax=64`) with a `200 MiB` RSS self-shedding watchdog.
-- **`fabric-query` & `fabric-cli` (`fabric`):** DataFusion/Arrow unified queries and machine-readable CLI subcommands (`--json`, `--arrow`, `--table`).
-- **Preserved Formal & Canonical Crates:** `admission-kernel` (Verus/Charon/Aeneas/Lean), `fabric` SDK + Spindle custody, `fabric-server` canonical receiver, and `fabric-mcp` stdio server.
+   ```sh
+   fabric production-ready --json
+   fabric query metrics --since 1h --json
+   ```
 
-```sh
-# Deterministic host + agent + OTLP CLI
-fabric snapshot --json
-fabric query metrics --since 1h --json
-fabric blame memory --json
-fabric lineage /data/tmp/fabric-synth-load --direction both --json
-fabric drift --pillar lineage --json
-fabric custody --json
-fabric doctor --json
-fabric guide fleet --json
-fabric settings
-fabric daemon --interval-ms 2000
+   The first command checks whether the collector and Spindle respond. The
+   second reads the metrics collected so far within the last hour.
 
-# Repository verification & coupled production user-stack install
-TMPDIR=/data/tmp CARGO_BUILD_TARGET_DIR=/data/cargo-target cargo xtask architecture
-TMPDIR=/data/tmp CARGO_BUILD_TARGET_DIR=/data/cargo-target cargo xtask check --tier medium
-TMPDIR=/data/tmp CARGO_BUILD_TARGET_DIR=/data/cargo-target cargo xtask prove all
-TMPDIR=/data/tmp CARGO_BUILD_TARGET_DIR=/data/cargo-target cargo xtask fuzz smoke /data/tmp/fabric-fuzz-smoke
-TMPDIR=/data/tmp CARGO_BUILD_TARGET_DIR=/data/cargo-target cargo xtask collection install-stack --bin-dir /data/cargo-target/release --data-dir /data/fabrico11y --tmp-dir /data/tmp --listen 127.0.0.1:17440
-```
+## Choose a deployment
 
-See [architecture](docs/architecture.md), [product direction](docs/direction.md), [linked knowledge](knowledge/README.md), [contributing](CONTRIBUTING.md), [local collection setup](docs/collection.md), [canonical custody](docs/canonical-custody.md), [typed investigations](docs/investigation.md), the [offline guide](docs/guide.md), and [service settings](docs/settings.md).
+### Single host
 
-Use the [Fedora RPM guide](packaging/rpm/README.md) or the [Nix and NixOS guide](docs/nix-installation.md) to install and configure the packaged Linux tools.
+The collector samples the Linux host. Apps and agents send observations to
+Spindle, which stores them locally. The collector reads those observations
+through a Unix socket and makes them available to `fabric query`.
 
-Requires Jujutsu 0.46.0 with a Git backend and Rust 1.100.0, pinned in [`rust-toolchain.toml`](rust-toolchain.toml).
+![System metrics reach the local collector directly. App and agent observations pass through Spindle first. The fabric CLI queries the local projection.](docs/assets/single-host.svg)
+
+### Multiple hosts
+
+Each host can keep collecting locally and forward from its own Spindle origin
+to Fabric Server. Use authenticated SSH tunnels between hosts. Fabric Server
+tracks received records and query visibility separately for each origin.
+[Set up a fleet](docs/canonical-custody.md#connect-multiple-hosts).
+
+![Two independent Spindle origins forward over authenticated SSH to one Fabric Server. It keeps a per-origin custody ledger and a per-origin query projection.](docs/assets/fleet.svg)
+
+## Operate and extend
+
+- **Inspect an observation.** Use [`fabric projection-ready`](docs/collection.md#check-receipt-projection)
+  to check whether a specific receipt is visible in the local or canonical projection.
+- **Configure resource use.** Read [TOML settings](docs/settings.md) and
+  [collector memory limits](docs/collection.md#elastic-collector-memory).
+  Run `fabric settings` to see the resolved settings on your host.
+- **Automate investigations.** Find typed queries and output formats in the
+  [investigation guide](docs/investigation.md) and [CLI guide](docs/guide.md).
+- **Work on FabricO11y.** See the [architecture](docs/architecture.md) and
+  [contribution guide](CONTRIBUTING.md) for crate boundaries, build tools, and verification.
