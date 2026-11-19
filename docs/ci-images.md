@@ -22,7 +22,14 @@ Compiled Lean libraries and the paths required by the checkers remain installed.
 
 ## Validate the qualification workflow
 
-Use the fixture-based simulation for routine changes to qualification. It runs
+Run the same offline fixture used for pull requests that change the paired
+workflow or its scripts.
+
+```sh
+TMPDIR=/data/tmp bash .github/scripts/test-ci-image-paired-simulation.sh
+```
+
+A manual dispatch also uses the simulation by default. The simulation runs
 the same plan validation and report logic used by the hosted comparison with
 deterministic inputs. Simulated results can verify rejection of invalid evidence
 and missing cache state, as well as the timing arithmetic. Use measured data
@@ -53,6 +60,14 @@ GHCR digest from its run summary. Put this file in
   "candidate": "ghcr.io/kmosoti/fabrico11y-ci@sha256:<native image digest>",
   "mode": "smoke"
 }
+```
+
+Push the branch, then explicitly select the live mode. Pushing this plan file
+alone does not start a benchmark.
+
+```sh
+gh workflow run ci-image-paired-qualification.yml \
+  --ref ci/tool-image-paired-qualification/native-replacement -f run_live=true
 ```
 
 1. Use `smoke` when changing the real cache transport, archive format, or
