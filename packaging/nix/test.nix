@@ -48,7 +48,6 @@ pkgs.testers.runNixOSTest {
     };
 
   testScript = ''
-    ${pkgs.lib.optionalString (stateVersion != "26.05") "import datetime as dt"}
     import json
     import shlex
     import time
@@ -64,8 +63,7 @@ pkgs.testers.runNixOSTest {
     socket = "/run/user/1000/spindle/spindle.sock"
     fabric = f"fabric --data-dir {state}/collector --tmp-dir {state}/scratch"
     local_ready = f"{fabric} production-ready --spindle-socket {socket} --json"
-    # The 26.05 driver takes timeout seconds as an integer.
-    deadline = ${if stateVersion == "26.05" then "90" else "dt.timedelta(seconds=90)"}
+    deadline = 90
     observer = "systemctl --user --machine=observer@"
 
     machine.start()
