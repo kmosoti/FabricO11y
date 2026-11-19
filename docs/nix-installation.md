@@ -36,7 +36,13 @@ tag and use the corresponding Nixpkgs 26.11 release input for the host.
 
 Before activation, create the state and scratch directories on disk and
 make them private and writable by the named regular user. Install the
-Spindle TOML outside the Nix store. Match its `socket` to
+TOML files outside the Nix store. The module requires normalized absolute
+paths and rejects the Nix store and known volatile directories such as
+`/run`, `/var/run`, and `/tmp`. Resolve any symlinks or bind mounts
+in the paths on the host and verify the targets are on persistent
+disk-backed storage. Keep the configuration and credential files private.
+
+Match the Spindle `socket` to
 `/run/user/<uid>/spindle/spindle.sock` for that user and set a persistent
 `storage` path. Use the [standalone](../config/spindle.toml) or
 [fleet](../config/spindle-fleet.toml) example as appropriate. Create the

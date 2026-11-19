@@ -15,15 +15,21 @@ let
     value:
     value != null
     && !builtins.hasContext value
-    && value != "/"
     && lib.hasPrefix "/" value
     && !lib.hasInfix "\n" value
     && !lib.hasInfix "\r" value
-    && !lib.any (part: part == "." || part == "..") (lib.splitString "/" value)
+    && !lib.any (part: part == "" || part == "." || part == "..") (
+      lib.splitString "/" (lib.removePrefix "/" value)
+    )
     && !lib.any (root: value == root || lib.hasPrefix "${root}/" value) [
       "/tmp"
-      "/dev/shm"
-      "/run/shm"
+      "/var/tmp"
+      "/dev"
+      "/proc"
+      "/sys"
+      "/run"
+      "/var/run"
+      "/var/lock"
       "/nix/store"
     ];
   externalPath =
@@ -100,11 +106,11 @@ in
           cfg.scratchDir
           cfg.spindleConfigFile
         ];
-        message = "FabricO11y requires absolute external dataDir, scratchDir and spindleConfigFile paths outside temporary filesystems and the Nix store.";
+        message = "services.fabrico11y.dataDir, scratchDir and spindleConfigFile require normalized absolute paths outside the Nix store and known volatile directories.";
       }
       {
         assertion = !receiverEnabled || validExternalPath cfg.serverConfigFile;
-        message = "FabricO11y serverConfigFile must be an absolute external path outside temporary filesystems and the Nix store.";
+        message = "services.fabrico11y.serverConfigFile requires a normalized absolute path outside the Nix store and known volatile directories.";
       }
     ];
 
