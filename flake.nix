@@ -38,9 +38,14 @@
 
       nixosModules.fabrico11y = import ./packaging/nix/module.nix { package = fabric; };
 
-      checks.${system}.nixos = import ./packaging/nix/test.nix {
-        inherit pkgs;
-        module = self.nixosModules.fabrico11y;
-      };
+      checks.${system}.nixos =
+        let
+          module = self.nixosModules.fabrico11y;
+        in
+        assert import ./packaging/nix/test-module-paths.nix {
+          inherit module system;
+          lib = nixpkgs.lib;
+        };
+        import ./packaging/nix/test.nix { inherit pkgs module; };
     };
 }
