@@ -1,4 +1,4 @@
-{ pkgs, module }:
+{ pkgs, module, stateVersion }:
 pkgs.testers.runNixOSTest {
   name = "fabrico11y-user-services";
   nodes.machine =
@@ -15,7 +15,7 @@ pkgs.testers.runNixOSTest {
     in
     {
       imports = [ module ];
-      system.stateVersion = "26.11";
+      system.stateVersion = stateVersion;
       virtualisation.memorySize = 2048;
 
       users.users.fabrictest = {
