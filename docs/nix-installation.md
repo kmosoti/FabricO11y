@@ -1,0 +1,82 @@
+# Nix and NixOS installation
+
+The FabricO11y flake builds six executables for `x86_64-linux` using Rust
+1.100.0 and the repository's Cargo lockfile. Run these commands from the
+release checkout or supply the release tag as the flake reference.
+
+```sh
+nix build .#fabrico11y --no-link
+nix run .#fabrico11y -- --help
+nix profile add .#fabrico11y
+```
+
+The profile exposes `fabric`, `spindle`, `fabric-server`, `fabric-adapter`,
+`fabric-query`, and `fabric-mcp`. An ordinary Nix profile install places
+the executables on `PATH`. Use the [collection guide](collection.md) to run
+services on Linux. Packaged TOML examples are in
+`share/fabrico11y/config` under the package output.
+
+## NixOS user services
+
+Import `inputs.fabrico11y.nixosModules.fabrico11y` in your NixOS host's
+`modules` list. Point the flake input at the published FabricO11y release
+tag and use the corresponding Nixpkgs 26.11 release input for the host.
+
+```nix
+{
+  services.fabrico11y = {
+    enable = true;
+    user = "alice";
+    dataDir = "/var/lib/fabrico11y/collector";
+    scratchDir = "/var/lib/fabrico11y/scratch";
+    spindleConfigFile = "/var/lib/fabrico11y/spindle.toml";
+  };
+}
+```
+
+Before activation, create the state and scratch directories on disk and
+make them private and writable by the named regular user. Install the
+Spindle TOML outside the Nix store. Match its `socket` to
+`/run/user/<uid>/spindle/spindle.sock` for that user and set a persistent
+`storage` path. Use the [standalone](../config/spindle.toml) or
+[fleet](../config/spindle-fleet.toml) example as appropriate. Create the
+storage parent first. Configure credentials with external private files as
+described in [canonical custody](canonical-custody.md).
+
+The module starts Spindle and the collector in the named user's manager
+during their session. To run them before login, opt into
+`users.users.alice.linger = true`. To run a co-located canonical receiver,
+set `services.fabrico11y.serverConfigFile` to an external
+[server TOML](../config/server.toml). Configure its loopback endpoint,
+persistent directories and external credential files before activation.
+Keep token bytes outside Nix source and outside the store.
+
+After a rebuild, check the services from the selected user's session.
+
+```sh
+systemctl --user status spindle.service fabric-daemon.service
+fabric --data-dir /var/lib/fabrico11y/collector \
+  --tmp-dir /var/lib/fabrico11y/scratch production-ready \
+  --spindle-socket "$XDG_RUNTIME_DIR/spindle/spindle.sock" --json
+```
+
+If you previously installed these services manually, stop them and preserve
+their local unit files before enabling the module. The user's own unit
+files can take precedence over NixOS-managed units. Before disabling or
+rolling back the module, stop the user services. Back up the external
+configuration, credentials, and state separately from the NixOS
+generation. Rolling back the generation changes the package and module
+configuration. Restoring telemetry state requires the matching durable
+store backup.
+
+## Release qualification
+
+The development flake uses a locked Nixpkgs 26.11-pre revision while the
+stable branch is pending. Before publication, update the pin to the
+official `nixos-26.11` branch, lock its tested revision, and rerun the
+package and VM checks with that lock.
+
+```sh
+nix flake check --no-build
+nix build .#checks.x86_64-linux.nixos --no-link
+```
