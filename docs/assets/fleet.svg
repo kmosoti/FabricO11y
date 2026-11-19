@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="402" viewBox="0 0 560 402" role="img" aria-labelledby="title description">
+  <title id="title">FabricO11y across multiple hosts</title>
+  <desc id="description">Spindle on each host stores observations under its own origin and forwards through an authenticated SSH tunnel. One Fabric Server records each origin's custody and query visibility. Operators query the receiver using fabric-query.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#65dec4"/>
+    </marker>
+  </defs>
+  <rect x="1" y="1" width="558" height="400" rx="19" fill="#101c2d" stroke="#405875" stroke-width="2"/>
+  <g fill="none" stroke="#65dec4" stroke-width="3" stroke-linejoin="round">
+    <path d="M 152 96 V 156 H 408 V 96"/>
+    <path d="M 280 156 V 184" marker-end="url(#arrow)"/>
+    <path d="M 280 310 V 344" marker-end="url(#arrow)"/>
+  </g>
+  <g fill="#1a2c45" stroke="#526b8a" stroke-width="1.5">
+    <rect x="36" y="27" width="232" height="67" rx="12"/>
+    <rect x="292" y="27" width="232" height="67" rx="12"/>
+    <rect x="36" y="186" width="488" height="122" rx="12"/>
+  </g>
+  <g fill="#243b58" stroke="#526b8a" stroke-width="1.5">
+    <rect x="51" y="235" width="222" height="58" rx="8"/>
+    <rect x="287" y="235" width="222" height="58" rx="8"/>
+  </g>
+  <rect x="174" y="346" width="212" height="38" rx="10" fill="#143d3a" stroke="#65dec4" stroke-width="1.5"/>
+  <g font-family="sans-serif" text-anchor="middle">
+    <g fill="#f4f8ff" font-size="21" font-weight="700">
+      <text x="152" y="54">Host A</text>
+      <text x="408" y="54">Host B</text>
+      <text x="280" y="218">Fabric Server</text>
+      <text x="280" y="372" font-family="monospace" font-size="19">fabric-query</text>
+    </g>
+    <g fill="#c4d6ec" font-size="17">
+      <text x="152" y="78">Spindle origin A</text>
+      <text x="408" y="78">Spindle origin B</text>
+      <text x="280" y="132" fill="#a3efdf">Authenticated SSH tunnels</text>
+      <text x="162" y="260" font-size="19" font-weight="700">Custody ledger</text>
+      <text x="162" y="281">Received per origin</text>
+      <text x="398" y="260" font-size="19" font-weight="700">Query projection</text>
+      <text x="398" y="281">Visible per origin</text>
+    </g>
+  </g>
+</svg>
