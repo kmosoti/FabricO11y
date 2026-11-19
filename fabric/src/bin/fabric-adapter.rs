@@ -9,15 +9,28 @@ fn run() -> Result<(), String> {
     let socket = PathBuf::from(args.next().ok_or("usage: fabric-adapter SOCKET PRODUCER")?);
     let producer = args.next().ok_or("producer required")?;
     let config = fabric::sdk::Config::local(socket, producer)?;
-    let context = match args.next().as_deref() {
-        None => None,
-        Some("--run-context") => Some(
+    enum Mode {
+        Legacy,
+        Run(fabric::run::RunContext),
+        Batch(PathBuf),
+    }
+    let mode = match args.next().as_deref() {
+        None => Mode::Legacy,
+        Some("--run-context") => Mode::Run(
             serde_json::from_str::<fabric::run::RunContext>(
                 &args.next().ok_or("--run-context requires JSON")?,
             )
             .map_err(|e| e.to_string())?,
         ),
-        Some(_) => return Err("usage: fabric-adapter SOCKET PRODUCER [--run-context JSON]".into()),
+        Some("--batch-outbox") => Mode::Batch(PathBuf::from(
+            args.next().ok_or("--batch-outbox requires a directory")?,
+        )),
+        Some(_) => {
+            return Err(
+                "usage: fabric-adapter SOCKET PRODUCER [--run-context JSON | --batch-outbox PATH]"
+                    .into(),
+            );
+        }
     };
     if args.next().is_some() {
         return Err("unexpected argument".into());
@@ -25,10 +38,14 @@ fn run() -> Result<(), String> {
     enum Adapter {
         Legacy(fabric::sdk::Client),
         Run(Box<fabric::sdk::RunClient>),
+        Batch(Box<fabric::sdk::BatchClient>),
     }
-    let mut client = match context {
-        Some(context) => Adapter::Run(Box::new(fabric::sdk::RunClient::new(config, context)?)),
-        None => Adapter::Legacy(fabric::sdk::Client::new(config)?),
+    let mut client = match mode {
+        Mode::Legacy => Adapter::Legacy(fabric::sdk::Client::new(config)?),
+        Mode::Run(context) => Adapter::Run(Box::new(fabric::sdk::RunClient::new(config, context)?)),
+        Mode::Batch(path) => Adapter::Batch(Box::new(
+            fabric::sdk::BatchClient::open(config, &path).map_err(|e| e.to_string())?,
+        )),
     };
     let input = io::stdin();
     let mut input = input.lock();
@@ -68,6 +85,7 @@ fn run() -> Result<(), String> {
             match &mut client {
                 Adapter::Legacy(client) => fabric::sdk::adapter_reply(client, &line),
                 Adapter::Run(client) => fabric::sdk::run_adapter_reply(client, &line),
+                Adapter::Batch(client) => fabric::sdk::batch_adapter_reply(client, &line),
             }
         };
         serde_json::to_writer(&mut output, &reply).map_err(|e| e.to_string())?;
@@ -79,14 +97,21 @@ fn run() -> Result<(), String> {
     }
     // EOF attempts a bounded flush. Failure is visible in a final structured reply.
     let deadline = Instant::now() + Duration::from_secs(2);
-    match match &client {
-        Adapter::Legacy(client) => client.flush(deadline),
-        Adapter::Run(client) => client.flush_local(deadline),
-    } {
-        Ok(receipt) => writeln!(output, "{}", serde_json::json!({"eof_receipt":receipt})),
-        Err(error) => writeln!(output, "{}", serde_json::json!({"error":error,"at":"eof"})),
-    }
-    .map_err(|e| e.to_string())?;
+    let reply_for_flush = |result| match result {
+        Ok(receipt) => serde_json::json!({"eof_receipt":receipt}),
+        Err(error) => serde_json::json!({"error":error,"at":"eof"}),
+    };
+    let reply = match &mut client {
+        Adapter::Legacy(client) => reply_for_flush(client.flush(deadline)),
+        Adapter::Run(client) => reply_for_flush(client.flush_local(deadline)),
+        Adapter::Batch(client) => match client.flush_local(deadline) {
+            Ok(receipt) => serde_json::json!({"eof_receipt":receipt}),
+            Err(error) => {
+                serde_json::json!({"error":error.to_string(),"code":error.code(),"at":"eof"})
+            }
+        },
+    };
+    writeln!(output, "{reply}").map_err(|e| e.to_string())?;
     Ok(())
 }
 fn main() {

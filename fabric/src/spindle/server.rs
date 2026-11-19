@@ -1,5 +1,5 @@
 use super::{
-    Config, Health, READ_ORIGIN_MISMATCH, Reply, Request, SelfTelemetryHealth,
+    Config, Health, ORIGIN_MISMATCH, Reply, Request, SelfTelemetryHealth,
     custody::Store,
     sources::{self, FileSource, HostSource, JournalSource},
 };
@@ -492,11 +492,28 @@ impl Daemon {
         if let Request::ReadForOrigin {
             expected_origin, ..
         } = request
-            && expected_origin != self.store.origin()
         {
-            return Err(READ_ORIGIN_MISMATCH.to_owned());
+            return self.check_origin(expected_origin);
         }
         Ok(())
+    }
+    fn check_origin(&self, expected_origin: &str) -> Result<(), String> {
+        if expected_origin != self.store.origin() {
+            return Err(ORIGIN_MISMATCH.to_owned());
+        }
+        Ok(())
+    }
+    fn lease_reply(&mut self, producer: &str, expected_origin: Option<&str>) -> Reply {
+        match expected_origin
+            .map_or(Ok(()), |origin| self.check_origin(origin))
+            .and_then(|()| self.store.issue_lease(producer))
+        {
+            Ok((generation, expires_unix_s)) => Reply::Lease {
+                generation,
+                expires_unix_s,
+            },
+            Err(error) => Reply::Error { error },
+        }
     }
     fn prepare_remote(
         &mut self,
@@ -542,13 +559,11 @@ impl Daemon {
                         Err(error) => Reply::Error { error },
                     }
                 }
-                Ok(Request::Lease { producer }) => match self.store.issue_lease(&producer) {
-                    Ok((generation, expires_unix_s)) => Reply::Lease {
-                        generation,
-                        expires_unix_s,
-                    },
-                    Err(error) => Reply::Error { error },
-                },
+                Ok(Request::Lease { producer }) => self.lease_reply(&producer, None),
+                Ok(Request::LeaseForOrigin {
+                    producer,
+                    expected_origin,
+                }) => self.lease_reply(&producer, Some(&expected_origin)),
                 Ok(Request::FabricProgress) => Reply::FabricProgress {
                     authority: self.config.forwarding.as_ref().map(|f| f.authority.clone()),
                     origin: self.store.origin().to_owned(),
@@ -1084,7 +1099,7 @@ mod shadow_reclamation_tests {
         let wrong_local = daemon.handle(&expected_read("other-store")).unwrap();
         assert_eq!(
             super::super::wire::decode_records_raw(&wrong_local).unwrap_err(),
-            READ_ORIGIN_MISMATCH,
+            ORIGIN_MISMATCH,
         );
         drop(daemon);
         let mut shadow = Daemon::open(config.clone()).unwrap();
@@ -1119,7 +1134,7 @@ mod shadow_reclamation_tests {
             );
             assert_eq!(
                 transport::read_raw_for_origin(&socket, "other-store", 0, deadline).unwrap_err(),
-                READ_ORIGIN_MISMATCH,
+                ORIGIN_MISMATCH,
             );
             transport::read_raw_for_origin(&socket, &actual_origin, 0, deadline)
         });
@@ -1350,6 +1365,50 @@ mod connection_accounting_tests {
             host: None,
         }
     }
+    #[test]
+    fn qualified_lease_refuses_wrong_origin_before_allocating() {
+        let temp = tempfile::tempdir().unwrap();
+        let config = config(temp.path());
+        let mut daemon = Daemon::open(config.clone()).unwrap();
+        let expected_origin = daemon.store.origin().to_owned();
+        let wrong = serde_json::to_vec(&Request::LeaseForOrigin {
+            producer: "rejected".into(),
+            expected_origin: "different-origin".into(),
+        })
+        .unwrap();
+        assert!(matches!(
+            serde_json::from_slice::<Reply>(&daemon.handle(&wrong).unwrap()).unwrap(),
+            Reply::Error { error } if error == ORIGIN_MISMATCH
+        ));
+        let correct = serde_json::to_vec(&Request::LeaseForOrigin {
+            producer: "accepted".into(),
+            expected_origin,
+        })
+        .unwrap();
+        assert!(matches!(
+            serde_json::from_slice::<Reply>(&daemon.handle(&correct).unwrap()).unwrap(),
+            Reply::Lease { .. }
+        ));
+        drop(daemon);
+        let conn = rusqlite::Connection::open_with_flags(
+            config.storage.join("custody.sqlite"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .unwrap();
+        assert_eq!(
+            conn.query_row("SELECT producer FROM generations", [], |row| row
+                .get::<_, String>(0))
+                .unwrap(),
+            "accepted"
+        );
+        assert_eq!(
+            conn.query_row("SELECT count(*) FROM generations", [], |row| row
+                .get::<_, u64>(0))
+                .unwrap(),
+            1
+        );
+    }
+
     fn status_request(config: &Config) -> UnixStream {
         let mut client = UnixStream::connect(&config.socket).unwrap();
         let body = serde_json::to_vec(&Request::Status).unwrap();

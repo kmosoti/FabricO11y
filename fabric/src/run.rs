@@ -17,19 +17,23 @@ impl RunContext {
         Ok(context)
     }
     pub fn validate(&self) -> Result<(), String> {
-        let bytes = self.run_id.as_bytes();
-        if self.run_id == "00000000-0000-0000-0000-000000000000"
-            || bytes.len() != 36
-            || !bytes.iter().enumerate().all(|(i, b)| {
-                if matches!(i, 8 | 13 | 18 | 23) {
-                    *b == b'-'
-                } else {
-                    b.is_ascii_hexdigit() && !b.is_ascii_uppercase()
-                }
-            })
-        {
-            return Err("run_id must be a lowercase UUID".into());
-        }
-        Ok(())
+        validate_id(&self.run_id).map_err(|()| "run_id must be a lowercase UUID".into())
     }
+}
+
+pub(crate) fn validate_id(id: &str) -> Result<(), ()> {
+    let bytes = id.as_bytes();
+    if id == "00000000-0000-0000-0000-000000000000"
+        || bytes.len() != 36
+        || !bytes.iter().enumerate().all(|(i, b)| {
+            if matches!(i, 8 | 13 | 18 | 23) {
+                *b == b'-'
+            } else {
+                b.is_ascii_hexdigit() && !b.is_ascii_uppercase()
+            }
+        })
+    {
+        return Err(());
+    }
+    Ok(())
 }
