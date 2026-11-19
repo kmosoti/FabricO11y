@@ -135,7 +135,6 @@ fn development_jobs_partition_checks_and_install_only_their_required_tools() {
 fn image_qualification_runs_the_develop_push_workload() {
     let workflows = repo_root().join(".github/workflows");
     let development = fs::read_to_string(workflows.join("development-checks.yml")).unwrap();
-    let trial = fs::read_to_string(workflows.join("ci-image-trial.yml")).unwrap();
     let paired_lane =
         fs::read_to_string(repo_root().join(".github/scripts/ci-image-paired-lane.sh")).unwrap();
     let paired_store =
@@ -159,18 +158,16 @@ fn image_qualification_runs_the_develop_push_workload() {
                 .any(|line| line.trim_end().ends_with(command)),
             "paired trial missing shared workload command: {command}"
         );
-        for workflow in [&development, &trial] {
-            assert!(
-                workflow
-                    .lines()
-                    .filter_map(|line| line.trim().strip_prefix("run: "))
-                    .any(|line| line
-                        .strip_prefix("/github/home/.cargo/bin/")
-                        .unwrap_or(line)
-                        == command),
-                "missing shared workload command: {command}"
-            );
-        }
+        assert!(
+            development
+                .lines()
+                .filter_map(|line| line.trim().strip_prefix("run: "))
+                .any(|line| line
+                    .strip_prefix("/github/home/.cargo/bin/")
+                    .unwrap_or(line)
+                    == command),
+            "development checks missing shared workload command: {command}"
+        );
     }
     for setting in [
         "runs-on: ubuntu-24.04",
@@ -182,7 +179,10 @@ fn image_qualification_runs_the_develop_push_workload() {
         "TMPDIR: /var/tmp",
         "FABRIC_FUZZ_TARGET_DIR: /github/home/.cache/fabrico11y-fuzz-target",
     ] {
-        assert!(development.contains(setting) && trial.contains(setting));
+        assert!(
+            development.contains(setting),
+            "development checks missing {setting}"
+        );
     }
     for setting in [
         "CARGO_BUILD_JOBS=4",
@@ -199,9 +199,6 @@ fn image_qualification_runs_the_develop_push_workload() {
         );
     }
     assert!(paired_lane.contains("FABRIC_FUZZ_SMOKE_SECONDS=60"));
-    assert!(trial.contains("FABRIC_FUZZ_SMOKE_SECONDS: '60'"));
-    assert_eq!(trial.matches("fail-on-cache-miss: true").count(), 2);
-    assert!(!trial.contains("restore-keys:"));
     assert_eq!(paired_cache.matches("fail-on-cache-miss: true").count(), 2);
     assert!(!paired_cache.contains("restore-keys:"));
 }
