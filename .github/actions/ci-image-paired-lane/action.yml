@@ -36,7 +36,7 @@ runs:
     - name: Restore exact application cache
       id: application
       if: env.PAIR_WARM == 'true'
-      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       env:
         PATH: ${{ inputs.archive-path }}
         PAIR_CACHE_ROLE: ${{ inputs.role }}
@@ -55,7 +55,7 @@ runs:
     - name: Restore exact baseline proof cache
       id: proof
       if: env.PAIR_WARM == 'true' && env.PAIR_PROFILE == 'native-acceptance' && inputs.role == 'baseline'
-      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       env:
         PATH: ${{ inputs.archive-path }}
         PAIR_CACHE_ROLE: baseline
