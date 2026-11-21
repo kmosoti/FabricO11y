@@ -1017,7 +1017,7 @@ mod tests {
             timestamp_ms: 1_700_000_000_000,
             name: "cgroup.memory.current".into(),
             value: 536_870_912.0,
-            host: "fedora-blade".into(),
+            host: "workstation-01".into(),
             slice: "agent.slice".into(),
             unit: "synth.scope".into(),
             pid: Some(4242),

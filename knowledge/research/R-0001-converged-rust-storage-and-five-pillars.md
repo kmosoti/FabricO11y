@@ -37,4 +37,4 @@ related:
 ## Relations
 
 - *supports*: [D-0002](../decisions/D-0002-cli-pivot-and-converged-telemetry-engine.md)
-- *grounded-in*: [O-0001](../observations/O-0001-fedora-blade-resource-postmortem.md)
+- *grounded-in*: [O-0001](../observations/O-0001-workstation-resource-postmortem.md)

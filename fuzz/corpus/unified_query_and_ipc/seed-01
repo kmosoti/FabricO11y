@@ -1,4 +1,4 @@
-host=fedora-blade
+host=workstation-01
 unit
 avg(value)
 name=memory.current

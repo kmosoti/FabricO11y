@@ -1029,7 +1029,7 @@ mod tests {
     fn sample_snapshot() -> HostSnapshot {
         HostSnapshot {
             timestamp_unix_ms: 1_700_000_000_000,
-            hostname: "fedora-blade".into(),
+            hostname: "workstation-01".into(),
             memory: MemorySnapshot {
                 mem_total_bytes: 32 * 1024 * 1024 * 1024,
                 mem_available_bytes: 16 * 1024 * 1024 * 1024,
@@ -1059,7 +1059,7 @@ mod tests {
                 cpu_time_ticks: 1200,
                 open_fds: 8,
                 unlinked_fds: 0,
-                cwd: Some("/home/kmosoti".into()),
+                cwd: Some("/home/user".into()),
                 open_paths: vec!["/data/tmp/fabric-synth-load/payload.bin".into()],
                 agent_hint: Some("synthetic_agent_load".into()),
             }],

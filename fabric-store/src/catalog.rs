@@ -877,7 +877,7 @@ mod tests {
         let store = CatalogStore::open(dir.path()).unwrap();
         let snap = HostSnapshot {
             timestamp_unix_ms: 1_700_000_000_000,
-            hostname: "fedora-blade".into(),
+            hostname: "workstation-01".into(),
             ..Default::default()
         };
         let drift = evaluate_five_pillars(&snap, &Default::default(), None);
@@ -889,7 +889,7 @@ mod tests {
             Some(1_700_000_000_000)
         );
         let loaded = store.load_live_state().unwrap().unwrap();
-        assert_eq!(loaded.snapshot.hostname, "fedora-blade");
+        assert_eq!(loaded.snapshot.hostname, "workstation-01");
     }
 
     #[test]
@@ -899,7 +899,7 @@ mod tests {
 
         let snap1 = HostSnapshot {
             timestamp_unix_ms: 1_700_000_000_000,
-            hostname: "fedora-blade".into(),
+            hostname: "workstation-01".into(),
             units: vec![fabric_core::UnitRecord {
                 name: "ephemeral-1.scope".into(),
                 manager: "user".into(),
@@ -938,7 +938,7 @@ mod tests {
 
         let snap2 = HostSnapshot {
             timestamp_unix_ms: 1_700_000_002_000,
-            hostname: "fedora-blade".into(),
+            hostname: "workstation-01".into(),
             ..Default::default()
         };
         let drift2 = evaluate_five_pillars(&snap2, &Default::default(), None);
@@ -1002,7 +1002,7 @@ mod tests {
 
         let snap = HostSnapshot {
             timestamp_unix_ms: 1_700_000_003_000,
-            hostname: "fedora-blade".into(),
+            hostname: "workstation-01".into(),
             ..Default::default()
         };
         let drift = evaluate_five_pillars(&snap, &Default::default(), None);
