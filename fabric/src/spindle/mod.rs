@@ -1,6 +1,7 @@
 //! Fedora user-service collection and local durable custody.
 pub const MAX_REPLY: usize = crate::observation::MAX_FRAME + 8192;
 pub mod custody;
+mod pool;
 mod server;
 pub mod sources;
 pub mod transport;
@@ -149,6 +150,13 @@ pub enum Request {
     },
     ReadForOrigin {
         expected_origin: String,
+        after: u64,
+        limit: usize,
+    },
+    /// Keep-alive batched read returning up to `wire::MAX_READ_PAGE` records on a pooled UDS.
+    ReadBatch {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expected_origin: Option<String>,
         after: u64,
         limit: usize,
     },

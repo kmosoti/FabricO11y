@@ -4,7 +4,7 @@
 
 ## 1. Crate & Authority Boundaries
 
-Pure domain logic, schema contracts, statistical sketches, causal graph traversal, and formal admission arithmetic live in **Sans-I/O** crates (`admission-kernel`, `fabric-core`, `fabric-graph`). All Linux kernel probing, embedded disk/memory custody, DataFusion query execution, and CLI rendering are isolated in dedicated I/O crates (`fabric-store`, `fabric-collect`, `fabric-query`, `fabric-cli`, plus preserved custody/protocol crates `fabric`, `fabric-server`, and `fabric-mcp`). Dependency boundaries are machine-verified by [`verification/architecture.toml`](../verification/architecture.toml) via `cargo xtask architecture`.
+Pure domain logic, schema contracts, statistical sketches, causal graph traversal, and formal admission arithmetic live in **Sans-I/O** crates (`admission-kernel`, `fabric-core`, `fabric-graph`). All Linux kernel probing, embedded disk/memory custody, DataFusion query execution, and CLI rendering are isolated in dedicated I/O crates (`fabric-store`, `fabric-collect`, `fabric-query`, `fabric-cli`, plus preserved custody/protocol crates `fabric`, `fabric-server`, and `fabric-mcp`). Downstream Rust integrators consume `fabric.cli.v1` JSON outputs and `fabric-query` over bounded subprocess pipes via the lightweight, zero-UI [`fabric-client`](../fabric-client/Cargo.toml) crate without pulling in Arrow, DataFusion, or UI crates. Dependency boundaries are machine-verified by [`verification/architecture.toml`](../verification/architecture.toml) via `cargo xtask architecture`.
 
 ```mermaid
 flowchart TD
@@ -45,6 +45,12 @@ flowchart TD
         CLI --> FAB
     end
 
+    subgraph ZeroUIClient["Zero-UI Typed Consumer Crate"]
+        FCL["fabric-client (fabric.cli.v1 schemas, FabricClient, FabricQueryClient; no Arrow/UI deps)"]
+        FCL -. "subprocess (--json)" .-> CLI
+        FCL -. "FABRIC_CREDENTIAL_FILE only" .-> FQBIN["fabric-query CLI"]
+    end
+
     subgraph PreservedCustody["Preserved Canonical Custody & Protocol Crates"]
         FAB["fabric (SDK & Spindle local custody)"]
         SRV["fabric-server (Canonical TCP ledger & elastic analytical admission)"]
@@ -56,6 +62,13 @@ flowchart TD
         MCP --> FAB
     end
 ```
+
+### Zero-UI Consumer Client (`fabric-client`)
+
+`fabric-client` isolates downstream Rust callers from Arrow, DataFusion, UI rendering crates, and direct storage locks:
+
+- **Optional runtime feature (`default = ["cli"]`):** Callers can disable default features (`default-features = false`) for pure `serde` schema deserialization (`fabric.cli.v1`), or use `FabricClient` and `FabricQueryClient` asynchronously under `tokio`.
+- **Credential-file-only reader auth (`FabricQueryClient`):** Rejects missing, empty, oversized (`> 4096 B`), or symlinked credential files before spawning `fabric-query`, injects `FABRIC_CREDENTIAL_FILE` and `FABRIC_ENDPOINT`, explicitly clears `FABRIC_CREDENTIAL` via `env_remove`, enables `kill_on_drop(true)` on every subprocess, and redacts any credential bytes from error output.
 
 ## 2. Converged Telemetry Engine & Self-Preservation Pipeline
 

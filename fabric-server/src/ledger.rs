@@ -391,21 +391,31 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
         let retries = if retry_ids.is_empty() {
             BTreeMap::new()
         } else {
-            let ids = retry_ids
-                .iter()
-                .map(u64::to_string)
-                .collect::<Vec<_>>()
-                .join(",");
-            let rows = self.access().rows(
-                &format!("SELECT {COLUMNS} FROM records WHERE published=1 AND origin=?1 AND source_id IN ({ids}) ORDER BY id"),
-                [origin], MAX_BATCH_BYTES,
-            )?;
-            if rows.len() != retry_ids.len() {
+            const MAX_IN_CLAUSE_IDS: usize = 500;
+            let all_ids: Vec<u64> = retry_ids.iter().copied().collect();
+            let mut loaded = BTreeMap::new();
+            let mut loaded_bytes = 0usize;
+            for chunk in all_ids.chunks(MAX_IN_CLAUSE_IDS) {
+                let ids = chunk
+                    .iter()
+                    .map(u64::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let remaining_bytes = MAX_BATCH_BYTES.saturating_sub(loaded_bytes);
+                let rows = self.access().rows(
+                    &format!("SELECT {COLUMNS} FROM records WHERE published=1 AND origin=?1 AND source_id IN ({ids}) ORDER BY id"),
+                    [origin],
+                    remaining_bytes,
+                )?;
+                for row in rows {
+                    loaded_bytes = loaded_bytes.saturating_add(row.raw.len());
+                    loaded.insert(row.source_id, row);
+                }
+            }
+            if loaded.len() != retry_ids.len() {
                 return Err("canonical retry history unavailable within byte budget".into());
             }
-            rows.into_iter()
-                .map(|r| (r.source_id, r))
-                .collect::<BTreeMap<_, _>>()
+            loaded
         };
         let mut through = initial;
         let mut additions: Vec<&ForwardRecord> = Vec::new();

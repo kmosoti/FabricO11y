@@ -1,6 +1,7 @@
 use super::{
     Config, Health, ORIGIN_MISMATCH, Reply, Request, SelfTelemetryHealth,
     custody::Store,
+    pool::WorkerPool,
     sources::{self, FileSource, HostSource, JournalSource},
 };
 use crate::{
@@ -8,14 +9,21 @@ use crate::{
     sdk::Admission,
     self_telemetry::{SelfTelemetry, Service},
 };
-use rustix::net::sockopt::socket_peercred;
+use rustix::{
+    event::{EventfdFlags, PollFd, PollFlags, Timespec, eventfd, poll},
+    net::sockopt::socket_peercred,
+};
 use std::{
     fs,
     io::{Read, Write},
-    os::unix::{
-        fs::{FileTypeExt, MetadataExt, PermissionsExt},
-        net::{UnixListener, UnixStream},
+    os::{
+        fd::OwnedFd,
+        unix::{
+            fs::{FileTypeExt, MetadataExt, PermissionsExt},
+            net::{UnixListener, UnixStream},
+        },
     },
+    sync::Arc,
     time::{Duration, Instant},
 };
 struct Connection {
@@ -27,6 +35,7 @@ struct Connection {
     output: Vec<u8>,
     written: usize,
     deadline: Instant,
+    keep_alive: bool,
     remote: Option<std::sync::mpsc::Receiver<Result<Vec<u8>, String>>>,
 }
 enum ConnectionProgress {
@@ -207,6 +216,8 @@ pub struct Daemon {
     forward_worker: Option<std::sync::mpsc::Receiver<Result<ForwardReceipt, String>>>,
     next_forward: Instant,
     self_reporter: Option<SelfReporter>,
+    wakeup: Arc<OwnedFd>,
+    workers: WorkerPool,
 }
 impl Daemon {
     pub fn open(config: Config) -> Result<Self, String> {
@@ -253,6 +264,9 @@ impl Daemon {
         let host = config.host.clone().map(HostSource::new);
         let connection_limit = crate::resources::connection_limit(config.max_connections);
         let connections = Vec::with_capacity(connection_limit);
+        let wakeup =
+            Arc::new(eventfd(0, EventfdFlags::CLOEXEC | EventfdFlags::NONBLOCK).map_err(err)?);
+        let workers = WorkerPool::new("fabric-spindle", 4, 32, Arc::clone(&wakeup));
         Ok(Self {
             config,
             store,
@@ -273,6 +287,8 @@ impl Daemon {
             forward_worker: None,
             next_forward: Instant::now(),
             self_reporter: None,
+            wakeup,
+            workers,
         })
     }
 
@@ -287,12 +303,59 @@ impl Daemon {
         while !self.stopping || !self.connections.is_empty() {
             let ingestion_before = self.health.ingestion;
             self.tick()?;
+            if self.stopping && self.connections.is_empty() {
+                break;
+            }
             // Successful admissions have durable replies queued for the next
-            // tick. Flush them promptly; remote/output-only waits still yield.
+            // tick; wait on fd readiness otherwise instead of sleep-polling.
             if self.health.ingestion == ingestion_before {
-                std::thread::sleep(Duration::from_millis(2));
+                self.wait_ready()?;
             }
         }
+        Ok(())
+    }
+
+    fn wait_ready(&self) -> Result<(), String> {
+        let now = Instant::now();
+        let has_sources = !self.files.is_empty() || self.journal.is_some() || self.host.is_some();
+        let mut wait = if has_sources {
+            Duration::from_millis(25)
+        } else {
+            Duration::from_millis(250)
+        };
+        for c in &self.connections {
+            wait = wait.min(c.deadline.saturating_duration_since(now));
+        }
+        if self.config.forwarding.is_some() && self.forward_worker.is_none() {
+            wait = wait.min(self.next_forward.saturating_duration_since(now));
+        }
+        if let Some(reporter) = &self.self_reporter {
+            wait = wait.min(reporter.next_report.saturating_duration_since(now));
+        }
+
+        let mut fds = Vec::with_capacity(2 + self.connections.len());
+        fds.push(PollFd::new(&self.wakeup, PollFlags::IN));
+        if !self.stopping {
+            fds.push(PollFd::new(&self.listener, PollFlags::IN));
+        }
+        for c in &self.connections {
+            if !c.output.is_empty() {
+                fds.push(PollFd::new(&c.stream, PollFlags::OUT));
+            } else if c.remote.is_none() {
+                fds.push(PollFd::new(&c.stream, PollFlags::IN));
+            }
+        }
+
+        let timeout = Timespec {
+            tv_sec: wait.as_secs() as _,
+            tv_nsec: wait.subsec_nanos() as _,
+        };
+        match poll(&mut fds, Some(&timeout)) {
+            Ok(_) | Err(rustix::io::Errno::INTR) => {}
+            Err(e) => return Err(err(e)),
+        }
+        let mut drain = [0u8; 8];
+        let _ = rustix::io::read(&*self.wakeup, &mut drain);
         Ok(())
     }
     pub fn tick(&mut self) -> Result<(), String> {
@@ -322,6 +385,7 @@ impl Daemon {
                             size: None,
                             output: Vec::new(),
                             written: 0,
+                            keep_alive: false,
                             remote: None,
                             deadline: Instant::now()
                                 + Duration::from_millis(self.config.client_timeout_ms),
@@ -334,32 +398,36 @@ impl Daemon {
                 }
             }
         }
-        self.store.begin_connection_batch()?;
-        let batch_started = Instant::now();
-        let ingestion_before = self.health.ingestion;
-        let retries_before = self.health.retries;
-        let batch = self
-            .progress_connections()
-            .and_then(|()| self.store.commit_connection_batch());
-        if let Err(error) = batch {
-            let rollback = self.store.rollback_connection_batch();
-            self.health.ingestion = ingestion_before;
-            self.health.retries = retries_before;
-            // Never leave rolled-back receipts available to a later tick, even
-            // when an embedding caller catches the fatal error from tick().
-            self.connections.clear();
-            return Err(match rollback {
-                Ok(()) => error,
-                Err(rollback) => format!("{error}; custody batch rollback failed: {rollback}"),
-            });
-        }
-        if self.health.ingestion != ingestion_before {
-            // Group commit latency includes the bounded synchronous batch and
-            // its durable outer RELEASE, rather than only an inner savepoint.
-            self.health.last_commit_latency_ns =
-                batch_started.elapsed().as_nanos().min(u64::MAX as u128) as u64;
-            if let Some(reporter) = &mut self.self_reporter {
-                reporter.commit_ns = Some(self.health.last_commit_latency_ns);
+        if !self.connections.is_empty() {
+            self.store.arm_connection_batch()?;
+            let batch_started = Instant::now();
+            let ingestion_before = self.health.ingestion;
+            let retries_before = self.health.retries;
+            let batch = self
+                .progress_connections()
+                .and_then(|()| self.store.commit_connection_batch_if_active().map(|_| ()));
+            if let Err(error) = batch {
+                let rollback = self.store.rollback_connection_batch();
+                self.health.ingestion = ingestion_before;
+                self.health.retries = retries_before;
+                // Never leave rolled-back receipts available to a later tick, even
+                // when an embedding caller catches the fatal error from tick().
+                self.connections.clear();
+                return Err(match rollback {
+                    Ok(()) => error,
+                    Err(rollback) => {
+                        format!("{error}; custody batch rollback failed: {rollback}")
+                    }
+                });
+            }
+            if self.health.ingestion != ingestion_before {
+                // Group commit latency includes the bounded synchronous batch and
+                // its durable outer RELEASE, rather than only an inner savepoint.
+                self.health.last_commit_latency_ns =
+                    batch_started.elapsed().as_nanos().min(u64::MAX as u128) as u64;
+                if let Some(reporter) = &mut self.self_reporter {
+                    reporter.commit_ns = Some(self.health.last_commit_latency_ns);
+                }
             }
         }
         if !self.stopping {
@@ -391,6 +459,7 @@ impl Daemon {
         Ok(())
     }
     fn progress_connections(&mut self) -> Result<(), String> {
+        let client_timeout = Duration::from_millis(self.config.client_timeout_ms);
         let mut index = self.connections.len();
         while index > 0 {
             index -= 1;
@@ -399,31 +468,34 @@ impl Daemon {
                 self.health.refusals += 1;
                 false
             } else {
-                match connection.progress() {
+                match connection.progress(client_timeout, self.stopping) {
                     Ok(ConnectionProgress::Request(body)) => {
                         match self.prepare_remote(&body) {
                             Ok(Some(job)) => {
                                 let (send, receive) = std::sync::mpsc::sync_channel(1);
                                 let deadline = connection.deadline;
-                                match std::thread::Builder::new()
-                                    .name("fabric-resolve".into())
-                                    .spawn(move || {
-                                        let _ = send.send(job.execute(deadline));
-                                    }) {
-                                    Ok(_) => {
+                                match self.workers.try_submit(move || {
+                                    let _ = send.send(job.execute(deadline));
+                                }) {
+                                    Ok(()) => {
                                         connection.remote = Some(receive);
                                         self.connections.push(connection);
                                         continue;
                                     }
                                     Err(error) => {
-                                        connection.output = serde_json::to_vec(&Reply::Error {
-                                            error: error.to_string(),
-                                        })
-                                        .map_err(err)?
+                                        connection.output =
+                                            serde_json::to_vec(&Reply::Error { error })
+                                                .map_err(err)?
                                     }
                                 }
                             }
-                            Ok(None) => connection.output = self.handle(&body)?,
+                            Ok(None) => {
+                                let (reply, keep_alive) = self.handle_with_keep_alive(&body)?;
+                                connection.output = reply;
+                                if keep_alive {
+                                    connection.keep_alive = true;
+                                }
+                            }
                             Err(error) => {
                                 connection.output =
                                     serde_json::to_vec(&Reply::Error { error }).map_err(err)?
@@ -489,13 +561,16 @@ impl Daemon {
         self.health.clone()
     }
     fn check_read_origin(&self, request: &Request) -> Result<(), String> {
-        if let Request::ReadForOrigin {
-            expected_origin, ..
-        } = request
-        {
-            return self.check_origin(expected_origin);
+        match request {
+            Request::ReadForOrigin {
+                expected_origin, ..
+            } => self.check_origin(expected_origin),
+            Request::ReadBatch {
+                expected_origin: Some(expected_origin),
+                ..
+            } => self.check_origin(expected_origin),
+            _ => Ok(()),
         }
-        Ok(())
     }
     fn check_origin(&self, expected_origin: &str) -> Result<(), String> {
         if expected_origin != self.store.origin() {
@@ -524,8 +599,9 @@ impl Daemon {
         if value.get("command").is_some() {
             let request = serde_json::from_value(value).map_err(err)?;
             self.check_read_origin(&request)?;
-            if let Request::Read { after, limit } | Request::ReadForOrigin { after, limit, .. } =
-                request
+            if let Request::Read { after, limit }
+            | Request::ReadForOrigin { after, limit, .. }
+            | Request::ReadBatch { after, limit, .. } = request
             {
                 return self.store.prepare_remote_read(after, limit);
             }
@@ -539,9 +615,14 @@ impl Daemon {
             self.store.prepare_remote_retry(bytes)
         }
     }
+    #[cfg(test)]
     fn handle(&mut self, bytes: &[u8]) -> Result<Vec<u8>, String> {
+        self.handle_with_keep_alive(bytes).map(|(reply, _)| reply)
+    }
+    fn handle_with_keep_alive(&mut self, bytes: &[u8]) -> Result<(Vec<u8>, bool), String> {
         let request = observation::check_json(bytes, observation::MAX_FRAME)
             .and_then(|()| serde_json::from_slice::<serde_json::Value>(bytes).map_err(err));
+        let mut keep_alive = false;
         let reply = match request {
             Ok(v) if v.get("command").is_some() => match serde_json::from_value::<Request>(v) {
                 Ok(Request::Status) => Reply::Status {
@@ -549,13 +630,18 @@ impl Daemon {
                 },
                 Ok(
                     request @ (Request::Read { after, limit }
-                    | Request::ReadForOrigin { after, limit, .. }),
+                    | Request::ReadForOrigin { after, limit, .. }
+                    | Request::ReadBatch { after, limit, .. }),
                 ) => {
+                    keep_alive = matches!(request, Request::ReadBatch { .. });
+                    let bounded = limit.min(super::wire::MAX_READ_PAGE);
                     match self
                         .check_read_origin(&request)
-                        .and_then(|()| self.store.read_raw(after, limit.min(1)))
+                        .and_then(|()| self.store.read_raw(after, bounded))
                     {
-                        Ok(records) => return super::wire::encode_records(&records),
+                        Ok(records) => {
+                            return Ok((super::wire::encode_records(&records)?, keep_alive));
+                        }
                         Err(error) => Reply::Error { error },
                     }
                 }
@@ -580,10 +666,13 @@ impl Daemon {
                     .is_ok_and(|o| observation::reserved_producer(&o.identity().producer))
                 {
                     self.health.refusals += 1;
-                    return serde_json::to_vec(&Reply::Error {
-                        error: "collector producer namespace is reserved".into(),
-                    })
-                    .map_err(err);
+                    return Ok((
+                        serde_json::to_vec(&Reply::Error {
+                            error: "collector producer namespace is reserved".into(),
+                        })
+                        .map_err(err)?,
+                        false,
+                    ));
                 }
                 let result = self.store.submit(bytes, None);
                 match result {
@@ -605,7 +694,7 @@ impl Daemon {
                 Reply::Error { error }
             }
         };
-        serde_json::to_vec(&reply).map_err(err)
+        Ok((serde_json::to_vec(&reply).map_err(err)?, keep_alive))
     }
     fn forward_tick(&mut self) {
         use std::sync::mpsc::TryRecvError;
@@ -666,40 +755,38 @@ impl Daemon {
         let sent = last.source_id;
         let origin = self.store.origin().to_owned();
         let (send, receive) = std::sync::mpsc::sync_channel(1);
-        match std::thread::Builder::new()
-            .name("fabric-forward".into())
-            .spawn(move || {
-                let result = config
-                    .credential()
-                    .and_then(|credential| {
-                        crate::canonical::exchange(
-                            &config.endpoint,
-                            &credential,
-                            &crate::canonical::Request::Ingest {
-                                origin,
-                                records: batch,
-                            },
-                            Instant::now() + Duration::from_secs(2),
-                        )
-                    })
-                    .and_then(|response| match response {
-                        crate::canonical::Response::Committed {
-                            authority,
+        match self.workers.try_submit(move || {
+            let result = config
+                .credential()
+                .and_then(|credential| {
+                    crate::canonical::exchange(
+                        &config.endpoint,
+                        &credential,
+                        &crate::canonical::Request::Ingest {
                             origin,
-                            through,
-                        } => Ok(ForwardReceipt {
-                            authority,
-                            origin,
-                            through,
-                            sent_through: sent,
-                        }),
-                        crate::canonical::Response::Error { error } => Err(error),
-                        _ => Err("unexpected canonical receipt".into()),
-                    });
-                let _ = send.send(result);
-            }) {
-            Ok(_) => self.forward_worker = Some(receive),
-            Err(error) => self.health.forwarding_error = Some(error.to_string()),
+                            records: batch,
+                        },
+                        Instant::now() + Duration::from_secs(2),
+                    )
+                })
+                .and_then(|response| match response {
+                    crate::canonical::Response::Committed {
+                        authority,
+                        origin,
+                        through,
+                    } => Ok(ForwardReceipt {
+                        authority,
+                        origin,
+                        through,
+                        sent_through: sent,
+                    }),
+                    crate::canonical::Response::Error { error } => Err(error),
+                    _ => Err("unexpected canonical receipt".into()),
+                });
+            let _ = send.send(result);
+        }) {
+            Ok(()) => self.forward_worker = Some(receive),
+            Err(error) => self.health.forwarding_error = Some(error),
         }
     }
     pub fn socket(&self) -> &std::path::Path {
@@ -723,7 +810,11 @@ impl Drop for Daemon {
     }
 }
 impl Connection {
-    fn progress(&mut self) -> Result<ConnectionProgress, String> {
+    fn progress(
+        &mut self,
+        client_timeout: Duration,
+        stopping: bool,
+    ) -> Result<ConnectionProgress, String> {
         if let Some(remote) = &self.remote {
             match remote.try_recv() {
                 Ok(result) => {
@@ -745,7 +836,7 @@ impl Connection {
             }
         }
         if !self.output.is_empty() {
-            return self.write_reply();
+            return self.write_reply(client_timeout, stopping);
         }
         while self.header_used < 4 {
             match self.stream.read(&mut self.header[self.header_used..]) {
@@ -789,13 +880,27 @@ impl Connection {
             Ok(ConnectionProgress::Pending)
         }
     }
-    fn write_reply(&mut self) -> Result<ConnectionProgress, String> {
+    fn write_reply(
+        &mut self,
+        client_timeout: Duration,
+        stopping: bool,
+    ) -> Result<ConnectionProgress, String> {
         for _ in 0..8 {
             match self.stream.write(&self.output[self.written..]) {
                 Ok(0) => return Err("reply write returned zero".into()),
                 Ok(n) => {
                     self.written += n;
                     if self.written == self.output.len() {
+                        if self.keep_alive && !stopping {
+                            self.header = [0; 4];
+                            self.header_used = 0;
+                            self.body.clear();
+                            self.size = None;
+                            self.output.clear();
+                            self.written = 0;
+                            self.deadline = Instant::now() + client_timeout;
+                            return Ok(ConnectionProgress::Pending);
+                        }
                         return Ok(ConnectionProgress::Closed);
                     }
                 }
@@ -1516,6 +1621,7 @@ mod connection_accounting_tests {
             output: Vec::new(),
             written: 0,
             deadline: Instant::now() + Duration::from_secs(1),
+            keep_alive: false,
             remote: Some(receive),
         });
         daemon.tick().unwrap();

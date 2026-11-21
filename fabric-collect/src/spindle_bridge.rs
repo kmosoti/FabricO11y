@@ -5,7 +5,8 @@
 use crate::channel::BoundedTelemetryQueue;
 use chrono::Utc;
 use fabric::observation::{Data, Level, MetricType, Outcome, StoredObservation, decode_versioned};
-use fabric::spindle::transport::{read_origin, read_raw, read_raw_for_origin};
+use fabric::spindle::transport::{read_origin, read_raw_batch, read_raw_for_origin_batch};
+use fabric::spindle::wire::MAX_READ_PAGE;
 use fabric_core::{LogRecord, MetricPoint, SpindleProvenance, TraceSpanRecord};
 use fabric_store::CatalogStore;
 use serde::{Deserialize, Serialize};
@@ -345,13 +346,16 @@ pub fn poll_spindle_projection_records(
 ) -> Result<SpindleProjectionPoll, String> {
     let deadline = Instant::now() + Duration::from_millis(250);
     let origin = read_origin(spindle_sock, deadline)?;
+    let page_cap = max_records.min(MAX_READ_PAGE);
     poll_spindle_projection_records_with(
         &origin,
         after_id,
         max_records,
         default_host,
         deadline,
-        |cursor, deadline| read_raw_for_origin(spindle_sock, &origin, cursor, deadline),
+        |cursor, deadline| {
+            read_raw_for_origin_batch(spindle_sock, &origin, cursor, page_cap, deadline)
+        },
         || catalog.bind_spindle_projection(&origin).map(|_| ()),
     )
 }
@@ -368,7 +372,7 @@ fn poll_spindle_projection_records_with(
     let mut records = Vec::new();
     let mut bind = Some(bind);
     let mut tail_error = None;
-    while records.len() < max_records {
+    'outer: while records.len() < max_records {
         if Instant::now() >= deadline {
             if records.is_empty() {
                 return Err(
@@ -377,18 +381,54 @@ fn poll_spindle_projection_records_with(
             }
             break;
         }
-        let next = read_batch(cursor, deadline).and_then(|mut page| {
-            if page.len() > 1 {
-                return Err("Spindle returned more than one record in a bounded read".into());
+        let page = match read_batch(cursor, deadline) {
+            Ok(page) => page,
+            Err(error) if records.is_empty() => return Err(error),
+            Err(error) => {
+                tail_error = Some(error);
+                break;
             }
-            let Some((id, raw)) = page.pop() else {
-                return Ok(None);
-            };
+        };
+        if page.len() > MAX_READ_PAGE {
+            let err = format!(
+                "Spindle returned {} records exceeding page limit {MAX_READ_PAGE}",
+                page.len()
+            );
+            if records.is_empty() {
+                return Err(err);
+            }
+            tail_error = Some(err);
+            break;
+        }
+        if page.is_empty() {
+            if let Some(bind) = bind.take() {
+                bind()?;
+            }
+            break;
+        }
+        for (id, raw) in page {
             if cursor.checked_add(1) != Some(id) {
-                return Err(format!("non-contiguous Spindle record {id} after {cursor}"));
+                let err = format!("non-contiguous Spindle record {id} after {cursor}");
+                if records.is_empty() {
+                    return Err(err);
+                }
+                tail_error = Some(err);
+                break 'outer;
             }
-            let observation = decode_versioned(&raw)
-                .map_err(|error| format!("cannot decode Spindle record {id}: {error}"))?;
+            let observation = match decode_versioned(&raw) {
+                Ok(obs) => obs,
+                Err(error) => {
+                    let err = format!("cannot decode Spindle record {id}: {error}");
+                    if records.is_empty() {
+                        return Err(err);
+                    }
+                    tail_error = Some(err);
+                    break 'outer;
+                }
+            };
+            if let Some(bind) = bind.take() {
+                bind()?;
+            }
             let identity = observation.identity();
             let key = SpindleProvenance {
                 origin: origin.to_owned(),
@@ -397,24 +437,10 @@ fn poll_spindle_projection_records_with(
                 generation: identity.generation.clone(),
                 sequence: identity.sequence,
             };
-            Ok(Some((
-                key,
-                observation_to_telemetry(&observation, default_host),
-            )))
-        });
-        match next {
-            Ok(next) => {
-                if let Some(bind) = bind.take() {
-                    bind()?;
-                }
-                let Some((key, envelope)) = next else { break };
-                cursor = key.record_id;
-                records.push((key, envelope));
-            }
-            Err(error) if records.is_empty() => return Err(error),
-            Err(error) => {
-                tail_error = Some(error);
-                break;
+            cursor = key.record_id;
+            records.push((key, observation_to_telemetry(&observation, default_host)));
+            if records.len() >= max_records {
+                break 'outer;
             }
         }
     }
@@ -433,12 +459,13 @@ pub fn poll_spindle_custody_records(
     default_host: &str,
 ) -> Result<Vec<(u64, IngestEnvelope)>, String> {
     let overall_deadline = Instant::now() + Duration::from_millis(250);
+    let page_cap = max_records.min(MAX_READ_PAGE);
     poll_spindle_custody_records_with(
         after_id,
         max_records,
         default_host,
         overall_deadline,
-        &mut |cursor, deadline| read_raw(spindle_sock, cursor, deadline),
+        &mut |cursor, deadline| read_raw_batch(spindle_sock, cursor, page_cap, deadline),
     )
 }
 
