@@ -749,7 +749,7 @@ mod tests {
         let recs = poll_spindle_custody_records_with(
             4,
             64,
-            "fedora-blade",
+            "workstation-01",
             Instant::now() + Duration::from_secs(1),
             &mut reader,
         )
@@ -768,7 +768,7 @@ mod tests {
         let err = poll_spindle_custody_records_with(
             0,
             64,
-            "fedora-blade",
+            "workstation-01",
             Instant::now() + Duration::from_secs(1),
             &mut reader,
         )
@@ -790,7 +790,7 @@ mod tests {
         let recs = poll_spindle_custody_records_with(
             0,
             64,
-            "fedora-blade",
+            "workstation-01",
             Instant::now() + Duration::from_secs(1),
             &mut reader,
         )
@@ -907,7 +907,7 @@ mod tests {
 
         let sock_srv = sock.clone();
         let server = tokio::spawn(async move {
-            let _ = serve_ingest_socket(&sock_srv, mq, lq, tq, "fedora-blade".into()).await;
+            let _ = serve_ingest_socket(&sock_srv, mq, lq, tq, "workstation-01".into()).await;
         });
 
         let deadline = Instant::now() + Duration::from_secs(2);
@@ -923,7 +923,7 @@ mod tests {
             timestamp_ms: 1_700_000_000_123,
             name: "post.overlong".into(),
             value: 42.0,
-            host: "fedora-blade".into(),
+            host: "workstation-01".into(),
             slice: "spindle".into(),
             unit: "spindle.service".into(),
             pid: None,
@@ -973,7 +973,7 @@ mod tests {
                 mq,
                 lq,
                 tq,
-                "fedora-blade".into(),
+                "workstation-01".into(),
                 shutdown_rx,
             )
             .await
@@ -988,7 +988,7 @@ mod tests {
             timestamp_ms: 1_700_000_000_123,
             name: "shutdown.handshake".into(),
             value: 1.0,
-            host: "fedora-blade".into(),
+            host: "workstation-01".into(),
             slice: "spindle".into(),
             unit: "spindle.service".into(),
             pid: None,
@@ -1001,7 +1001,7 @@ mod tests {
             timestamp_ms: 1_700_000_000_456,
             name: "shutdown.drain".into(),
             value: 7.0,
-            host: "fedora-blade".into(),
+            host: "workstation-01".into(),
             slice: "spindle".into(),
             unit: "spindle.service".into(),
             pid: None,

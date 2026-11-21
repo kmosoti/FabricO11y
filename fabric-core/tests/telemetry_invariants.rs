@@ -8,7 +8,7 @@ fn sample_point(timestamp_ms: i64, value: f64, pid: Option<u32>, labels: &str) -
         timestamp_ms,
         name: "fabric.test.metric".into(),
         value,
-        host: "fedora-blade".into(),
+        host: "workstation-01".into(),
         slice: "fabrico11y.slice".into(),
         unit: "fabric-daemon.service".into(),
         pid,
