@@ -7,11 +7,10 @@ machine, or forward observations from several machines to a shared receiver.
 
 ## Quick start
 
-1. **Install FabricO11y.** On x86-64 Fedora Workstation 44 or 45, get the
-   signed RPM from [Releases](https://github.com/kmosoti/FabricO11y/releases)
-   and follow the [Fedora setup guide](packaging/rpm/README.md#configure-a-fresh-rootless-instance).
-   For a Linux Nix profile or the stable NixOS 26.05 module, use the
-   [Nix installation guide](docs/nix-installation.md).
+1. **Install FabricO11y.** Get verified packages from [Releases](https://github.com/kmosoti/FabricO11y/releases):
+   - **Fedora Workstation 44/45 (`x86_64`):** install the RPM and follow the [Fedora setup guide](packaging/rpm/README.md#configure-a-fresh-rootless-instance).
+   - **Debian 12 / 13 (`amd64`):** install the `.deb` (built against Debian 12 `glibc 2.36`, zero `patchelf` bundling) or portable `.tar.zst` tarball and follow the [Debian setup guide](packaging/deb/README.md#install-on-debian-12-or-13).
+   - **Nix / NixOS 26.05:** install via flake profile or enable `services.fabrico11y` (with optional loopback-preserving `remoteProxy`) using the [Nix installation guide](docs/nix-installation.md).
 2. **Set up local collection.** Follow the
    [single-host instructions](docs/collection.md#choose-a-deployment) to
    configure Spindle and the collector as user services.
