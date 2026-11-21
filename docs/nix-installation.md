@@ -86,3 +86,22 @@ stable NixOS 26.05 input and exercises the NixOS module.
 nix flake check --no-build
 nix build --no-link .#checks.x86_64-linux.nixos
 ```
+
+## Loopback-preserving remote proxy (private IPv6 / WireGuard mesh)
+
+`fabric-server` and Spindle forwarding intentionally require loopback endpoints
+(`127.0.0.1` or `::1`). When connecting nodes across a private IPv6 or
+WireGuard mesh without exposing `fabric-server` directly on non-loopback
+interfaces, enable `services.fabrico11y.remoteProxy`:
+
+- **Canonical receiver (`role = "ingress"`):** Set `serverConfigFile`,
+  `remoteProxy.enable = true`, `remoteProxy.remoteEndpoint = "[2001:db8::10]:17440"`,
+  and optionally `remoteProxy.interface = "wg0"` with `openFirewall = true`.
+  `systemd.sockets.fabrico11y-remote-proxy` binds the mesh socket (with
+  `FreeBind = true`) and `systemd-socket-proxyd` forwards to unbracketed
+  `::1:17440` (required because `systemd-socket-proxyd` splits `HOST:PORT` on
+  the final colon without stripping brackets).
+- **Forwarding node (`role = "egress"`):** Keep `serverConfigFile = null`, set
+  `remoteProxy.enable = true`, and point `remoteProxy.remoteEndpoint` at the
+  receiver's mesh address. Spindle forwards to `[::1]:17440`, and
+  `systemd-socket-proxyd` forwards unbracketed across the mesh.

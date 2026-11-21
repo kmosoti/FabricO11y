@@ -43,8 +43,19 @@ pkgs.testers.runNixOSTest {
         scratchDir = "/var/lib/fabrico11y/scratch";
         spindleConfigFile = "/var/lib/fabrico11y/spindle.toml";
       };
-      specialisation.canonical.configuration.services.fabrico11y.serverConfigFile =
-        "/var/lib/fabrico11y/server.toml";
+      specialisation.canonical.configuration.services.fabrico11y = {
+        serverConfigFile = "/var/lib/fabrico11y/server.toml";
+        remoteProxy = {
+          enable = true;
+          role = "ingress";
+          localAddress = "127.0.0.1";
+          localPort = 17440;
+          remoteEndpoint = "[2001:db8::10]:17440";
+          freeBind = true;
+          connectionsMax = 32;
+          allowedPeerCidrs = [ "2001:db8::/64" ];
+        };
+      };
     };
 
   testScript = ''
@@ -148,6 +159,46 @@ pkgs.testers.runNixOSTest {
     machine.succeed(as_fabric("systemctl --user restart spindle.service fabric-daemon.service"))
     machine.succeed(as_fabric("systemctl --user is-active fabric-server.service"))
     assert_slice("fabric-server.service")
+    machine.wait_for_unit("fabrico11y-remote-proxy.socket")
+    proxy_socket_listen = machine.succeed(
+        "systemctl show -p Listen --value fabrico11y-remote-proxy.socket"
+    ).strip()
+    assert "[2001:db8::10]:17440" in proxy_socket_listen, proxy_socket_listen
+    assert machine.succeed(
+        "systemctl show -p FreeBind --value fabrico11y-remote-proxy.socket"
+    ).strip() == "yes"
+    proxy_props = {
+        "Slice": "fabrico11y.slice",
+        "MemoryMax": "67108864",
+        "TasksMax": "64",
+        "PrivateDevices": "yes",
+        "ProtectKernelTunables": "yes",
+        "ProtectKernelModules": "yes",
+        "ProtectControlGroups": "yes",
+        "RestrictNamespaces": "yes",
+        "MemoryDenyWriteExecute": "yes",
+        "LockPersonality": "yes",
+        "NoNewPrivileges": "yes",
+        "ProtectSystem": "strict",
+        "ProtectHome": "yes",
+    }
+    for prop, expected in proxy_props.items():
+        actual = machine.succeed(
+            f"systemctl show -p {prop} --value fabrico11y-remote-proxy.service"
+        ).strip()
+        assert actual == expected, f"{prop}: {actual!r} != {expected!r}"
+    proxy_exec = machine.succeed(
+        "systemctl show -p ExecStart --value fabrico11y-remote-proxy.service"
+    )
+    assert "--exit-idle-time=60s" in proxy_exec and "127.0.0.1:17440" in proxy_exec, proxy_exec
+    proxy_ip_deny = machine.succeed(
+        "systemctl show -p IPAddressDeny --value fabrico11y-remote-proxy.service"
+    )
+    assert "0.0.0.0/0" in proxy_ip_deny or "any" in proxy_ip_deny, proxy_ip_deny
+    proxy_ip_allow = machine.succeed(
+        "systemctl show -p IPAddressAllow --value fabrico11y-remote-proxy.service"
+    )
+    assert "127.0.0.0/8" in proxy_ip_allow and "2001:db8::/64" in proxy_ip_allow, proxy_ip_allow
     machine.wait_until_succeeds(f"{observer} show-environment", timeout=deadline)
     machine.fail(f"{observer} is-active fabric-server.service")
 
