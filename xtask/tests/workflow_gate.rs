@@ -5,48 +5,31 @@ fn repo_root() -> &'static Path {
 }
 
 #[test]
-fn main_human_gate_and_ci_workflows_enforce_promotion_invariants() {
+fn single_branch_main_codeowners_and_ci_workflows_enforce_invariants() {
     let gate_path = repo_root().join(".github/workflows/main-human-gate.yml");
-    let gate = fs::read_to_string(&gate_path).expect("read main-human-gate.yml");
+    assert!(
+        !gate_path.exists(),
+        "main-human-gate.yml must be removed under single-branch main workflow"
+    );
 
-    // Human approval and promotion source checks run exclusively on PRs targeting main.
-    assert!(gate.contains("pull_request:"));
-    assert!(gate.contains("- main"));
-    assert!(!gate.contains("pull_request_target:"));
-    assert!(!gate.contains("push:"));
-    assert!(!gate.contains("workflow_dispatch:"));
-    assert!(!gate.contains("actions/checkout"));
-    assert!(gate.contains("permissions:\n  contents: read"));
-    assert!(gate.contains("concurrency:"));
-    assert!(gate.contains("main-human-gate-${{ github.event.pull_request.number || github.ref }}"));
-    assert!(gate.contains("verify-promotion-source:"));
-    assert!(gate.contains("name: verify-promotion-source"));
-    assert!(gate.contains("if: github.event.pull_request.base.ref == 'main'"));
-    assert!(gate.contains("github.base_ref"));
-    assert!(gate.contains("github.head_ref"));
-    assert!(gate.contains("github.event.pull_request.head.repo.full_name"));
-    assert!(gate.contains("BASE_REF\" != \"main\""));
-    assert!(gate.contains("RELEASE_HEAD_REF\" != \"develop\""));
-    assert!(gate.contains("HEAD_REPO\" != \"$BASE_REPO\""));
-    assert!(gate.contains("main-human-approval:"));
-    assert!(gate.contains("name: main-human-approval"));
-    assert!(gate.contains("needs: [verify-promotion-source]"));
-    assert!(gate.contains("environment: main-release"));
-    assert!(gate.contains("RELEASE_HEAD_SHA"));
+    let codeowners = fs::read_to_string(repo_root().join(".github/CODEOWNERS"))
+        .expect("read .github/CODEOWNERS");
+    assert!(codeowners.lines().any(|line| line.trim() == "* @kmosoti"));
 
-    // Legacy split promotion-source workflow must be removed so develop PRs/pushes stay clean.
+    // Legacy split promotion-source workflow must remain absent.
     let src_path = repo_root().join(".github/workflows/main-promotion-source.yml");
     assert!(
         !src_path.exists(),
         "main-promotion-source.yml must be removed"
     );
 
-    // Development checks must target develop only (avoiding duplicate main+develop triggers),
-    // isolate fuzz target binaries outside the repo, and save caches only on develop pushes.
+    // Development checks must target main only (avoiding duplicate main+develop triggers),
+    // isolate fuzz target binaries outside the repo, and save caches only on main pushes.
     let dev_path = repo_root().join(".github/workflows/development-checks.yml");
     let dev = fs::read_to_string(&dev_path).expect("read development-checks.yml");
-    assert!(dev.contains("pull_request:\n  push:\n    branches: [develop]"));
+    assert!(dev.contains("pull_request:\n  push:\n    branches: [main]"));
     assert!(!dev.contains("branches: [main, develop]"));
+    assert!(!dev.contains("branches: [develop]"));
     assert!(
         dev.contains("development-checks-${{ github.event.pull_request.number || github.ref }}")
     );
@@ -64,7 +47,7 @@ fn main_human_gate_and_ci_workflows_enforce_promotion_invariants() {
     assert!(dev.contains("./.github/actions/save-ci-cache"));
     assert_eq!(dev.matches("ref: ${{ github.sha }}").count(), 2);
     assert_eq!(dev.matches("persist-credentials: false").count(), 2);
-    assert!(dev.contains("github.event_name == 'push' && github.ref == 'refs/heads/develop'"));
+    assert!(dev.contains("github.event_name == 'push' && github.ref == 'refs/heads/main'"));
 
     let restore =
         fs::read_to_string(repo_root().join(".github/actions/restore-ci-cache/action.yml"))
@@ -84,7 +67,7 @@ fn main_human_gate_and_ci_workflows_enforce_promotion_invariants() {
         3
     );
     assert_eq!(
-        save.matches("github.event_name == 'push' && github.ref == 'refs/heads/develop'")
+        save.matches("github.event_name == 'push' && github.ref == 'refs/heads/main'")
             .count(),
         3
     );
@@ -303,7 +286,7 @@ fn seeded_adoption_builds_without_the_seed_after_policy_changes() {
 }
 
 #[test]
-fn image_qualification_runs_the_develop_push_workload() {
+fn image_qualification_runs_the_main_push_workload() {
     let workflows = repo_root().join(".github/workflows");
     let development = fs::read_to_string(workflows.join("development-checks.yml")).unwrap();
     let paired_lane =
@@ -392,7 +375,7 @@ fn compiler_seed_publication_and_qualification_keep_the_trusted_boundaries() {
     assert!(publisher.contains("github.event_name == 'push' && 'standard'"));
     assert!(!publisher.contains("      - 'Cargo.lock'"));
     assert!(publisher.contains(
-        "if: github.repository == 'kmosoti/FabricO11y' && github.ref == 'refs/heads/develop'"
+        "if: github.repository == 'kmosoti/FabricO11y' && github.ref == 'refs/heads/main'"
     ));
     for standard_step in [
         "Build common and native tool images",

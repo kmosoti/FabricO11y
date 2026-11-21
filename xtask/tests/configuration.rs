@@ -16,10 +16,15 @@ fn repository_configuration() {
         "knowledge/README.md",
         ".github/.gitmessage",
         ".github/pull_request_template.md",
-        ".github/workflows/main-human-gate.yml",
+        ".github/CODEOWNERS",
     ] {
         assert!(root().join(file).is_file(), "missing {file}");
     }
+    let codeowners = fs::read_to_string(root().join(".github/CODEOWNERS")).unwrap();
+    assert!(
+        codeowners.lines().any(|line| line.trim() == "* @kmosoti"),
+        "missing default CODEOWNERS rule"
+    );
     let hooks: Value =
         serde_json::from_str(&fs::read_to_string(root().join(".codex/hooks.json")).unwrap())
             .unwrap();

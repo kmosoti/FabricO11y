@@ -1,8 +1,8 @@
 # CI tool image qualification
 
 The `CI tool images` workflow builds common and native Fedora images from trusted
-`develop` revisions that change the image or a tool pin. Rerun a failed
-publisher job at its original revision. Dispatch on `develop` is available
+`main` revisions that change the image or a tool pin. Rerun a failed
+publisher job at its original revision. Dispatch on `main` is available
 when `main` contains the workflow. The default `standard` dispatch builds common
 and native. Select `common-seeded` to build only the compiler-seed variant, or
 `all` to build all three using the shared common build stage. Ordinary source
@@ -48,14 +48,14 @@ network caches. Separate workspaces, homes, containers, and fresh Docker and con
 stores prevent direct reuse of source, build outputs, or image layers. Both
 images are pulled anonymously by digest, including for warm samples.
 
-Use the publisher's trusted `develop` source SHA and the immutable public
+Use the publisher's trusted `main` source SHA and the immutable public
 GHCR digest from its run summary. Put this file in
 `.github/ci-images/paired-qualification.json` on a same-repository branch named
 `ci/tool-image-paired-qualification/<trial>`:
 
 ```json
 {
-  "revision": "<publisher develop commit SHA>",
+  "revision": "<publisher main commit SHA>",
   "profile": "native-acceptance",
   "candidate": "ghcr.io/kmosoti/fabrico11y-ci@sha256:<native image digest>",
   "mode": "smoke"
@@ -120,7 +120,7 @@ creates new seed keys.
 
 ## Qualify the common compiler-seed variant
 
-Use the `common-seeded` publisher dispatch on trusted `develop`. The separate
+Use the `common-seeded` publisher dispatch on trusted `main`. The separate
 `common-seeded-<revision>` tag points to a common tool image with a release
 compiler cache for registry dependencies. The publisher requires the seeded
 launcher to accept the archived source and installed tools in its offline
@@ -130,7 +130,7 @@ For a separate paired `verify` run, use this variant and its published digest.
 
 ```json
 {
-  "revision": "<publisher develop commit SHA>",
+  "revision": "<publisher main commit SHA>",
   "profile": "verify",
   "candidate": "ghcr.io/kmosoti/fabrico11y-ci@sha256:<common-seeded image digest>",
   "variant": "common-seeded",
@@ -160,11 +160,11 @@ checkout's seed policy changes. Neither job downloads the baked tools.
 Dependency source archives can be reused across source revisions. Keys for
 compiled artifacts and fuzz outputs include the image digest, compiler,
 architecture, build inputs, flags and exact source commit. Only successful
-`develop` pushes save caches. The qualification report and measured scope
+`main` pushes save caches. The qualification report and measured scope
 are recorded in [O-0176](../knowledge/observations/O-0176-hosted-ci-image-qualification.md).
 
 For a future tool-pin change, restore the Fedora bootstrap job definitions
 and their matching cache actions in the same PR as the pin change. Keep the
 two required checks. The trusted publisher produces new image digests after
-the pins reach `develop`. Qualify them before the follow-up adoption. Use
+the pins reach `main`. Qualify them before the follow-up adoption. Use
 the same coordinated revert if the pinned images regress.

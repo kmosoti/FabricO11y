@@ -11,10 +11,10 @@ git config commit.template .github/.gitmessage
 Write repository utilities and tests in Rust under `xtask`. Keep CI bootstrap
 scripts under `.github` and linked architecture rationale under `knowledge/`.
 
-## Two-Branch Stacked Workflow
+## Single-Branch Stacked Workflow
 
-- **`develop` (day-to-day integration):** Develop atomic linear commits on stacked Jujutsu bookmarks (`stack/<topic>/01-...`). Before landing onto `develop`, PRs must pass `development-checks.yml`, include focused Mermaid diagrams in [`docs/architecture.md`](docs/architecture.md) when boundaries/dataflows change, and receive an independent standard/medium-reasoning review (preferring an alternative model family). Rebase-only linear history is required.
-- **`main` (human-gated release):** Updated exclusively by promotion PRs from `develop`, gated by `.github/workflows/main-human-gate.yml` (`main-release` environment). Autonomous agents never merge into `main` or approve `main-release`.
+- **`main` (single integration & release branch):** Protected by [`.github/CODEOWNERS`](.github/CODEOWNERS) (`* @kmosoti`) and native GitHub branch rulesets requiring passing CI (`development-checks.yml`), linear rebase-only history, and `@kmosoti` CODEOWNER approval. Direct pushes and force-pushes to `main` are prohibited.
+- **Stacked Jujutsu PRs & `@kennmosoti-maker` collaborator workflow:** `@kennmosoti-maker` (Write / `push` collaborator) and local authoring workflows develop atomic linear commits on stacked Jujutsu bookmarks (`stack/<topic>/01-...`) off `main` and submit stacked PRs targeting `main`. Structural changes must include focused Mermaid diagrams in [`docs/architecture.md`](docs/architecture.md) and receive an independent standard/medium-reasoning review (preferring an alternative model family) before `@kmosoti` approves and rebase-merges bottom-up onto `main`.
 - **Storage discipline:** Export `TMPDIR=/data/tmp`, `CARGO_BUILD_TARGET_DIR=/data/cargo-target`, and `FABRIC_DATA_DIR=/data/fabrico11y` locally (or `/var/tmp/...` in ephemeral containers) — never write scratch or target artifacts to RAM-backed `/tmp`.
 
 ## Changes

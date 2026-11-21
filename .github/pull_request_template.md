@@ -4,13 +4,12 @@
 - **Linked Issue(s):** Refs #
 
 ## Stack Position & Target Branch
-- [ ] Standalone PR targeting `develop` (agentic / day-to-day integration)
-- [ ] Part of a stacked PR chain targeting `develop`:
-  - Base branch for this PR: `develop` (or `stack/<topic>/...`)
+- [ ] Standalone PR targeting `main`
+- [ ] Part of a stacked PR chain targeting `main`:
+  - Base branch for this PR: `main` (or `stack/<topic>/...`)
   - Stack order:
     1. #... (`stack/<topic>/01-...`)
     2. **-> This PR** (`stack/<topic>/02-...`)
-- [ ] Release promotion PR (`develop` -> `main`, **human review & `main-release` approval required**)
 
 ## Architectural & Boundary Check
 - [ ] Sans-I/O separation preserved (`admission-kernel`, `fabric-core`, and `fabric-graph` stay free of OS/filesystem/network I/O)
@@ -36,11 +35,10 @@
 - **Knowledge records added/updated (`knowledge/`):** `none` (or list IDs with `added_by` and `human_ratified` status)
 - **Stable docs updated (`docs/`):** `none` (or list files)
 
-## Merge Readiness & Review Gate (`develop` vs `main`)
-- **Authoring agent / model:** `...`
-- **Reviewer & merger agent / model (for `develop`):** `...` (prefer alternative model family; fallback: fresh independent standard/medium reviewer)
-- [ ] For PRs targeting `develop`: reviewed by an alternative model family (or fresh independent standard/medium reviewer) and ready to rebase-merge bottom-up into `develop`
-- [ ] For PRs targeting `main`: **`main-human-approval` (`main-release` environment gate) approved and merged by a human user** (agents must never merge into `main` or approve the `main-release` gate)
+## Merge Readiness & Review Gate (`main` + `CODEOWNERS`)
+- **Authoring agent / collaborator (`@kennmosoti-maker` or agent model):** `...`
+- **Independent reviewer & `@kmosoti` CODEOWNER approval:** `...` (prefer alternative model family; fallback: fresh independent standard/medium reviewer)
+- [ ] Reviewed by an independent standard/medium reviewer (when agent-authored) and approved by `@kmosoti` per [`.github/CODEOWNERS`](.github/CODEOWNERS) before rebase-merging bottom-up onto `main`
 - [ ] Reviewer used standard/medium reasoning; max/ultra were not used
 - [ ] Branch is rebased onto its target base with a clean linear history (no merge commits)
 - [ ] All review conversations are resolved

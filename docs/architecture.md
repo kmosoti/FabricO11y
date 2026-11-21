@@ -147,29 +147,26 @@ flowchart LR
     RESOLVE --> SETTINGS["fabric settings"]
 ```
 
-## 3. Two-Branch Stacked Development Workflow & Release Gate
+## 3. Single-Branch Stacked Development Workflow & CODEOWNERS Gate
 
-Following the repository workflow anchored in [`knowledge/decisions/D-0001-development-workflow.md`](../knowledge/decisions/D-0001-development-workflow.md):
+Following the repository workflow anchored in [`knowledge/decisions/D-0189-single-branch-main-workflow.md`](../knowledge/decisions/D-0189-single-branch-main-workflow.md) (superseding [`D-0001`](../knowledge/decisions/D-0001-development-workflow.md)):
 
-1. Agent authors develop linear atomic stacks via colocated Jujutsu (`jj`) bookmarks (`stack/<topic>/01-...`).
-2. Every PR targeting `develop` runs CI (`development-checks.yml`), requires an updated Mermaid diagram for structural changes, and undergoes independent review (preferring an alternate model family or fresh standard/medium reasoning context) before linear rebase integration onto `develop`.
-3. Only explicit promotion PRs from `develop` to `main` may update `main`, gated by the human-approved `main-release` environment in [`.github/workflows/main-human-gate.yml`](../.github/workflows/main-human-gate.yml).
+1. Collaborators (`@kennmosoti-maker`) and authoring agents develop linear atomic stacks via colocated Jujutsu (`jj`) bookmarks (`stack/<topic>/01-...`).
+2. Every PR targeting `main` runs CI (`development-checks.yml`), requires an updated Mermaid diagram for structural changes, and undergoes independent review (preferring an alternate model family or fresh standard/medium reasoning context) plus `@kmosoti` approval via [`.github/CODEOWNERS`](../.github/CODEOWNERS) (`* @kmosoti`) before linear rebase integration onto `main`.
 
 ```mermaid
 sequenceDiagram
-    participant Author as Author Agent (jj stack/*)
+    participant Author as Author (@kennmosoti-maker / jj stack/*)
     participant CI as CI (development-checks.yml)
     participant Reviewer as Independent Reviewer (Standard/Medium)
-    participant Develop as develop Branch
-    participant Gate as main-release Human Gate
+    participant Owner as @kmosoti (CODEOWNERS Gate)
     participant Main as main Branch
 
-    Author->>CI: Push stack/topic/01..N PR -> develop
+    Author->>CI: Push stack/topic/01..N PR -> main
     CI-->>Author: fmt, check, test, clippy, architecture, doc tests
     Author->>Reviewer: Request review (with Mermaid diff + fabric doctor proof)
-    Reviewer-->>Develop: Approve & rebase-merge linear stack onto develop
-    Develop->>Gate: Open promotion PR (develop -> main)
-    Gate-->>Main: Human explicitly approves main-human-approval & merges
+    Reviewer-->>Owner: Independent review complete
+    Owner-->>Main: @kmosoti approves & rebase-merges linear stack onto main
 ```
 
 The development workflow runs the common workspace validation and release
@@ -198,7 +195,7 @@ flowchart LR
 ### CI tool images
 
 The tool-image workflow builds two Linux x86-64 Fedora images when trusted
-`develop` changes affect provisioning. The common image contains Rust,
+`main` changes affect provisioning. The common image contains Rust,
 Jujutsu, and Weaver. The native image shares the common layers and also
 contains the proof and fuzz toolchains and the native engine test binary.
 Installed tools live under `/opt/fabrico11y`, outside the Actions home mount.
@@ -208,7 +205,7 @@ Every job builds the current workspace in its own Cargo target directory.
 
 ```mermaid
 flowchart LR
-    Pins["Trusted develop revision and tool pins"] --> Common["Build common image"]
+    Pins["Trusted main revision and tool pins"] --> Common["Build common image"]
     Common --> Native["Build native image"]
     Common --> Seed["Build optional common compiler seed"]
     Common --> Offline["Verify installed tools without network"]
@@ -233,7 +230,7 @@ caches. The seeded release launcher falls back to Cargo when the checkout's
 seed policy differs. Dependency sources can be reused across revisions.
 Compiled Cargo and fuzz archives require the exact tested commit and
 compatible build inputs.
-Only successful `develop` pushes publish these caches. See
+Only successful `main` pushes publish these caches. See
 [CI image qualification](ci-images.md) for the comparison and adoption procedure.
 
 ## 4. Single-Host and Distributed Deployment

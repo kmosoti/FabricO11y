@@ -16,4 +16,4 @@
 # ---
 # Types: feat | fix | refactor | test | docs | build | ci | proof | chore
 # Scopes: core | graph | store | collect | query | cli | server | mcp | kernel | xtask | knowledge | repo
-# Keep commits atomic and rebase-clean (develop and main require linear history).
+# Keep commits atomic and rebase-clean (main requires linear history).

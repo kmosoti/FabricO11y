@@ -21,7 +21,7 @@ cat > bin/gh <<'MOCK'
 #!/usr/bin/env bash
 set -euo pipefail
 [[ "$1" == api ]]
-if [[ "$2" == "repos/$GITHUB_REPOSITORY/compare/develop...$REVISION" ]]; then
+if [[ "$2" == "repos/$GITHUB_REPOSITORY/compare/main...$REVISION" ]]; then
   printf '%s\n' "$ANCESTRY"
 else
   request=${4#repos/"$GITHUB_REPOSITORY"/contents/}
