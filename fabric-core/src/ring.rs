@@ -73,7 +73,8 @@ struct CompressedSeriesBlock {
     ts_payload: Vec<u8>,
     /// Compact XOR payload: header byte (`0` = identical to previous `f64`, `1..=8` = non-zero bytes of XOR diff).
     val_payload: Vec<u8>,
-    pids: Vec<Option<u32>>,
+    /// Run-length encoded PID sequence: `(pid, run_len)`.
+    pid_runs: Vec<(Option<u32>, u16)>,
 }
 
 impl CompressedSeriesBlock {
@@ -89,7 +90,7 @@ impl CompressedSeriesBlock {
             prev_val_bits: pt.value.to_bits(),
             ts_payload: Vec::new(),
             val_payload: Vec::new(),
-            pids: vec![pt.pid],
+            pid_runs: vec![(pt.pid, 1)],
         }
     }
 
@@ -97,7 +98,7 @@ impl CompressedSeriesBlock {
         self.key.heap_bytes()
             + self.ts_payload.len()
             + self.val_payload.len()
-            + self.pids.len() * std::mem::size_of::<Option<u32>>()
+            + self.pid_runs.len() * std::mem::size_of::<(Option<u32>, u16)>()
             + std::mem::size_of::<Self>()
     }
 
@@ -123,13 +124,34 @@ impl CompressedSeriesBlock {
             self.val_payload.extend_from_slice(&raw[..used]);
         }
         self.prev_val_bits = bits;
-        self.pids.push(pt.pid);
+        if let Some((last_pid, run_len)) = self.pid_runs.last_mut()
+            && *last_pid == pt.pid
+            && *run_len < u16::MAX
+        {
+            *run_len += 1;
+        } else {
+            self.pid_runs.push((pt.pid, 1));
+        }
         self.count += 1;
         self.approx_bytes().saturating_sub(before)
     }
 
     fn decode(&self) -> Vec<MetricPoint> {
         let mut out = Vec::with_capacity(self.count);
+        let mut run_idx = 0usize;
+        let mut run_rem = self.pid_runs.first().map_or(0, |r| r.1);
+        let mut next_pid = || -> Option<u32> {
+            while run_rem == 0 && run_idx + 1 < self.pid_runs.len() {
+                run_idx += 1;
+                run_rem = self.pid_runs[run_idx].1;
+            }
+            if run_rem == 0 {
+                return None;
+            }
+            run_rem -= 1;
+            self.pid_runs[run_idx].0
+        };
+
         out.push(MetricPoint {
             timestamp_ms: self.first_ts,
             name: self.key.name.clone(),
@@ -137,7 +159,7 @@ impl CompressedSeriesBlock {
             host: self.key.host.clone(),
             slice: self.key.slice.clone(),
             unit: self.key.unit.clone(),
-            pid: self.pids.first().copied().flatten(),
+            pid: next_pid(),
             labels_json: self.key.labels_json.clone(),
         });
 
@@ -147,7 +169,7 @@ impl CompressedSeriesBlock {
         let mut prev_delta = 0i64;
         let mut prev_bits = self.first_val_bits;
 
-        for idx in 1..self.count {
+        for _ in 1..self.count {
             let dod = decode_zigzag_i64(&self.ts_payload, &mut ts_cursor);
             let delta = prev_delta.wrapping_add(dod);
             let ts = prev_ts.wrapping_add(delta);
@@ -177,7 +199,7 @@ impl CompressedSeriesBlock {
                 host: self.key.host.clone(),
                 slice: self.key.slice.clone(),
                 unit: self.key.unit.clone(),
-                pid: self.pids.get(idx).copied().flatten(),
+                pid: next_pid(),
                 labels_json: self.key.labels_json.clone(),
             });
         }
@@ -203,7 +225,7 @@ pub struct HotMetricRing {
     used_bytes: usize,
     evicted_blocks: u64,
     series_order: VecDeque<SeriesKey>,
-    series: BTreeMap<SeriesKey, Vec<CompressedSeriesBlock>>,
+    series: BTreeMap<SeriesKey, VecDeque<CompressedSeriesBlock>>,
     unflushed: VecDeque<MetricPoint>,
     unflushed_bytes: usize,
 }
@@ -248,7 +270,7 @@ impl HotMetricRing {
     fn insert_into_series(&mut self, pt: &MetricPoint) {
         let key = SeriesKey::from_point(pt);
         let blocks = self.series.entry(key.clone()).or_default();
-        if let Some(last) = blocks.last_mut()
+        if let Some(last) = blocks.back_mut()
             && last.count < 256
         {
             let added = last.push(pt);
@@ -256,7 +278,7 @@ impl HotMetricRing {
         } else {
             let block = CompressedSeriesBlock::new(key.clone(), pt);
             let added = block.approx_bytes();
-            blocks.push(block);
+            blocks.push_back(block);
             self.used_bytes = self.used_bytes.saturating_add(added);
             self.series_order.push_back(key);
         }
@@ -315,9 +337,8 @@ impl HotMetricRing {
                 break;
             };
             if let Some(blocks) = self.series.get_mut(&key)
-                && !blocks.is_empty()
+                && let Some(removed) = blocks.pop_front()
             {
-                let removed = blocks.remove(0);
                 self.used_bytes = self.used_bytes.saturating_sub(removed.approx_bytes());
                 self.evicted_blocks = self.evicted_blocks.saturating_add(1);
                 if blocks.is_empty() {
@@ -623,5 +644,45 @@ mod tests {
         assert_eq!(ring.query_since(0), vec![pt]);
         assert!(ring.drain_unflushed().is_empty());
         assert_eq!(ring.unflushed_bytes(), 0);
+    }
+
+    #[test]
+    fn rle_pid_compression_roundtrips_mixed_runs_compactly() {
+        let pids = [
+            None,
+            None,
+            None,
+            Some(101),
+            Some(101),
+            None,
+            Some(202),
+            Some(202),
+            Some(202),
+            Some(202),
+        ];
+        let input: Vec<MetricPoint> = pids
+            .iter()
+            .enumerate()
+            .map(|(i, &pid)| MetricPoint {
+                timestamp_ms: 1_700_000_000_000 + (i as i64) * 1000,
+                name: "rle.test".into(),
+                value: i as f64,
+                host: "workstation-01".into(),
+                slice: "agent.slice".into(),
+                unit: "worker.scope".into(),
+                pid,
+                labels_json: "{}".into(),
+            })
+            .collect();
+        let mut block = CompressedSeriesBlock::new(SeriesKey::from_point(&input[0]), &input[0]);
+        for pt in &input[1..] {
+            let _ = block.push(pt);
+        }
+        assert_eq!(block.pid_runs.len(), 4);
+        let decoded = block.decode();
+        assert_eq!(
+            decoded.iter().map(|p| p.pid).collect::<Vec<_>>(),
+            pids.to_vec()
+        );
     }
 }

@@ -4,6 +4,7 @@ use admission_kernel::telemetry::{elastic_can_admit, elastic_lease_return};
 pub mod engine;
 pub mod ledger;
 mod self_observation;
+mod worker_pool;
 use fabric::{
     canonical::{
         self, Authenticated, ProjectionReadiness, ProjectionReadyRequest, ProjectionReason,
@@ -314,10 +315,12 @@ impl Server {
             result
         });
         let active = Arc::new(AtomicUsize::new(0));
-        let mut workers = Vec::<thread::JoinHandle<()>>::new();
+        let pool = worker_pool::ConnectionWorkerPool::new(
+            connection_limit.clamp(2, 16),
+            connection_limit.max(4),
+        )?;
         let mut failure = None;
         while !self.stop.load(Ordering::SeqCst) {
-            workers.retain(|worker| !worker.is_finished());
             if Instant::now() >= next_sample {
                 next_sample = self.sample_pressure();
             }
@@ -358,7 +361,7 @@ impl Server {
                     let auth = self.auth.clone();
                     let projection_error = self.projection_error.clone();
                     let reads = self.reads.clone();
-                    let worker = thread::Builder::new().spawn(move || {
+                    let submitted = pool.try_submit(move || {
                         let _connection_lease = guard;
                         let mut socket = socket;
                         let request = canonical::read_frame(
@@ -384,13 +387,8 @@ impl Server {
                             },
                         );
                     });
-                    match worker {
-                        Ok(worker) => workers.push(worker),
-                        Err(e) if retry_accept(&e) => thread::sleep(Duration::from_millis(5)),
-                        Err(e) => {
-                            failure = Some(e.to_string());
-                            break;
-                        }
+                    if !submitted {
+                        thread::sleep(Duration::from_millis(2));
                     }
                 }
                 Err(e) if retry_accept(&e) => thread::sleep(Duration::from_millis(5)),
@@ -404,9 +402,7 @@ impl Server {
         if let Ok(q) = self.reads.queries.lock() {
             q.cancel.store(true, Ordering::SeqCst)
         }
-        for w in workers {
-            let _ = w.join();
-        }
+        pool.shutdown();
         if let Some(telemetry) = &self.reads.telemetry {
             telemetry.shutdown();
         }

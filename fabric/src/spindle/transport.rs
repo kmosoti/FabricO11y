@@ -1,4 +1,4 @@
-use super::{Reply, Request, custody::Receipt};
+use super::{Reply, Request, custody::Receipt, wire::MAX_READ_PAGE};
 use crate::observation::MAX_FRAME;
 use rustix::{
     event::{PollFd, PollFlags, Timespec, poll},
@@ -8,11 +8,37 @@ use rustix::{
     },
 };
 use std::{
+    collections::BTreeMap,
     io::{Read, Write},
     os::unix::net::UnixStream,
-    path::Path,
+    path::{Path, PathBuf},
+    sync::{Mutex, OnceLock},
     time::{Duration, Instant},
 };
+
+const MAX_POOLED_SOCKETS: usize = 16;
+
+fn stream_pool() -> &'static Mutex<BTreeMap<PathBuf, UnixStream>> {
+    static POOL: OnceLock<Mutex<BTreeMap<PathBuf, UnixStream>>> = OnceLock::new();
+    POOL.get_or_init(|| Mutex::new(BTreeMap::new()))
+}
+
+fn take_pooled(path: &Path) -> Option<UnixStream> {
+    stream_pool()
+        .lock()
+        .ok()
+        .and_then(|mut map| map.remove(path))
+}
+
+fn return_pooled(path: &Path, stream: UnixStream) {
+    if let Ok(mut map) = stream_pool().lock() {
+        if map.len() >= MAX_POOLED_SOCKETS && !map.contains_key(path) {
+            map.pop_first();
+        }
+        map.insert(path.to_path_buf(), stream);
+    }
+}
+
 fn connect(path: &Path, deadline: Instant) -> Result<UnixStream, String> {
     let fd = socket_with(
         AddressFamily::UNIX,
@@ -77,22 +103,44 @@ fn read_exact(s: &mut UnixStream, mut bytes: &mut [u8], deadline: Instant) -> Re
     }
     Ok(())
 }
-fn exchange_raw(path: &Path, bytes: &[u8], deadline: Instant) -> Result<Vec<u8>, String> {
-    if bytes.len() > MAX_FRAME {
-        return Err("frame too large".into());
-    }
-    let mut stream = connect(path, deadline)?;
-    write_all(&mut stream, &(bytes.len() as u32).to_be_bytes(), deadline)?;
-    write_all(&mut stream, bytes, deadline)?;
+fn exchange_on_stream(
+    stream: &mut UnixStream,
+    bytes: &[u8],
+    deadline: Instant,
+) -> Result<Vec<u8>, String> {
+    write_all(stream, &(bytes.len() as u32).to_be_bytes(), deadline)?;
+    write_all(stream, bytes, deadline)?;
     let mut header = [0; 4];
-    read_exact(&mut stream, &mut header, deadline)?;
+    read_exact(stream, &mut header, deadline)?;
     let size = u32::from_be_bytes(header) as usize;
     if size > super::MAX_REPLY {
         return Err("reply too large".into());
     }
     let mut body = vec![0; size];
-    read_exact(&mut stream, &mut body, deadline)?;
+    read_exact(stream, &mut body, deadline)?;
     super::wire::check_reply(&body)?;
+    Ok(body)
+}
+fn exchange_raw(path: &Path, bytes: &[u8], deadline: Instant) -> Result<Vec<u8>, String> {
+    if bytes.len() > MAX_FRAME {
+        return Err("frame too large".into());
+    }
+    let mut stream = connect(path, deadline)?;
+    exchange_on_stream(&mut stream, bytes, deadline)
+}
+fn exchange_pooled_raw(path: &Path, bytes: &[u8], deadline: Instant) -> Result<Vec<u8>, String> {
+    if bytes.len() > MAX_FRAME {
+        return Err("frame too large".into());
+    }
+    if let Some(mut stream) = take_pooled(path)
+        && let Ok(body) = exchange_on_stream(&mut stream, bytes, deadline)
+    {
+        return_pooled(path, stream);
+        return Ok(body);
+    }
+    let mut stream = connect(path, deadline)?;
+    let body = exchange_on_stream(&mut stream, bytes, deadline)?;
+    return_pooled(path, stream);
     Ok(body)
 }
 fn exchange(path: &Path, bytes: &[u8], deadline: Instant) -> Result<Reply, String> {
@@ -119,6 +167,26 @@ pub fn read_raw(path: &Path, after: u64, deadline: Instant) -> Result<Vec<(u64, 
     read_raw_request(path, &Request::Read { after, limit: 1 }, deadline)
 }
 
+/// Reads a batched page (up to [`MAX_READ_PAGE`]) of original payloads over a pooled UDS.
+pub fn read_raw_batch(
+    path: &Path,
+    after: u64,
+    limit: usize,
+    deadline: Instant,
+) -> Result<Vec<(u64, Vec<u8>)>, String> {
+    let req = Request::ReadBatch {
+        expected_origin: None,
+        after,
+        limit: limit.min(MAX_READ_PAGE),
+    };
+    let bytes = exchange_pooled_raw(
+        path,
+        &serde_json::to_vec(&req).map_err(|e| e.to_string())?,
+        deadline,
+    )?;
+    super::wire::decode_records_raw(&bytes)
+}
+
 /// Reads one original payload only from the expected local custody origin.
 pub fn read_raw_for_origin(
     path: &Path,
@@ -135,6 +203,27 @@ pub fn read_raw_for_origin(
         },
         deadline,
     )
+}
+
+/// Reads a batched page (up to [`MAX_READ_PAGE`]) for an expected custody origin over a pooled UDS.
+pub fn read_raw_for_origin_batch(
+    path: &Path,
+    origin: &str,
+    after: u64,
+    limit: usize,
+    deadline: Instant,
+) -> Result<Vec<(u64, Vec<u8>)>, String> {
+    let req = Request::ReadBatch {
+        expected_origin: Some(origin.to_owned()),
+        after,
+        limit: limit.min(MAX_READ_PAGE),
+    };
+    let bytes = exchange_pooled_raw(
+        path,
+        &serde_json::to_vec(&req).map_err(|e| e.to_string())?,
+        deadline,
+    )?;
+    super::wire::decode_records_raw(&bytes)
 }
 
 /// Returns the persistent origin of the local custody store.

@@ -33,11 +33,22 @@ pub struct Greptime {
     cursor_key: [u8; 32],
     authority: Arc<Mutex<Option<String>>>,
 }
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "k", content = "v", rename_all = "snake_case")]
+enum CursorKey {
+    CanonicalId(u64),
+    Key(String),
+    BucketNs(u64),
+}
+
 #[derive(Serialize, Deserialize)]
 struct Cursor {
     identity: String,
     snapshot: BTreeMap<String, u64>,
+    #[serde(default)]
     offset: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    after: Option<CursorKey>,
     expires: u64,
 }
 impl Greptime {
@@ -253,8 +264,10 @@ impl Greptime {
             .map(<[u8]>::len)
             .ok_or_else(|| "native SQL form must be buffered".into())
     }
+    /// Exact `application/x-www-form-urlencoded` byte length for `sql=<sql>`
+    /// without constructing or allocating a `reqwest::blocking::Request`.
     fn encoded_form_length(&self, sql: &str) -> Result<usize, String> {
-        Self::form_length(&self.form_request(sql)?)
+        Ok(exact_form_length(sql))
     }
     pub fn get(&self, origin: &str, source_id: u64) -> Result<Option<CanonicalRow>, String> {
         Ok(self
@@ -274,16 +287,17 @@ impl Greptime {
         for (origin, id) in keys {
             groups.entry(origin).or_default().push(source_time(*id)?);
         }
-        let predicates = groups
-            .into_iter()
-            .map(|(origin, times)| {
-                format!(
+        const MAX_IN_CLAUSE_IDS: usize = 500;
+        let mut predicates = Vec::new();
+        for (origin, times) in groups {
+            for chunk in times.chunks(MAX_IN_CLAUSE_IDS) {
+                predicates.push(format!(
                     "(origin={} AND source_time IN ({}))",
                     string(origin),
-                    times.join(",")
-                )
-            })
-            .collect::<Vec<_>>();
+                    chunk.join(",")
+                ));
+            }
+        }
         let sql = format!(
             "SELECT CAST(canonical_id AS STRING) AS canonical_id,origin,CAST(source_id AS STRING) AS source_id,encode(payload,'hex') AS payload_hex FROM {TABLE} WHERE {} ORDER BY canonical_id",
             predicates.join(" OR ")
@@ -356,9 +370,7 @@ impl Greptime {
         let mut encoded = prefix_length;
         let mut populated = false;
         for tuple in tuples {
-            // Encoding is additive within the one sql value. Use reqwest's
-            // maintained serializer for bounded components, not a custom form
-            // encoder or quadratic repeated encoding of a growing statement.
+            // Exact additive WHATWG form-encoded byte count with zero allocations.
             let cost = self.encoded_form_length(&tuple)? - overhead;
             if prefix_length
                 .checked_add(cost)
@@ -463,12 +475,13 @@ impl Greptime {
         &self,
         mut request: QueryRequest,
         frontiers: &BTreeMap<String, u64>,
-    ) -> Result<(QueryRequest, u64), String> {
+    ) -> Result<(QueryRequest, u64, Option<CursorKey>), String> {
         request.validate()?;
         self.check_authority(&request)?;
         request.scope.sort();
         request.scope.dedup();
         let mut offset = 0;
+        let mut after = None;
         if let Some(token) = request.cursor.take() {
             let cursor = self.decode_cursor(&token)?;
             if now() > cursor.expires {
@@ -482,6 +495,7 @@ impl Greptime {
                 return Err("cursor query or scope mismatch".into());
             }
             offset = cursor.offset;
+            after = cursor.after;
         } else if request.snapshot.is_empty() {
             request.snapshot = request
                 .scope
@@ -499,7 +513,7 @@ impl Greptime {
         {
             return Err("engine snapshot unavailable".into());
         }
-        Ok((request, offset))
+        Ok((request, offset, after))
     }
     fn prefix_state(
         &self,
@@ -557,7 +571,7 @@ impl Greptime {
     ) -> Result<QueryPlan, String> {
         let deadline = deadline
             .min(Instant::now() + Duration::from_millis(u64::from(request.budgets.timeout_ms)));
-        let (request, _) = self.resolve(request, &frontiers)?;
+        let (request, _, _) = self.resolve(request, &frontiers)?;
         let (predicate, scanned, checkpoint) = self.prefix_state(&request, deadline, cancel)?;
         let schemas=self.sql(&format!("SELECT DISTINCT registry_name FROM {TABLE} WHERE {predicate} ORDER BY registry_name"),deadline,cancel)?.into_iter().map(|r|r["registry_name"].as_str().map(str::to_owned).ok_or_else(||"engine schema identity missing".to_owned())).collect::<Result<Vec<_>,_>>()?;
         Ok(QueryPlan {
@@ -593,7 +607,7 @@ impl Greptime {
         let started = Instant::now();
         let deadline =
             deadline.min(started + Duration::from_millis(u64::from(request.budgets.timeout_ms)));
-        let (request, offset) = self.resolve(request, &frontiers)?;
+        let (request, offset, after) = self.resolve(request, &frontiers)?;
         let (scope_predicate, scanned, checkpoint) =
             self.prefix_state(&request, deadline, cancel)?;
         if scanned > u64::from(request.budgets.scan_rows) {
@@ -633,21 +647,57 @@ impl Greptime {
             u64::from(request.budgets.rows)
         };
         let stats = "CAST(COUNT(*) AS STRING) AS count,CAST(SUM(CASE WHEN outcome='error' THEN 1 ELSE 0 END) AS STRING) AS errors,CAST(SUM(CASE WHEN outcome='cancelled' THEN 1 ELSE 0 END) AS STRING) AS cancelled,CAST(COUNT(duration_ns) AS STRING) AS duration_count,CAST(MIN(duration_ns) AS STRING) AS min_ns,CAST(MAX(duration_ns) AS STRING) AS max_ns,CAST(SUM(CAST(duration_ns AS DECIMAL(38,0))) AS STRING) AS sum_ns";
-        let base = match &request.operation {
-            Operation::Capabilities => None,
-            Operation::Evidence => Some(format!(
+        let mut activity_overflow = false;
+        let base = match (&request.operation, after.as_ref()) {
+            (Operation::Capabilities, _) => None,
+            (Operation::Evidence, Some(CursorKey::CanonicalId(id))) => Some(format!(
+                "SELECT CAST(canonical_id AS STRING) AS canonical_id,origin,CAST(source_id AS STRING) AS source_id,CAST(timestamp_ns AS STRING) AS timestamp_ns,run_key,resource_name,encode(payload,'hex') AS payload_hex FROM {TABLE} WHERE {predicate} AND canonical_id>{} ORDER BY canonical_id",
+                unsigned(*id)
+            )),
+            (Operation::Evidence, None) => Some(format!(
                 "SELECT CAST(canonical_id AS STRING) AS canonical_id,origin,CAST(source_id AS STRING) AS source_id,CAST(timestamp_ns AS STRING) AS timestamp_ns,run_key,resource_name,encode(payload,'hex') AS payload_hex FROM {TABLE} WHERE {predicate} ORDER BY canonical_id"
             )),
-            Operation::ListRuns | Operation::RunSummary => Some(format!(
+            (Operation::ListRuns | Operation::RunSummary, Some(CursorKey::Key(key))) => {
+                Some(format!(
+                    "SELECT run_key,{stats} FROM {TABLE} WHERE {predicate} AND run_key IS NOT NULL AND run_key>{} GROUP BY run_key ORDER BY run_key",
+                    string(key)
+                ))
+            }
+            (Operation::ListRuns | Operation::RunSummary, None) => Some(format!(
                 "SELECT run_key,{stats} FROM {TABLE} WHERE {predicate} AND run_key IS NOT NULL GROUP BY run_key ORDER BY run_key"
             )),
-            Operation::ToolSummary => Some(format!(
+            (Operation::ToolSummary, Some(CursorKey::Key(key))) => Some(format!(
+                "SELECT activity_name AS tool,{stats} FROM {TABLE} WHERE {predicate} AND kind='tool_execution' AND activity_name>{} GROUP BY activity_name ORDER BY activity_name",
+                string(key)
+            )),
+            (Operation::ToolSummary, None) => Some(format!(
                 "SELECT activity_name AS tool,{stats} FROM {TABLE} WHERE {predicate} AND kind='tool_execution' GROUP BY activity_name ORDER BY activity_name"
             )),
-            Operation::ServiceSummary => Some(format!(
+            (Operation::ServiceSummary, Some(CursorKey::Key(key))) => Some(format!(
+                "SELECT activity_name AS service,{stats} FROM {TABLE} WHERE {predicate} AND kind='service_request' AND activity_name>{} GROUP BY activity_name ORDER BY activity_name",
+                string(key)
+            )),
+            (Operation::ServiceSummary, None) => Some(format!(
                 "SELECT activity_name AS service,{stats} FROM {TABLE} WHERE {predicate} AND kind='service_request' GROUP BY activity_name ORDER BY activity_name"
             )),
-            Operation::Activity { bucket_ns } => Some(format!(
+            (Operation::Activity { bucket_ns }, Some(CursorKey::BucketNs(last_bucket))) => {
+                if let Some(next_start) = last_bucket.checked_add(*bucket_ns) {
+                    Some(format!(
+                        "SELECT CAST((timestamp_ns/{})*{} AS STRING) AS bucket_start_ns,{stats} FROM {TABLE} WHERE {predicate} AND timestamp_ns>={} GROUP BY (timestamp_ns/{})*{} ORDER BY (timestamp_ns/{})*{}",
+                        unsigned(*bucket_ns),
+                        unsigned(*bucket_ns),
+                        unsigned(next_start),
+                        unsigned(*bucket_ns),
+                        unsigned(*bucket_ns),
+                        unsigned(*bucket_ns),
+                        unsigned(*bucket_ns)
+                    ))
+                } else {
+                    activity_overflow = true;
+                    None
+                }
+            }
+            (Operation::Activity { bucket_ns }, None) => Some(format!(
                 "SELECT CAST((timestamp_ns/{})*{} AS STRING) AS bucket_start_ns,{stats} FROM {TABLE} WHERE {predicate} GROUP BY (timestamp_ns/{})*{} ORDER BY (timestamp_ns/{})*{}",
                 unsigned(*bucket_ns),
                 unsigned(*bucket_ns),
@@ -656,21 +706,65 @@ impl Greptime {
                 unsigned(*bucket_ns),
                 unsigned(*bucket_ns)
             )),
+            _ => return Err("engine cursor key type mismatch".into()),
         };
         let mut rows = match base {
-            Some(base) => self.sql(
-                &format!("{base} LIMIT {} OFFSET {offset}", page_limit + 1),
-                deadline,
-                cancel,
-            )?,
+            Some(base) => {
+                let query_sql = if after.is_none() && offset > 0 {
+                    format!("{base} LIMIT {} OFFSET {offset}", page_limit + 1)
+                } else {
+                    format!("{base} LIMIT {}", page_limit + 1)
+                };
+                self.sql(&query_sql, deadline, cancel)?
+            }
+            None if activity_overflow => Vec::new(),
             None => vec![
                 json!({"api_version":API_VERSION,"operations":["capabilities","list_runs","run_summary","tool_summary","service_summary","activity","evidence"],"free_sql":false,"integer_encoding":"unsigned decimal strings","pool_bytes":(256u64*1024*1024).to_string(),"spill_bytes":"0"}),
             ],
         };
         let has_more = rows.len() as u64 > page_limit;
         rows.truncate(page_limit as usize);
+        let mut cursor_keys = Vec::with_capacity(rows.len());
         for row in &mut rows {
             let row = row.as_object_mut().ok_or("engine object shape")?;
+            match &request.operation {
+                Operation::Evidence => {
+                    let id = number(
+                        row.get("canonical_id")
+                            .ok_or("engine canonical_id missing")?,
+                    )?;
+                    cursor_keys.push(CursorKey::CanonicalId(id));
+                }
+                Operation::ListRuns | Operation::RunSummary => {
+                    let key = row
+                        .get("run_key")
+                        .and_then(Value::as_str)
+                        .ok_or("engine run_key missing")?;
+                    cursor_keys.push(CursorKey::Key(key.to_owned()));
+                }
+                Operation::ToolSummary => {
+                    let key = row
+                        .get("tool")
+                        .and_then(Value::as_str)
+                        .ok_or("engine tool missing")?;
+                    cursor_keys.push(CursorKey::Key(key.to_owned()));
+                }
+                Operation::ServiceSummary => {
+                    let key = row
+                        .get("service")
+                        .and_then(Value::as_str)
+                        .ok_or("engine service missing")?;
+                    cursor_keys.push(CursorKey::Key(key.to_owned()));
+                }
+                Operation::Activity { .. } => {
+                    let b = number(
+                        row.get("bucket_start_ns")
+                            .ok_or("engine bucket_start_ns missing")?,
+                    )?;
+                    cursor_keys.push(CursorKey::BucketNs(b));
+                }
+                Operation::Capabilities => {}
+            }
             if let Some(run) = row.remove("run_key") {
                 row.insert(
                     "run".into(),
@@ -741,10 +835,16 @@ impl Greptime {
             coverage.consumed.elapsed_ms =
                 started.elapsed().as_millis().try_into().unwrap_or(u32::MAX);
             let next_cursor = if coverage.truncated {
+                let key = cursor_keys.last().cloned();
                 Some(self.encode_cursor(&Cursor {
                     identity: identity(&request)?,
                     snapshot: request.snapshot.clone(),
-                    offset: offset + rows.len() as u64,
+                    offset: if key.is_some() {
+                        0
+                    } else {
+                        offset + rows.len() as u64
+                    },
+                    after: key,
                     expires: now() + 900,
                 })?)
             } else {
@@ -767,6 +867,7 @@ impl Greptime {
                 return Ok(response);
             }
             rows.pop();
+            cursor_keys.pop();
             coverage.truncated = true;
             coverage.complete = false;
             if rows.is_empty() {
@@ -793,6 +894,18 @@ impl Greptime {
             .map_err(|_| "invalid engine cursor signature")?;
         serde_json::from_slice(&bytes).map_err(err)
     }
+}
+fn exact_form_value_length(value: &str) -> usize {
+    value.bytes().fold(0usize, |acc, b| {
+        acc + if b.is_ascii_alphanumeric() || matches!(b, b'*' | b'-' | b'.' | b'_' | b' ') {
+            1
+        } else {
+            3
+        }
+    })
+}
+fn exact_form_length(sql: &str) -> usize {
+    4 + exact_form_value_length(sql)
 }
 fn check(deadline: Instant, cancel: &AtomicBool) -> Result<(), String> {
     if cancel.load(Ordering::Acquire) {

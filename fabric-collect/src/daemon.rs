@@ -1217,37 +1217,49 @@ async fn run_daemon_mode(mut config: DaemonConfig, spindle_only: bool) -> Result
                 let _permit = permit;
                 let (reader, mut writer) = stream.into_split();
                 let mut reader = TokioBufReader::with_capacity(8192, reader);
-                let reply = match tokio::time::timeout(
-                    RPC_IO_TIMEOUT,
-                    read_bounded_line(&mut reader, RPC_LINE_LIMIT_BYTES),
-                )
-                .await
-                {
-                    Ok(Ok(Some(Some(line)))) => {
-                        match serde_json::from_str::<DaemonRequest>(line.trim()) {
-                            Ok(req) => rt.handle_rpc(req),
-                            Err(e) => DaemonResponse::Error {
-                                message: e.to_string(),
-                            },
+                for _ in 0..64 {
+                    let reply = match tokio::time::timeout(
+                        RPC_IO_TIMEOUT,
+                        read_bounded_line(&mut reader, RPC_LINE_LIMIT_BYTES),
+                    )
+                    .await
+                    {
+                        Ok(Ok(Some(Some(line)))) => {
+                            match serde_json::from_str::<DaemonRequest>(line.trim()) {
+                                Ok(req) => rt.handle_rpc(req),
+                                Err(e) => DaemonResponse::Error {
+                                    message: e.to_string(),
+                                },
+                            }
                         }
+                        Ok(Ok(Some(None))) => DaemonResponse::Error {
+                            message: format!(
+                                "rpc request exceeds {RPC_LINE_LIMIT_BYTES} byte limit"
+                            ),
+                        },
+                        _ => break,
+                    };
+                    let mut bytes = match serde_json::to_vec(&reply) {
+                        Ok(b) => b,
+                        Err(e) => serde_json::to_vec(&DaemonResponse::Error {
+                            message: format!("serialize daemon reply failed: {e}"),
+                        })
+                        .unwrap_or_default(),
+                    };
+                    if !bytes.is_empty() {
+                        bytes.push(b'\n');
+                        if tokio::time::timeout(RPC_IO_TIMEOUT, writer.write_all(&bytes))
+                            .await
+                            .ok()
+                            .and_then(Result::ok)
+                            .is_none()
+                        {
+                            break;
+                        }
+                        let _ = tokio::time::timeout(RPC_IO_TIMEOUT, writer.flush()).await;
                     }
-                    Ok(Ok(Some(None))) => DaemonResponse::Error {
-                        message: format!("rpc request exceeds {RPC_LINE_LIMIT_BYTES} byte limit"),
-                    },
-                    _ => return,
-                };
-                let mut bytes = match serde_json::to_vec(&reply) {
-                    Ok(b) => b,
-                    Err(e) => serde_json::to_vec(&DaemonResponse::Error {
-                        message: format!("serialize daemon reply failed: {e}"),
-                    })
-                    .unwrap_or_default(),
-                };
-                if !bytes.is_empty() {
-                    bytes.push(b'\n');
-                    let _ = tokio::time::timeout(RPC_IO_TIMEOUT, writer.write_all(&bytes)).await;
-                    let _ = tokio::time::timeout(RPC_IO_TIMEOUT, writer.shutdown()).await;
                 }
+                let _ = tokio::time::timeout(RPC_IO_TIMEOUT, writer.shutdown()).await;
             });
         }
         conn_tasks.abort_all();

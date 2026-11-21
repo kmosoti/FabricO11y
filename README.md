@@ -54,5 +54,8 @@ tracks received records and query visibility separately for each origin.
   Run `fabric settings` to see the resolved settings on your host.
 - **Automate investigations.** Find typed queries and output formats in the
   [investigation guide](docs/investigation.md) and [CLI guide](docs/guide.md).
+- **Integrate from Rust.** Depend on the zero-UI [`fabric-client`](fabric-client/Cargo.toml)
+  workspace crate (`FabricClient` for `fabric.cli.v1` JSON subcommands and
+  `FabricQueryClient` for `FABRIC_CREDENTIAL_FILE`-only `fabric-query` calls).
 - **Work on FabricO11y.** See the [architecture](docs/architecture.md) and
   [contribution guide](CONTRIBUTING.md) for crate boundaries, build tools, and verification.
