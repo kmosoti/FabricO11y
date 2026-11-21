@@ -1,12 +1,14 @@
 %global debug_package %{nil}
+%global alpha_tag %{?_alpha_tag}%{!?_alpha_tag:alpha.3}
+%global alpha_rel %{?_alpha_rel}%{!?_alpha_rel:0.alpha.3}
 
 Name:           fabrico11y
 Version:        0.1.0
-Release:        0.alpha.2%{?dist}
+Release:        %{alpha_rel}%{?dist}
 Summary:        Local telemetry custody and query tools
 License:        Apache-2.0 AND MIT AND BSD-3-Clause AND Unicode-3.0 AND Zlib
 URL:            https://github.com/kmosoti/FabricO11y
-Source0:        fabrico11y-alpha.2.tar.gz
+Source0:        fabrico11y-%{alpha_tag}.tar.gz
 ExclusiveArch:  x86_64
 BuildRequires:  rust >= 1.100.0
 BuildRequires:  cargo >= 1.100.0
@@ -20,7 +22,7 @@ FabricO11y local telemetry collection, custody, and query tools.
 The user services are opt-in and require explicit configuration.
 
 %prep
-%autosetup -n fabrico11y-alpha.2
+%autosetup -n fabrico11y-%{alpha_tag}
 
 %build
 # The builder must supply Rust 1.100.0 and an already populated Cargo cache.

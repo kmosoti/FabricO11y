@@ -417,3 +417,72 @@ fn compiler_seed_publication_and_qualification_keep_the_trusted_boundaries() {
         )
     );
 }
+
+#[test]
+fn release_workflow_and_deb_packaging_enforce_glibc_slsa_and_pins() {
+    let release = fs::read_to_string(repo_root().join(".github/workflows/release.yml"))
+        .expect("read .github/workflows/release.yml");
+    for job in ["fedora-rpm:", "debian-deb-and-tarball:", "release:"] {
+        assert!(release.contains(job), "release workflow missing {job}");
+    }
+    assert!(release.contains("actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8"));
+    assert!(release.contains("actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"));
+    assert!(release.contains("actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333"));
+    assert!(
+        release
+            .contains("actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8")
+    );
+    assert!(
+        release.contains("softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3")
+    );
+    assert!(release.contains("MAX_GLIBC: '2.36'"));
+    assert!(release.contains("packaging/deb/build-deb.sh"));
+    assert!(release.contains("packaging/deb/build-tarball.sh"));
+    assert!(release.contains("packaging/rpm/fabrico11y.spec"));
+    let without_vartmp = release.replace("/var/tmp", "");
+    assert!(
+        !without_vartmp.contains("/tmp"),
+        "release workflow must not reference /tmp paths"
+    );
+    for line in release.lines() {
+        let trimmed = line.trim();
+        if let Some(action) = trimmed
+            .strip_prefix("uses: ")
+            .or_else(|| trimmed.strip_prefix("- uses: "))
+            && !action.starts_with("./")
+        {
+            let (_, rest) = action
+                .split_once('@')
+                .expect("release action must be pinned");
+            let sha = rest.split_whitespace().next().unwrap_or("");
+            assert!(
+                sha.len() == 40 && sha.bytes().all(|b| b.is_ascii_hexdigit()),
+                "unpinned release action: {action}"
+            );
+        }
+    }
+
+    for script in [
+        "packaging/deb/check-glibc.sh",
+        "packaging/deb/stage-root.sh",
+        "packaging/deb/build-deb.sh",
+        "packaging/deb/build-tarball.sh",
+        "packaging/deb/debian/postinst",
+        "packaging/deb/debian/prerm",
+        "packaging/deb/debian/postrm",
+    ] {
+        let path = repo_root().join(script);
+        assert!(path.is_file(), "missing {script}");
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(!text.contains("patchelf"), "{script} must not use patchelf");
+        let output = std::process::Command::new("sh")
+            .args(["-n", path.to_str().unwrap()])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "sh -n failed for {script}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}

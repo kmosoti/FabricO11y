@@ -2,8 +2,8 @@
 
 The FabricO11y flake builds six executables for `x86_64-linux` using Rust
 1.100.0 and the repository's Cargo lockfile. Run these commands from the
-release checkout or use `github:kmosoti/FabricO11y/v0.1.0-alpha.2` as the
-flake reference. Alpha.2 uses the stable NixOS 26.05 package set.
+release checkout or use `github:kmosoti/FabricO11y/v0.1.0-alpha.3` as the
+flake reference. Alpha.3 uses the stable NixOS 26.05 package set.
 `fabrico11y` and `fabrico11y-26_05` select the same package and app.
 
 ```sh

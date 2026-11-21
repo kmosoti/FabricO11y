@@ -1,6 +1,6 @@
-# Fedora RPM (alpha.2)
+# Fedora RPM (`alpha.3`)
 
-This package targets x86_64 Fedora 44, built with Rust 1.100.0 and the checked-in lockfile. Fedora 45 requires a package signature trusted by the installing system. Before publishing, a maintainer must sign the RPM with an authorized release key and verify it; no release key is supplied here. An unsigned local test RPM is not a release artifact. No package script starts, enables, stops or migrates services or changes user data.
+This package targets x86_64 Fedora 44 and 45, built with Rust 1.100.0 and the checked-in lockfile. Fedora 45 requires a package signature trusted by the installing system. Before publishing, a maintainer must sign the RPM with an authorized release key (or verify SLSA build provenance with `gh attestation verify`) and verify it; no release key is supplied here. An unsigned local test RPM is not a release artifact. No package script starts, enables, stops or migrates services or changes user data.
 
 ## Build from a source checkout
 
@@ -9,7 +9,7 @@ Install `rpm-build`, `systemd-rpm-macros`, Rust 1.100.0, GCC, `pkgconf-pkg-confi
 ```sh
 export TMPDIR=/path/on/disk/tmp CARGO_BUILD_TARGET_DIR=/path/on/disk/cargo-target
 mkdir -p "$TMPDIR" "$CARGO_BUILD_TARGET_DIR" "$HOME/rpmbuild"/{SOURCES,RPMS,SRPMS,BUILD,BUILDROOT,SPECS}
-git archive --format=tar --prefix=fabrico11y-alpha.2/ "$CANDIDATE_COMMIT" | gzip > "$HOME/rpmbuild/SOURCES/fabrico11y-alpha.2.tar.gz"
+git archive --format=tar --prefix=fabrico11y-alpha.3/ "$CANDIDATE_COMMIT" | gzip > "$HOME/rpmbuild/SOURCES/fabrico11y-alpha.3.tar.gz"
 rpmbuild -ba packaging/rpm/fabrico11y.spec
 ```
 
