@@ -2,7 +2,7 @@ name: CI tool images
 
 on:
   push:
-    branches: [develop]
+    branches: [main]
     paths:
       - '.github/ci-images/Containerfile'
       - '.github/scripts/check-ci-image-tools.sh'
@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       variant:
-        description: Image set to build, verify, and publish from develop
+        description: Image set to build, verify, and publish from main
         type: choice
         options: [standard, common-seeded, all]
         default: standard
@@ -28,7 +28,7 @@ concurrency:
 
 jobs:
   build-and-publish:
-    if: github.repository == 'kmosoti/FabricO11y' && github.ref == 'refs/heads/develop'
+    if: github.repository == 'kmosoti/FabricO11y' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     permissions:

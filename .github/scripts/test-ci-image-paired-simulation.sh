@@ -47,7 +47,7 @@ done
 cat > "$scratch/bin/gh" <<'SHIM'
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ $# == 4 && "$1:$2:$3:$4" == "api:repos/$GITHUB_REPOSITORY/compare/develop...$REVISION:--jq:.status" ]]; then
+if [[ $# == 4 && "$1:$2:$3:$4" == "api:repos/$GITHUB_REPOSITORY/compare/main...$REVISION:--jq:.status" ]]; then
   printf '%s\n' "${SIM_HISTORY:-behind}"
 elif [[ $# == 4 && "$1:$2:$3" == 'api:-H:Accept: application/vnd.github.raw+json' ]]; then
   path=${4#repos/$GITHUB_REPOSITORY/contents/}
@@ -92,7 +92,7 @@ run_plan() (
 assert_status 0 'valid offline plan' run_plan
 grep -Fxq 'variant=common-seeded' "$GITHUB_OUTPUT"
 grep -Fq '347 compressed layer bytes' "$GITHUB_STEP_SUMMARY"
-SIM_HISTORY=diverged assert_status 1 'source outside develop history' run_plan
+SIM_HISTORY=diverged assert_status 1 'source outside main history' run_plan
 SIM_PROTECTED_DRIFT=1 assert_status 1 'protected workload drift' run_plan
 SIM_IMAGE_DIGEST=sha256:wrong assert_status 1 'moved image tag' run_plan
 SIM_IMAGE_REVISION=wrong assert_status 1 'mismatched image source label' run_plan

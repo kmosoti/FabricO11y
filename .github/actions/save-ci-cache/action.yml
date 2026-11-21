@@ -1,5 +1,5 @@
 name: Save trusted CI cache
-description: Save only from successful develop pushes; PRs never publish executable caches.
+description: Save only from successful main pushes; PRs never publish executable caches.
 inputs:
   sources-key:
     required: true
@@ -23,19 +23,19 @@ runs:
   using: composite
   steps:
     - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      if: github.event_name == 'push' && github.ref == 'refs/heads/develop' && inputs.sources-hit != 'true'
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main' && inputs.sources-hit != 'true'
       with:
         path: |
           /github/home/.cargo/registry
           /github/home/.cargo/git/db
         key: ${{ inputs.sources-key }}
     - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      if: github.event_name == 'push' && github.ref == 'refs/heads/develop' && inputs.hit != 'true'
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main' && inputs.hit != 'true'
       with:
         path: target
         key: ${{ inputs.key }}
     - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      if: github.event_name == 'push' && github.ref == 'refs/heads/develop' && inputs.fuzz-key != '' && inputs.fuzz-hit != 'true'
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main' && inputs.fuzz-key != '' && inputs.fuzz-hit != 'true'
       with:
         path: /github/home/.cache/fabrico11y-fuzz-target
         key: ${{ inputs.fuzz-key }}

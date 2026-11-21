@@ -5,10 +5,10 @@ Read [README.md](README.md), [docs/architecture.md](docs/architecture.md), [docs
 ## Branches, Jujutsu Stacks, and Review Gates
 
 - Use the existing user-installed `jj` from `PATH` with its colocated Git backend for snapshots, atomic commits, and stacked bookmarks (`stack/<topic>/01-...`). Configure `git config commit.template .github/.gitmessage`.
-- **Two-branch model:**
-  - `develop`: day-to-day agent integration branch fed by linear `jj` stacks after CI (`development-checks.yml`) and independent review (prefer an alternative model family or a fresh independent standard/medium-reasoning reviewer context).
-  - `main`: human-gated release branch promoted strictly from `develop` via PR and protected by the `main-release` GitHub Environment ([`.github/workflows/main-human-gate.yml`](.github/workflows/main-human-gate.yml)).
-- **Hard publication constraints:** Never push directly to `main`, never merge into `main`, never approve `main-release`, and never rewrite verified commits without updating verification receipts. Keep `archive/*` and `stack/*` bookmarks local unless explicitly asked to publish.
+- **Single-branch model (`main`) + stacked `jj` PRs:**
+  - `main`: the single protected integration and release branch, governed by [`.github/CODEOWNERS`](.github/CODEOWNERS) (`* @kmosoti`) and native GitHub branch protection / rulesets (required CI checks via `development-checks.yml`, `@kmosoti` CODEOWNER approval, linear rebase-only history, no direct push or force-push).
+  - **`@kennmosoti-maker` collaborator workflow:** `@kennmosoti-maker` (Write / `push` access, non-admin) and local agent stacks develop atomic linear changes on stacked Jujutsu bookmarks (`stack/<topic>/01-...`) and open stacked PRs targeting `main`. Before landing onto `main`, PRs must pass CI (`development-checks.yml`), undergo independent review (prefer an alternative model family or a fresh independent standard/medium-reasoning reviewer context when agent-authored), and receive `@kmosoti` approval.
+- **Hard publication constraints:** Never push directly to `main`, never force-push or merge into `main` bypassing PR/`CODEOWNERS` review, and never rewrite verified commits without updating verification receipts. Keep `archive/*` and `stack/*` bookmarks local unless explicitly asked to publish.
 
 ## Storage Routing, Zero `/tmp`, and Self-Preservation
 

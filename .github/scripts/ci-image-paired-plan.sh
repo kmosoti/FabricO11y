@@ -16,8 +16,8 @@ case "$profile:$variant" in
   verify:common|verify:common-seeded|native-acceptance:native) ;;
   *) printf 'Image variant %s cannot qualify for %s\n' "$variant" "$profile" >&2; exit 1 ;;
 esac
-status=$(gh api "repos/$GITHUB_REPOSITORY/compare/develop...$revision" --jq .status)
-case "$status" in identical|behind) ;; *) echo "Revision is outside develop history" >&2; exit 1 ;; esac
+status=$(gh api "repos/$GITHUB_REPOSITORY/compare/main...$revision" --jq .status)
+case "$status" in identical|behind) ;; *) echo "Revision is outside main history" >&2; exit 1 ;; esac
 
 for path in .github/workflows/development-checks.yml \
     .github/actions/restore-ci-cache/action.yml .github/actions/save-ci-cache/action.yml; do
