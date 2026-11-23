@@ -425,6 +425,24 @@ fn release_workflow_and_deb_packaging_enforce_glibc_slsa_and_pins() {
     for job in ["fedora-rpm:", "debian-deb-and-tarball:", "release:"] {
         assert!(release.contains(job), "release workflow missing {job}");
     }
+    let deb_job = release
+        .split_once("\n  debian-deb-and-tarball:\n")
+        .and_then(|(_, rest)| rest.split_once("\n  release:\n"))
+        .map(|(deb, _)| deb)
+        .expect("debian-deb-and-tarball job section");
+    let apt_pos = deb_job
+        .find("Install Debian 12 toolchain prerequisites")
+        .expect("debian-deb-and-tarball missing apt prerequisites step");
+    let checkout_pos = deb_job
+        .find("actions/checkout@")
+        .expect("debian-deb-and-tarball missing actions/checkout");
+    let ancestry_pos = deb_job
+        .find("Enforce protected-main ancestry on release tags")
+        .expect("debian-deb-and-tarball missing protected-main ancestry step");
+    assert!(
+        apt_pos < checkout_pos && apt_pos < ancestry_pos && checkout_pos < ancestry_pos,
+        "Install Debian 12 toolchain prerequisites must precede actions/checkout@ and Enforce protected-main ancestry on release tags in debian-deb-and-tarball"
+    );
     assert!(release.contains("actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8"));
     assert!(release.contains("actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"));
     assert!(release.contains("actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333"));

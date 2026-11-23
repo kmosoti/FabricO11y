@@ -1,6 +1,6 @@
-# Debian 12/13 `.deb` & Portable Linux Tarball (`v0.1.1-alpha.1`)
+# Debian 12/13 `.deb` & Portable Linux Tarball (`v0.1.1-alpha.2`)
 
-FabricO11y publishes native Debian x86-64 packages (`fabrico11y_0.1.1-alpha.1_amd64.deb`, internal package version `0.1.1~alpha.1`) and a portable Linux tarball (`fabrico11y-0.1.1-alpha.1-x86_64-unknown-linux-gnu.tar.zst`) compiled on Debian 12 (`bookworm`, `glibc 2.36`).
+FabricO11y publishes native Debian x86-64 packages (`fabrico11y_0.1.1-alpha.2_amd64.deb`, internal package version `0.1.1~alpha.2`) and a portable Linux tarball (`fabrico11y-0.1.1-alpha.2-x86_64-unknown-linux-gnu.tar.zst`) compiled on Debian 12 (`bookworm`, `glibc 2.36`).
 
 Building directly against Debian 12 `glibc 2.36` keeps every binary (`fabric`, `spindle`, `fabric-server`, `fabric-adapter`, `fabric-query`, `fabric-mcp`) compatible with **Debian 12 (`bookworm`, glibc 2.36)** and **Debian 13 (`trixie`, glibc 2.41)** without host-glibc `patchelf` bundling or copying shared `libc.so.6` / `ld-linux-x86-64.so.2` files.
 
@@ -10,8 +10,8 @@ Verify `SHA256SUMS` and the GitHub SLSA build provenance attestation before inst
 
 ```sh
 sha256sum --check SHA256SUMS --ignore-missing
-gh attestation verify fabrico11y_0.1.1-alpha.1_amd64.deb --repo kmosoti/FabricO11y
-gh attestation verify fabrico11y-0.1.1-alpha.1-x86_64-unknown-linux-gnu.tar.zst --repo kmosoti/FabricO11y
+gh attestation verify fabrico11y_0.1.1-alpha.2_amd64.deb --repo kmosoti/FabricO11y
+gh attestation verify fabrico11y-0.1.1-alpha.2-x86_64-unknown-linux-gnu.tar.zst --repo kmosoti/FabricO11y
 ```
 
 To verify the ELF symbol floor locally (`<= GLIBC_2.36`):
@@ -24,13 +24,13 @@ packaging/deb/check-glibc.sh /usr/bin/fabric /usr/bin/spindle /usr/bin/fabric-se
 
 ```sh
 sudo apt-get update
-sudo apt-get install -y ./fabrico11y_0.1.1-alpha.1_amd64.deb
+sudo apt-get install -y ./fabrico11y_0.1.1-alpha.2_amd64.deb
 ```
 
 For the portable tarball on other `x86_64` Linux distributions with `glibc >= 2.36`:
 
 ```sh
-tar --zstd -xf fabrico11y-0.1.1-alpha.1-x86_64-unknown-linux-gnu.tar.zst
+tar --zstd -xf fabrico11y-0.1.1-alpha.2-x86_64-unknown-linux-gnu.tar.zst
 ```
 
 No package script starts, enables, stops, or deletes services or telemetry storage.

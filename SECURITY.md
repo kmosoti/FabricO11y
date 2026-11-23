@@ -4,13 +4,13 @@ FabricO11y is designed as a single-user / host-local observability custody plane
 
 ## Supported Versions
 
-Security fixes land on `main` and are released on the current `v0.1.x` alpha line (`0.1.1-alpha.1`).
+Security fixes land on `main` and are released on the current `v0.1.x` alpha line (`0.1.1-alpha.2`).
 
 ## Reporting a Vulnerability
 
 Do not open public issues with exploit details for unpatched vulnerabilities. Report issues privately via GitHub Security Advisories on `kmosoti/FabricO11y`.
 
-## Trust Boundaries & Mitigations (`v0.1.1-alpha.1`)
+## Trust Boundaries & Mitigations (`v0.1.1-alpha.2`)
 
 1. **Loopback Canonical RPC Mutual Authentication (`fabric`, `fabric-client`, `fabric-server`, `spindle`)**
    - `fabric-server` canonical TCP uses a 4-frame mutual HMAC-SHA256 challenge-response handshake (`ClientHello` -> `ServerChallenge` -> `ClientProof` -> authenticated `Request` with `request_mac`).

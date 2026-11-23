@@ -1,7 +1,7 @@
 %global debug_package %{nil}
 %global pkg_ver %{?_pkg_ver}%{!?_pkg_ver:0.1.1}
-%global alpha_tag %{?_alpha_tag}%{!?_alpha_tag:alpha.1}
-%global alpha_rel %{?_alpha_rel}%{!?_alpha_rel:0.alpha.1}
+%global alpha_tag %{?_alpha_tag}%{!?_alpha_tag:alpha.2}
+%global alpha_rel %{?_alpha_rel}%{!?_alpha_rel:0.alpha.2}
 
 Name:           fabrico11y
 Version:        %{pkg_ver}
