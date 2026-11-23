@@ -48,14 +48,14 @@ fn escape_delimiter_markers(input: &str) -> String {
             out.push_str("\\u{003c}/");
             i += 2;
         } else if rest_lower.starts_with(b"<<<") {
-            out.push_str("\\u{003c}<<");
-            i += 3;
+            out.push_str("\\u{003c}");
+            i += 1;
         } else if rest_lower.starts_with(b">>>") {
-            out.push_str("\\u{003e}>>");
-            i += 3;
+            out.push_str("\\u{003e}");
+            i += 1;
         } else if rest_lower.starts_with(b"```") {
-            out.push_str("\\u{0060}`");
-            i += 2;
+            out.push_str("\\u{0060}");
+            i += 1;
         } else if rest_lower.starts_with(b"[inst]") {
             out.push_str("\\u{005b}");
             out.push_str(&input[i + 1..i + 6]);
@@ -144,6 +144,17 @@ mod tests {
         assert!(!cleaned.contains("```"));
         assert!(!cleaned.contains("[INST]"));
         assert!(!cleaned.to_ascii_lowercase().contains("<system>"));
+    }
+
+    #[test]
+    fn escapes_repeated_delimiter_runs_of_four_or_more() {
+        for raw in ["<<<<", ">>>>", "````json", "```````", "<<<>>>````"] {
+            let cleaned = sanitize_untrusted_telemetry_str(raw);
+            assert!(!cleaned.contains("<<<"), "unstripped <<< in {cleaned}");
+            assert!(!cleaned.contains(">>>"), "unstripped >>> in {cleaned}");
+            assert!(!cleaned.contains("```"), "unstripped ``` in {cleaned}");
+        }
+        assert_eq!(sanitize_untrusted_telemetry_str("<<>>``"), "<<>>``");
     }
 
     #[test]
