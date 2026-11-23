@@ -36,6 +36,6 @@ Do not open public issues with exploit details for unpatched vulnerabilities. Re
    - Human/table CLI renderers and error printers sanitize terminal control sequences (C0, DEL, ESC/CSI/OSC, C1, bidi) via `fabric_core::sanitize_terminal_text` before column truncation.
    - `FsChurnTracker` (`fabric-collect`) evicts disappeared paths each scan cycle, caps retained tracking entries (`MAX_TRACKED_PATHS = 4096`), and drops cached path state under memory pressure.
 
-7. **Release Provenance & Supply Chain (`release.yml`, `install-toolchain.sh`)**
-   - CI/release toolchains verify pinned versioned `rustup-init` binary SHA-256 digests instead of piping unverified shell scripts.
+7. **Release Provenance & Supply Chain (`release.yml`, `development-checks.yml`)**
+   - `release.yml` verifies pinned `rustup-init 1.29.3` binary SHA-256 digests directly instead of piping unverified shell scripts, while `development-checks.yml` runs inside immutable `@sha256:`-pinned `ghcr.io/kmosoti/fabrico11y-ci` images that verify `/opt/fabrico11y/bootstrap/.github/scripts/install-toolchain.sh` hash equality (`sha256sum`) against the baked bootstrap image input before building.
    - Tagged releases verify protected-`main` ancestry (`git merge-base --is-ancestor "${GITHUB_SHA}" refs/remotes/origin/main`) fail-closed before packaging, attestation, or release publication, with all GitHub Actions pinned to 40-character commit SHAs.

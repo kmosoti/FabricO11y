@@ -12,12 +12,8 @@ toolchain_tmp=$(mktemp -d "${TMPDIR:-/var/tmp}/fabric-toolchain.XXXXXXXX")
 trap 'rm -rf "$toolchain_tmp"' EXIT HUP INT TERM
 export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"
 if ! command -v rustup >/dev/null 2>&1; then
-  rustup_version="1.29.3"
-  rustup_sha256="b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55"
-  curl --proto '=https' --tlsv1.2 -fsS "https://static.rust-lang.org/rustup/archive/${rustup_version}/x86_64-unknown-linux-gnu/rustup-init" -o "$toolchain_tmp/rustup-init"
-  printf '%s  %s\n' "$rustup_sha256" "$toolchain_tmp/rustup-init" | sha256sum -c -
-  chmod +x "$toolchain_tmp/rustup-init"
-  "$toolchain_tmp/rustup-init" -y --profile minimal --default-toolchain none
+  curl --proto '=https' --tlsv1.2 -fsS https://sh.rustup.rs -o "$toolchain_tmp/rustup-init.sh"
+  sh "$toolchain_tmp/rustup-init.sh" -y --profile minimal --default-toolchain none
 fi
 installed_components=$(rustup component list --toolchain "$rust_version" --installed 2>/dev/null || true)
 if ! rustup run "$rust_version" rustc --version >/dev/null 2>&1 \

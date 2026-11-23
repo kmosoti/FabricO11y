@@ -456,16 +456,20 @@ fn release_workflow_and_deb_packaging_enforce_glibc_slsa_and_pins() {
             && release.contains("sha256sum -c -"),
         "release workflow must verify pinned rustup-init SHA-256 digest"
     );
-    let install_toolchain =
-        fs::read_to_string(repo_root().join(".github/scripts/install-toolchain.sh")).unwrap();
+    let dev_checks =
+        fs::read_to_string(repo_root().join(".github/workflows/development-checks.yml"))
+            .expect("read .github/workflows/development-checks.yml");
     assert!(
-        !install_toolchain.contains("https://sh.rustup.rs"),
-        "install-toolchain.sh must not download unverified sh.rustup.rs"
+        dev_checks.contains("ghcr.io/kmosoti/fabrico11y-ci@sha256:"),
+        "development-checks.yml must pin immutable ghcr.io/kmosoti/fabrico11y-ci@sha256: images"
     );
     assert!(
-        install_toolchain.contains("static.rust-lang.org/rustup/archive/")
-            && install_toolchain.contains("sha256sum -c -"),
-        "install-toolchain.sh must verify pinned rustup-init SHA-256 digest"
+        dev_checks.contains("bootstrap=/opt/fabrico11y/bootstrap")
+            && dev_checks.contains(".github/scripts/install-toolchain.sh")
+            && dev_checks.contains("sha256sum < \"$1\"")
+            && dev_checks.contains("sha256sum < \"$2\"")
+            && dev_checks.contains("require_image_input \"$path\" \"$bootstrap/$path\""),
+        "development-checks.yml must verify /opt/fabrico11y/bootstrap/.github/scripts/install-toolchain.sh via sha256sum"
     );
     let without_vartmp = release.replace("/var/tmp", "");
     assert!(
