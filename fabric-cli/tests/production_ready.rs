@@ -1,6 +1,4 @@
-use fabric::canonical::{
-    self, Authenticated, Request as CanonicalRequest, Response as CanonicalResponse,
-};
+use fabric::canonical::{self, Request as CanonicalRequest, Response as CanonicalResponse};
 use fabric::spindle::{Health, Reply};
 use fabric_collect::{DaemonRequest, DaemonResponse, query_daemon_socket};
 use fabric_core::DoctorReport;
@@ -255,10 +253,13 @@ fn canonical_peer(origin: &'static str, authority: &'static str) -> (String, Joi
             }
         };
         let deadline = Instant::now() + Duration::from_secs(3);
-        let request: Authenticated =
-            serde_json::from_slice(&canonical::read_frame(&mut socket, deadline).unwrap()).unwrap();
-        assert_eq!(request.credential, "reader-credential-12345");
-        assert!(matches!(request.request, CanonicalRequest::Progress));
+        let (_, request) = canonical::accept_authenticated_sync(
+            &mut socket,
+            ["reader-credential-12345"],
+            deadline,
+        )
+        .unwrap();
+        assert!(matches!(request, CanonicalRequest::Progress));
         let response = CanonicalResponse::Progress {
             authority: authority.into(),
             frontiers: BTreeMap::from([(origin.to_owned(), 0)]),

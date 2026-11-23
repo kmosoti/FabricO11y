@@ -31,6 +31,7 @@ pub struct Greptime {
     endpoint: String,
     http: Client,
     cursor_key: [u8; 32],
+    auth_token: Option<String>,
     authority: Arc<Mutex<Option<String>>>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -61,6 +62,30 @@ impl Greptime {
     }
     /// A receiver can supply its persisted private cursor key across restarts.
     pub fn open_with_cursor_key(endpoint: &str, cursor_key: [u8; 32]) -> Result<Self, String> {
+        Self::open_with_auth(endpoint, cursor_key, None, false)
+    }
+    /// Opens a loopback Greptime engine client with explicit Bearer authentication policy.
+    pub fn open_with_auth(
+        endpoint: &str,
+        cursor_key: [u8; 32],
+        auth_token: Option<String>,
+        allow_unauthenticated_loopback: bool,
+    ) -> Result<Self, String> {
+        match auth_token.as_deref() {
+            Some(token) => {
+                if !(1..=256).contains(&token.len()) || !token.bytes().all(|b| b.is_ascii_graphic())
+                {
+                    return Err("invalid engine auth token format".into());
+                }
+            }
+            None if !allow_unauthenticated_loopback => {
+                return Err(
+                    "engine_endpoint requires engine_auth_token_file unless allow_unauthenticated_loopback_engine is true"
+                        .into(),
+                );
+            }
+            None => {}
+        }
         let base = endpoint
             .strip_prefix("http://")
             .ok_or("engine endpoint requires loopback http://address:port")?
@@ -81,6 +106,7 @@ impl Greptime {
             endpoint: format!("http://{address}/v1/sql"),
             http,
             cursor_key,
+            auth_token,
             authority: Arc::new(Mutex::new(None)),
         };
         engine.sql(
@@ -251,11 +277,11 @@ impl Greptime {
             .collect()
     }
     fn form_request(&self, sql: &str) -> Result<reqwest::blocking::Request, String> {
-        self.http
-            .post(&self.endpoint)
-            .form(&[("sql", sql)])
-            .build()
-            .map_err(err)
+        let mut request = self.http.post(&self.endpoint).form(&[("sql", sql)]);
+        if let Some(token) = &self.auth_token {
+            request = request.bearer_auth(token);
+        }
+        request.build().map_err(err)
     }
     fn form_length(request: &reqwest::blocking::Request) -> Result<usize, String> {
         request
@@ -1150,6 +1176,7 @@ mod tests {
             endpoint: "http://127.0.0.1:1/v1/sql".into(),
             http: Client::builder().no_proxy().build().unwrap(),
             cursor_key: [0; 32],
+            auth_token: None,
             authority: Arc::new(Mutex::new(None)),
         }
     }
@@ -1340,7 +1367,7 @@ mod tests {
     fn native_binary_custody_and_typed_oracle() {
         let endpoint =
             std::env::var("FABRIC_GREPTIME_ENDPOINT").expect("owned test endpoint required");
-        let engine = Greptime::open(&endpoint).unwrap();
+        let engine = Greptime::open_with_auth(&endpoint, [7u8; 32], None, true).unwrap();
         let nonce = std::fs::read_to_string("/proc/sys/kernel/random/uuid").unwrap();
         let nonce = nonce.trim();
         let origins = ["a", "b", "a", "a", "b", "a", "c", "a"];
@@ -1675,7 +1702,7 @@ mod tests {
         let expected: Vec<CanonicalRow> =
             serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
         assert!(!expected.is_empty());
-        let engine = Greptime::open(&endpoint).unwrap();
+        let engine = Greptime::open_with_auth(&endpoint, [7u8; 32], None, true).unwrap();
         let actual = engine
             .get_rows(
                 &expected
@@ -1701,5 +1728,68 @@ mod tests {
         );
         assert_eq!(evidence_page_limit(2, RESPONSE_LIMIT as u32), 2);
         assert_eq!(evidence_page_limit(100, 2048), 1);
+    }
+
+    #[test]
+    fn engine_requires_auth_by_default_and_attaches_bearer_token() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let err = Greptime::open_with_auth("http://127.0.0.1:19116", [9u8; 32], None, false)
+            .err()
+            .expect("unauthenticated engine must fail closed by default");
+        assert!(
+            err.contains("engine_auth_token_file"),
+            "unexpected err: {err}"
+        );
+
+        let bad = Greptime::open_with_auth(
+            "http://127.0.0.1:19116",
+            [9u8; 32],
+            Some("bad\r\nheader-injection".into()),
+            false,
+        )
+        .err()
+        .expect("token with whitespace/CRLF must fail");
+        assert!(bad.contains("token format"), "unexpected err: {bad}");
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let seen_auth = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
+        let seen_ref = std::sync::Arc::clone(&seen_auth);
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 4096];
+            let n = stream.read(&mut buf).unwrap();
+            let req = String::from_utf8_lossy(&buf[..n]).to_string();
+            let auth_header = req
+                .lines()
+                .find(|line| line.to_ascii_lowercase().starts_with("authorization:"))
+                .map(str::to_owned);
+            *seen_ref.lock().unwrap() = auth_header;
+            let body = r#"{"code":0,"output":[{"affectedrows":0}]}"#;
+            let reply = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream.write_all(reply.as_bytes()).unwrap();
+            stream.flush().unwrap();
+        });
+
+        let token = "greptime-test-bearer-secret-0123456";
+        let engine = Greptime::open_with_auth(
+            &format!("http://{addr}"),
+            [11u8; 32],
+            Some(token.into()),
+            false,
+        )
+        .unwrap();
+        drop(engine);
+        server.join().unwrap();
+        let captured = seen_auth.lock().unwrap().clone().expect("auth header sent");
+        assert_eq!(
+            captured.to_ascii_lowercase(),
+            format!("authorization: bearer {token}").to_ascii_lowercase()
+        );
     }
 }

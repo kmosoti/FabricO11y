@@ -2,6 +2,7 @@
 pub mod admission;
 pub mod analysis;
 pub mod canonical;
+pub mod canonical_auth;
 pub mod collection;
 pub mod config;
 pub mod observation;

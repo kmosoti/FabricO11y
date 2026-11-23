@@ -14,7 +14,7 @@ use std::{
     os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
 };
-const RESERVE: u64 = 128 * 1024;
+pub(crate) const RESERVE: u64 = 128 * 1024;
 const NODE_QUOTA_SHARE_DIVISOR: u64 = 4;
 const COLUMNS: &str = "id,origin,source_id,raw,raw_len,raw_hash";
 /// Explicitly releases `flock` before closing so sibling `fork()`s do not pin `owner.lock`.
@@ -30,6 +30,8 @@ pub struct Ledger {
     dir: PathBuf,
     quota: u64,
     node_quota_bytes: BTreeMap<String, u64>,
+    default_origin_quota: Option<u64>,
+    enrolled_origins: Vec<String>,
     engine: Option<crate::engine::Greptime>,
     pub authority: String,
     _lock: ExclusiveLock,
@@ -55,8 +57,19 @@ pub fn private_dir(dir: &Path) -> Result<(), String> {
         }
         Ok(_) => (),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            fs::create_dir(dir).map_err(err)?;
-            fs::set_permissions(dir, fs::Permissions::from_mode(0o700)).map_err(err)?;
+            let mut builder = fs::DirBuilder::new();
+            std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+            builder.create(dir).map_err(err)?;
+            let dir_fd = rustix::fs::open(
+                dir,
+                rustix::fs::OFlags::RDONLY
+                    | rustix::fs::OFlags::DIRECTORY
+                    | rustix::fs::OFlags::NOFOLLOW
+                    | rustix::fs::OFlags::CLOEXEC,
+                rustix::fs::Mode::empty(),
+            )
+            .map_err(err)?;
+            rustix::fs::fchmod(&dir_fd, rustix::fs::Mode::from_raw_mode(0o700)).map_err(err)?;
             if let Some(p) = dir.parent() {
                 File::open(p).and_then(|f| f.sync_all()).map_err(err)?;
             }
@@ -65,22 +78,83 @@ pub fn private_dir(dir: &Path) -> Result<(), String> {
     }
     Ok(())
 }
+fn enforce_private_state_files(dir: &Path, names: &[&str]) -> Result<(), String> {
+    let dir_fd = rustix::fs::open(
+        dir,
+        rustix::fs::OFlags::RDONLY
+            | rustix::fs::OFlags::DIRECTORY
+            | rustix::fs::OFlags::NOFOLLOW
+            | rustix::fs::OFlags::CLOEXEC,
+        rustix::fs::Mode::empty(),
+    )
+    .map_err(err)?;
+    for name in names {
+        match rustix::fs::openat(
+            &dir_fd,
+            *name,
+            rustix::fs::OFlags::RDONLY
+                | rustix::fs::OFlags::NOFOLLOW
+                | rustix::fs::OFlags::NONBLOCK
+                | rustix::fs::OFlags::CLOEXEC,
+            rustix::fs::Mode::empty(),
+        ) {
+            Ok(fd) => {
+                let st = rustix::fs::fstat(&fd).map_err(err)?;
+                if rustix::fs::FileType::from_raw_mode(st.st_mode as _)
+                    != rustix::fs::FileType::RegularFile
+                {
+                    return Err("invalid state file".into());
+                }
+                if ((st.st_mode as u32) & 0o777) != 0o600 {
+                    rustix::fs::fchmod(&fd, rustix::fs::Mode::from_raw_mode(0o600)).map_err(err)?;
+                }
+            }
+            Err(rustix::io::Errno::NOENT) => {}
+            Err(rustix::io::Errno::LOOP) => return Err("invalid state file".into()),
+            Err(e) => return Err(err(e)),
+        }
+    }
+    Ok(())
+}
 impl Ledger {
     pub fn open(dir: &Path, quota: u64) -> Result<Self, String> {
-        Self::open_with_engine(dir, quota, None)
+        Self::open_with_engine_auth(dir, quota, None, None, false)
     }
     pub fn open_with_engine(
         dir: &Path,
         quota: u64,
         endpoint: Option<&str>,
     ) -> Result<Self, String> {
-        Self::open_with_node_quotas(dir, quota, endpoint, BTreeMap::new())
+        Self::open_with_engine_auth(dir, quota, endpoint, None, false)
     }
-    pub(crate) fn open_with_node_quotas(
+    pub fn open_with_engine_auth(
+        dir: &Path,
+        quota: u64,
+        endpoint: Option<&str>,
+        engine_auth_token: Option<&str>,
+        allow_unauthenticated_loopback: bool,
+    ) -> Result<Self, String> {
+        Self::open_with_quotas_and_auth(
+            dir,
+            quota,
+            endpoint,
+            BTreeMap::new(),
+            None,
+            Vec::new(),
+            engine_auth_token,
+            allow_unauthenticated_loopback,
+        )
+    }
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn open_with_quotas_and_auth(
         dir: &Path,
         quota: u64,
         endpoint: Option<&str>,
         node_quota_bytes: BTreeMap<String, u64>,
+        default_origin_quota: Option<u64>,
+        enrolled_origins: Vec<String>,
+        engine_auth_token: Option<&str>,
+        allow_unauthenticated_loopback: bool,
     ) -> Result<Self, String> {
         if quota < 1024 * 1024 {
             return Err("canonical quota must be >=1MiB".into());
@@ -92,6 +166,9 @@ impl Ledger {
             || !dedicated_cap.is_some_and(|cap| cap <= quota / NODE_QUOTA_SHARE_DIVISOR)
         {
             return Err("canonical node quotas must be positive and total at most one quarter of canonical quota".into());
+        }
+        if default_origin_quota == Some(0) {
+            return Err("canonical fair-share origin quota must be positive".into());
         }
         private_dir(dir)?;
         for name in ["owner.lock", "canonical.sqlite", "canonical.sqlite-journal"] {
@@ -111,6 +188,7 @@ impl Ledger {
             .mode(0o600)
             .open(dir.join("owner.lock"))
             .map_err(err)?;
+        rustix::fs::fchmod(&lock, rustix::fs::Mode::from_raw_mode(0o600)).map_err(err)?;
         rustix::fs::flock(&lock, rustix::fs::FlockOperation::NonBlockingLockExclusive)
             .map_err(err)?;
         let lock = ExclusiveLock(lock);
@@ -123,6 +201,7 @@ CREATE TABLE IF NOT EXISTS records(id INTEGER PRIMARY KEY AUTOINCREMENT,origin T
 CREATE TABLE IF NOT EXISTS origins(origin TEXT PRIMARY KEY,through INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS registries(name TEXT PRIMARY KEY,descriptor TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").map_err(err)?;
+        enforce_private_state_files(dir, &["canonical.sqlite", "canonical.sqlite-journal"])?;
         let page: u64 = conn
             .pragma_query_value(None, "page_size", |r| r.get(0))
             .map_err(err)?;
@@ -228,7 +307,12 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
                     .map_err(err)?;
                 key
             };
-            let engine = crate::engine::Greptime::open_with_cursor_key(endpoint, key)?;
+            let engine = crate::engine::Greptime::open_with_auth(
+                endpoint,
+                key,
+                engine_auth_token.map(str::to_owned),
+                allow_unauthenticated_loopback,
+            )?;
             engine.bind_authority(&authority)?;
             Some(engine)
         } else {
@@ -240,6 +324,8 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
             dir: dir.to_owned(),
             quota,
             node_quota_bytes,
+            default_origin_quota,
+            enrolled_origins,
             engine,
             authority,
             _lock: lock,
@@ -259,7 +345,12 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
         Ok(ledger)
     }
     fn refresh_node_usage(&mut self) -> Result<(), String> {
-        if self.node_quota_bytes.is_empty() {
+        let mut tracked: std::collections::BTreeSet<String> =
+            self.node_quota_bytes.keys().cloned().collect();
+        if self.default_origin_quota.is_some() {
+            tracked.extend(self.enrolled_origins.iter().cloned());
+        }
+        if tracked.is_empty() {
             return Ok(());
         }
         let tx = self.conn.transaction().map_err(err)?;
@@ -275,7 +366,7 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
         // Existing ledgers and older writers may have admitted rows without
         // accounting. The origin/source index finds just the uncounted tail,
         // including reservations that have yet to publish to the engine.
-        for origin in self.node_quota_bytes.keys() {
+        for origin in &tracked {
             let existing: Option<(u64, u64)> = tx
                 .query_row(
                     "SELECT raw_bytes, source_through FROM node_quota_usage WHERE origin=?1",
@@ -444,9 +535,10 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
             return Ok(through);
         }
         let bytes: usize = additions.iter().map(|r| r.raw.len()).sum();
-        let quota = self.node_quota_bytes.get(origin).copied();
+        let explicit_quota = self.node_quota_bytes.get(origin).copied();
+        let quota = explicit_quota.or(self.default_origin_quota);
         let engine_mode = self.engine.is_some();
-        let ceiling = if quota.is_some() {
+        let ceiling = if explicit_quota.is_some() {
             self.quota - self.quota / NODE_QUOTA_SHARE_DIVISOR
         } else {
             self.quota
@@ -460,13 +552,15 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
                     [origin],
                     |row| row.get(0),
                 )
-                .map_err(err)?;
+                .optional()
+                .map_err(err)?
+                .unwrap_or(0);
             let next = used
                 .checked_add(bytes as u64)
                 .filter(|&total| total <= limit)
                 .ok_or("canonical node payload quota exhausted")?;
             tx.execute(
-                "UPDATE node_quota_usage SET raw_bytes=?2, source_through=?3 WHERE origin=?1",
+                "INSERT OR REPLACE INTO node_quota_usage VALUES(?1,?2,?3)",
                 params![origin, next, through],
             )
             .map_err(err)?;

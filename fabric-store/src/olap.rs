@@ -1473,12 +1473,28 @@ fn ensure_durable_non_tmp_dir_with(
 
     for (idx, dir_path) in chain.iter().enumerate() {
         if dir_path != Path::new("/") {
-            match fs::create_dir(dir_path) {
-                Ok(()) => {}
-                Err(e) if e.kind() == ErrorKind::AlreadyExists => {}
+            let mut builder = fs::DirBuilder::new();
+            std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+            let created = match builder.create(dir_path) {
+                Ok(()) => true,
+                Err(e) if e.kind() == ErrorKind::AlreadyExists => false,
                 Err(e) => return Err(format!("failed creating {}: {e}", dir_path.display())),
-            }
+            };
             reject_symlink_path(dir_path)?;
+            let is_custody_dir = created
+                || (sync_stop.is_some()
+                    && stop_resolved
+                        .as_deref()
+                        .is_some_and(|stop| dir_path != stop))
+                || (dir_path == resolved.as_path()
+                    && !matches!(
+                        dir_path.to_str(),
+                        Some("/" | "/data" | "/data/tmp" | "/var/tmp")
+                    )
+                    && dir_path != std::env::temp_dir().as_path());
+            if is_custody_dir {
+                crate::atomic_fd::enforce_private_dir_path_mode(dir_path, "custody dir")?;
+            }
         }
         if idx > 0 {
             sync_fn(&chain[idx - 1])?;
@@ -2037,7 +2053,6 @@ where
     validate_single_normal_filename(filename, "atomic target")?;
     let tmp_name = format!("{filename}.tmp.{}.{seq}", std::process::id());
     let tmp_proc = proc_fd_child_path(dir_fd, &tmp_name, "atomic tmp")?;
-    let final_proc = proc_fd_child_path(dir_fd, filename, "atomic target")?;
     let check_final = || -> Result<(), String> {
         let _ = inspect_regular_file_identity_in_dir_no_symlink(dir_fd, filename, "atomic target")?;
         Ok(())
@@ -2047,9 +2062,15 @@ where
         .create_new(true)
         .read(true)
         .write(true)
+        .mode(0o600)
         .custom_flags(O_NOFOLLOW_FLAG | O_NONBLOCK_FLAG)
         .open(&tmp_proc)
         .map_err(|e| format!("failed creating {tmp_name}: {e}"))?;
+    if let Err(err) = crate::atomic_fd::enforce_private_file_mode(&f, &tmp_name) {
+        drop(f);
+        let _ = unlink_regular_file_in_dir_if_present(dir_fd, &tmp_name, "atomic tmp");
+        return Err(err);
+    }
     let tmp_meta = f
         .metadata()
         .map_err(|e| format!("failed inspecting {tmp_name} fd: {e}"))?;
@@ -2113,7 +2134,7 @@ where
             return Err(err);
         }
     }
-    if let Err(err) = fs::rename(&tmp_proc, &final_proc) {
+    if let Err(err) = rustix::fs::renameat(dir_fd, &tmp_name, dir_fd, filename) {
         cleanup_tmp(&tmp_id);
         return Err(format!("failed renaming {tmp_name} -> {filename}: {err}"));
     }
@@ -4446,9 +4467,20 @@ impl OlapParquetStore {
             .create_new(true)
             .read(true)
             .write(true)
+            .mode(0o600)
             .custom_flags(O_NOFOLLOW_FLAG | O_NONBLOCK_FLAG)
             .open(&staging_proc)
             .map_err(|e| format!("failed creating staging parquet: {e}"))?;
+        if let Err(err) = crate::atomic_fd::enforce_private_file_mode(&file, &staging_name) {
+            let _ = unlink_regular_file_in_dir_if_present(
+                &staging_dir_fd,
+                &staging_name,
+                "staging parquet",
+            );
+            let _ = staging_dir_fd.sync_all();
+            drop(file);
+            return Err(err);
+        }
         let st_meta = match file.metadata() {
             Ok(meta) => meta,
             Err(e) => {

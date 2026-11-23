@@ -120,8 +120,7 @@ fn blocked_standard_input_respects_the_process_deadline() {
 #[test]
 fn canonical_receipt_uses_the_authenticated_receiver_without_local_storage() {
     use fabric::canonical::{
-        self, Authenticated, ProjectionReadiness, ProjectionReason, ProjectionStatus, Request,
-        Response,
+        self, ProjectionReadiness, ProjectionReason, ProjectionStatus, Request, Response,
     };
     use std::net::TcpListener;
     use std::os::unix::fs::OpenOptionsExt;
@@ -143,10 +142,10 @@ fn canonical_receipt_uses_the_authenticated_receiver_without_local_storage() {
                 Err(error) => panic!("accept: {error}"),
             }
         };
-        let authenticated: Authenticated =
-            serde_json::from_slice(&canonical::read_frame(&mut socket, deadline).unwrap()).unwrap();
-        assert_eq!(authenticated.credential, "receiver-test-reader");
-        let Request::ProjectionReady { request } = authenticated.request else {
+        let (_, request) =
+            canonical::accept_authenticated_sync(&mut socket, ["receiver-test-reader"], deadline)
+                .unwrap();
+        let Request::ProjectionReady { request } = request else {
             panic!("unexpected receiver request");
         };
         assert_eq!(request.authority, "authority-test");

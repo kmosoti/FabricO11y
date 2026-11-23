@@ -149,12 +149,49 @@ async fn direct_socket_reuses_persistent_uds_and_reads_spindle_and_canonical_tcp
     // Direct loopback TCP canonical query check.
     let tcp_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = tcp_listener.local_addr().unwrap();
+    let cred_secret = "direct-secret-token-xyz";
     let tcp_task = tokio::spawn(async move {
+        async fn read_tcp_frame(s: &mut tokio::net::TcpStream) -> Vec<u8> {
+            let mut hdr = [0u8; 4];
+            s.read_exact(&mut hdr).await.unwrap();
+            let mut buf = vec![0u8; u32::from_be_bytes(hdr) as usize];
+            s.read_exact(&mut buf).await.unwrap();
+            buf
+        }
         let (mut stream, _) = tcp_listener.accept().await.unwrap();
-        let mut hdr = [0u8; 4];
-        stream.read_exact(&mut hdr).await.unwrap();
-        let mut req_buf = vec![0u8; u32::from_be_bytes(hdr) as usize];
-        stream.read_exact(&mut req_buf).await.unwrap();
+        let hello_bytes = read_tcp_frame(&mut stream).await;
+        assert!(!String::from_utf8_lossy(&hello_bytes).contains(cred_secret));
+        let hello: fabric::canonical::ClientHello = serde_json::from_slice(&hello_bytes).unwrap();
+        let (server_nonce, challenge) =
+            fabric::canonical::build_server_challenge(&hello.client_nonce, [cred_secret]).unwrap();
+        let challenge_bytes = serde_json::to_vec(&challenge).unwrap();
+        stream
+            .write_all(&(challenge_bytes.len() as u32).to_be_bytes())
+            .await
+            .unwrap();
+        stream.write_all(&challenge_bytes).await.unwrap();
+        stream.flush().await.unwrap();
+
+        let proof_bytes = read_tcp_frame(&mut stream).await;
+        assert!(!String::from_utf8_lossy(&proof_bytes).contains(cred_secret));
+        let proof: fabric::canonical::ClientProof = serde_json::from_slice(&proof_bytes).unwrap();
+        assert!(fabric::canonical::verify_client_proof(
+            cred_secret,
+            &hello.client_nonce,
+            &server_nonce,
+            &proof.proof,
+        ));
+
+        let req_buf = read_tcp_frame(&mut stream).await;
+        assert!(!String::from_utf8_lossy(&req_buf).contains(cred_secret));
+        assert!(fabric::canonical::verify_request_mac(
+            cred_secret,
+            &hello.client_nonce,
+            &server_nonce,
+            &req_buf,
+            &proof.request_mac,
+        ));
+
         let resp = CanonicalResponse::Progress {
             authority: "auth-direct".into(),
             frontiers: BTreeMap::from([("spindle-uds-01".into(), 10)]),
@@ -169,7 +206,7 @@ async fn direct_socket_reuses_persistent_uds_and_reads_spindle_and_canonical_tcp
     });
 
     let cred = scratch.path().join("direct-reader.token");
-    std::fs::write(&cred, "direct-secret-token-xyz\n").unwrap();
+    std::fs::write(&cred, format!("{cred_secret}\n")).unwrap();
     std::fs::set_permissions(&cred, std::fs::Permissions::from_mode(0o600)).unwrap();
     let qclient =
         FabricQueryClient::with_bin(None, addr.to_string(), &cred).with_direct_socket(true);

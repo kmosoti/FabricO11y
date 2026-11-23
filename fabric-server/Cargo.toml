@@ -1,6 +1,6 @@
 [package]
 name = "fabric-server"
-version = "0.1.0"
+version = "0.1.1-alpha.1"
 edition.workspace = true
 license.workspace = true
 publish = false
@@ -15,7 +15,7 @@ sha2 = "0.10"
 chrono.workspace = true
 hmac.workspace = true
 reqwest = { version = "=0.12.28", default-features = false, features = ["blocking"] }
-rustix = { version = "1", features = ["fs", "process"] }
+rustix = { version = "1", features = ["event", "fs", "process"] }
 admission-kernel = { path = "../admission-kernel" }
 parking_lot.workspace = true
 tokio = { version = "1", default-features = false, features = ["rt", "macros", "signal"] }

@@ -1,6 +1,12 @@
 //! Versioned local observation wire contract. Supports immutable v2 and context-bearing v3.
 use serde::{Deserialize, Serialize};
 
+#[path = "observation_framing.rs"]
+mod framing;
+pub use framing::{
+    frame_untrusted_telemetry, sanitize_untrusted_json_value, sanitize_untrusted_telemetry_str,
+};
+
 #[path = "../../registry/vocabulary.rs"]
 pub mod vocabulary;
 

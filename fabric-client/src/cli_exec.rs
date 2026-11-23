@@ -11,13 +11,12 @@ use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::process::Command;
 
-/// Writes a 4-byte big-endian length-prefixed frame and reads one bounded reply frame.
-pub(crate) async fn exchange_len_frame<S: AsyncRead + AsyncWrite + Unpin>(
+/// Writes a 4-byte big-endian length-prefixed frame.
+pub(crate) async fn write_len_frame<S: AsyncWrite + Unpin>(
     stream: &mut S,
     payload: &[u8],
-    max_reply: usize,
     label: &str,
-) -> Result<Vec<u8>, String> {
+) -> Result<(), String> {
     stream
         .write_all(&(payload.len() as u32).to_be_bytes())
         .await
@@ -29,7 +28,15 @@ pub(crate) async fn exchange_len_frame<S: AsyncRead + AsyncWrite + Unpin>(
     stream
         .flush()
         .await
-        .map_err(|e| format!("{label} flush: {}", e.kind()))?;
+        .map_err(|e| format!("{label} flush: {}", e.kind()))
+}
+
+/// Reads one bounded 4-byte big-endian length-prefixed frame.
+pub(crate) async fn read_len_frame<S: AsyncRead + Unpin>(
+    stream: &mut S,
+    max_reply: usize,
+    label: &str,
+) -> Result<Vec<u8>, String> {
     let mut header = [0u8; 4];
     stream
         .read_exact(&mut header)
@@ -45,6 +52,17 @@ pub(crate) async fn exchange_len_frame<S: AsyncRead + AsyncWrite + Unpin>(
         .await
         .map_err(|e| format!("{label} read body: {}", e.kind()))?;
     Ok(body)
+}
+
+/// Writes a 4-byte big-endian length-prefixed frame and reads one bounded reply frame.
+pub(crate) async fn exchange_len_frame<S: AsyncRead + AsyncWrite + Unpin>(
+    stream: &mut S,
+    payload: &[u8],
+    max_reply: usize,
+    label: &str,
+) -> Result<Vec<u8>, String> {
+    write_len_frame(stream, payload, label).await?;
+    read_len_frame(stream, max_reply, label).await
 }
 
 pub(crate) fn assemble_bundle(

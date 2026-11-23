@@ -2,15 +2,16 @@
 //! with async `tokio::fs` credential checks and optional direct loopback TCP
 //! framing over canonical `fabric::canonical` wire types.
 
-use crate::cli_exec::{exchange_len_frame, resolve_binary};
+use crate::cli_exec::{read_len_frame, resolve_binary, write_len_frame};
 use fabric::canonical::{
-    Authenticated, MAX_FRAME, Request as CanonicalRequest, Response as CanonicalResponse,
+    AUTH_HANDSHAKE_VERSION, ClientHello, MAX_FRAME, MAX_HANDSHAKE_FRAME,
+    Request as CanonicalRequest, Response as CanonicalResponse, ServerChallenge,
+    build_client_proof, random_nonce_hex, verify_server_challenge,
 };
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
-use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 use tokio::process::Command;
 
@@ -158,12 +159,15 @@ impl FabricQueryClient {
             return Err("fabric-query direct endpoint must be loopback".into());
         }
         let credential = self.read_validated_credential().await?;
-        let payload = serde_json::to_vec(&Authenticated {
-            credential: credential.clone(),
-            request,
+        let client_nonce = random_nonce_hex()?;
+        let hello_bytes = serde_json::to_vec(&ClientHello {
+            version: AUTH_HANDSHAKE_VERSION,
+            client_nonce: client_nonce.clone(),
         })
-        .map_err(|e| redact_token(&format!("canonical request encode: {e}"), &credential))?;
-        if payload.len() > MAX_FRAME {
+        .map_err(|e| format!("canonical handshake encode: {e}"))?;
+        let request_bytes = serde_json::to_vec(&request)
+            .map_err(|e| redact_token(&format!("canonical request encode: {e}"), &credential))?;
+        if request_bytes.len() > MAX_FRAME {
             return Err("canonical request exceeds MAX_FRAME".into());
         }
 
@@ -172,7 +176,24 @@ impl FabricQueryClient {
                 .await
                 .map_err(|e| format!("fabric-server connect: {}", e.kind()))?;
             let _ = stream.set_nodelay(true);
-            exchange_len_frame(&mut stream, &payload, MAX_FRAME, "fabric-server").await
+            write_len_frame(&mut stream, &hello_bytes, "fabric-server").await?;
+            let challenge_bytes =
+                read_len_frame(&mut stream, MAX_HANDSHAKE_FRAME, "fabric-server").await?;
+            let challenge: ServerChallenge = serde_json::from_slice(&challenge_bytes)
+                .map_err(|e| format!("fabric-server challenge parse: {e}"))?;
+            verify_server_challenge(&credential, &client_nonce, &challenge)?;
+
+            let proof = build_client_proof(
+                &credential,
+                &client_nonce,
+                &challenge.server_nonce,
+                &request_bytes,
+            );
+            let proof_bytes =
+                serde_json::to_vec(&proof).map_err(|e| format!("canonical proof encode: {e}"))?;
+            write_len_frame(&mut stream, &proof_bytes, "fabric-server").await?;
+            write_len_frame(&mut stream, &request_bytes, "fabric-server").await?;
+            read_len_frame(&mut stream, MAX_FRAME, "fabric-server").await
         })
         .await
         .map_err(|_| "fabric-server direct timeout".to_owned())?
@@ -208,34 +229,17 @@ impl FabricQueryClient {
     }
 
     async fn validate_credential_file(&self) -> Result<(), String> {
-        let meta = tokio::fs::symlink_metadata(&self.credential_file)
-            .await
-            .map_err(|e| format!("credential file error: {}", e.kind()))?;
-        if meta.file_type().is_symlink()
-            || !meta.is_file()
-            || meta.len() == 0
-            || meta.len() > MAX_CREDENTIAL_FILE_BYTES
-        {
-            return Err("credential file is missing, symlinked, empty, or oversized".into());
-        }
+        let _ = self.read_validated_credential().await?;
         Ok(())
     }
 
     async fn read_validated_credential(&self) -> Result<String, String> {
-        self.validate_credential_file().await?;
-        let file = tokio::fs::File::open(&self.credential_file)
-            .await
-            .map_err(|e| format!("credential file open error: {}", e.kind()))?;
-        let mut raw = String::new();
-        file.take(MAX_CREDENTIAL_FILE_BYTES + 1)
-            .read_to_string(&mut raw)
-            .await
-            .map_err(|e| format!("credential file read error: {}", e.kind()))?;
-        let trimmed = raw.trim();
-        if trimmed.is_empty() || raw.len() as u64 > MAX_CREDENTIAL_FILE_BYTES {
-            return Err("credential file is empty or oversized".into());
-        }
-        Ok(trimmed.to_owned())
+        let path = self.credential_file.clone();
+        tokio::task::spawn_blocking(move || {
+            fabric::query::read_credential_fd(&path, false, MAX_CREDENTIAL_FILE_BYTES)
+        })
+        .await
+        .map_err(|e| format!("credential file task error: {e}"))?
     }
 
     pub(crate) async fn invoke(
@@ -290,22 +294,8 @@ impl FabricQueryClient {
 
     async fn redact_secret(&self, text: &str) -> String {
         let mut out = text.to_owned();
-        if let Ok(file) = tokio::fs::File::open(&self.credential_file).await {
-            let mut raw = String::new();
-            if file
-                .take(MAX_CREDENTIAL_FILE_BYTES + 1)
-                .read_to_string(&mut raw)
-                .await
-                .is_ok()
-            {
-                let trimmed = raw.trim();
-                if !trimmed.is_empty() {
-                    out = out.replace(trimmed, "[REDACTED]");
-                }
-                if !raw.is_empty() {
-                    out = out.replace(&raw, "[REDACTED]");
-                }
-            }
+        if let Ok(token) = self.read_validated_credential().await {
+            out = redact_token(&out, &token);
         }
         out
     }
@@ -342,5 +332,70 @@ mod tests {
             Some(OsStr::new("/data/fabrico11y/reader.token"))
         )));
         assert!(envs.contains(&(OsStr::new("FABRIC_CREDENTIAL"), None)));
+    }
+
+    #[tokio::test]
+    async fn exchange_direct_rejects_rogue_listener_without_leaking_credential() {
+        use std::io::Read;
+        use std::net::TcpListener;
+        use std::os::unix::fs::PermissionsExt;
+        use std::time::Instant;
+
+        struct TempDirGuard(PathBuf);
+        impl Drop for TempDirGuard {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let base = std::env::var_os("TMPDIR")
+            .map(PathBuf::from)
+            .filter(|p| !p.starts_with("/tmp") && !p.starts_with("/dev/shm"))
+            .unwrap_or_else(|| PathBuf::from("/var/tmp"));
+        let unique = format!(
+            "fabric-client-auth-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        );
+        let dir = TempDirGuard(base.join(unique));
+        std::fs::create_dir_all(&dir.0).unwrap();
+        std::fs::set_permissions(&dir.0, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let cred_path = dir.0.join("reader.token");
+        let secret = "client-direct-secret-token-012345";
+        std::fs::write(&cred_path, secret).unwrap();
+        std::fs::set_permissions(&cred_path, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        let peer = std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(3);
+            let (mut stream, _) = listener.accept().unwrap();
+            let hello_bytes = fabric::canonical::read_frame(&mut stream, deadline).unwrap();
+            assert!(!String::from_utf8_lossy(&hello_bytes).contains(secret));
+            let hello: ClientHello = serde_json::from_slice(&hello_bytes).unwrap();
+            let (_, challenge) =
+                fabric::canonical::build_server_challenge(&hello.client_nonce, ["wrong-secret"])
+                    .unwrap();
+            fabric::canonical::write_frame(
+                &mut stream,
+                &serde_json::to_vec(&challenge).unwrap(),
+                deadline,
+            )
+            .unwrap();
+            let mut rest = [0u8; 64];
+            let _ = stream.set_read_timeout(Some(Duration::from_millis(300)));
+            let n = stream.read(&mut rest).unwrap_or(0);
+            assert_eq!(n, 0, "rogue listener received post-challenge data");
+        });
+
+        let client = FabricQueryClient::with_bin(None, addr, &cred_path).with_direct_socket(true);
+        let err = client
+            .exchange_direct(CanonicalRequest::Progress)
+            .await
+            .unwrap_err();
+        peer.join().unwrap();
+        assert!(err.contains("mutual authentication"), "{err}");
     }
 }
