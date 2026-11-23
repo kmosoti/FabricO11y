@@ -76,8 +76,12 @@ impl Store {
             .mode(0o600)
             .open(dir.join("owner.lock"))
             .map_err(err)?;
+        lock.set_permissions(fs::Permissions::from_mode(0o600))
+            .map_err(err)?;
         flock(&lock, FlockOperation::NonBlockingLockExclusive).map_err(err)?;
-        let conn = Connection::open(dir.join("custody.sqlite")).map_err(err)?;
+        let db_path = dir.join("custody.sqlite");
+        let conn = Connection::open(&db_path).map_err(err)?;
+        fs::set_permissions(&db_path, fs::Permissions::from_mode(0o600)).map_err(err)?;
         conn.busy_timeout(std::time::Duration::from_millis(100))
             .map_err(err)?;
         // DELETE journal and no auto-vacuum: quota accounts for worst-case rollback

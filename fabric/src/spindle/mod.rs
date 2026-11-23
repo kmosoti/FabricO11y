@@ -81,23 +81,7 @@ impl ForwardConfig {
         self.credential().map(|_| ())
     }
     pub fn credential(&self) -> Result<String, String> {
-        use std::os::unix::fs::MetadataExt;
-        let m = std::fs::symlink_metadata(&self.credential_file).map_err(|e| e.to_string())?;
-        if !m.is_file()
-            || m.uid() != rustix::process::getuid().as_raw()
-            || m.mode() & 0o077 != 0
-            || m.len() > 4096
-        {
-            return Err("credential must be a private owned regular file".into());
-        }
-        let credential = std::fs::read_to_string(&self.credential_file)
-            .map_err(|e| e.to_string())?
-            .trim()
-            .to_owned();
-        if credential.is_empty() {
-            return Err("empty canonical credential".into());
-        }
-        Ok(credential)
+        crate::query::read_credential_fd(&self.credential_file, true, 4096)
     }
 }
 fn connections() -> usize {

@@ -21,7 +21,8 @@ resolve_disk_tmp() {
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 bin_dir=""
 out_dir=""
-version="0.1.0~alpha.3"
+default_ver=$(sed -En 's/^version = "([^"]+)"$/\1/p' "$root/fabric/Cargo.toml" | head -n 1)
+version=$(printf '%s' "$default_ver" | sed 's/-/~/')
 skip_notices=0
 
 while [ "$#" -gt 0 ]; do

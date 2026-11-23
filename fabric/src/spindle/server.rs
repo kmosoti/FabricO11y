@@ -1044,7 +1044,7 @@ mod remote_isolation_tests {
 #[cfg(test)]
 mod shadow_reclamation_tests {
     use super::*;
-    use crate::canonical::{self, Authenticated, CanonicalRow, Response};
+    use crate::canonical::{self, CanonicalRow, Response};
     use std::{
         collections::BTreeMap,
         net::TcpListener,
@@ -1081,11 +1081,10 @@ mod shadow_reclamation_tests {
                     Err(error) => panic!("{error}"),
                 };
                 let deadline = Instant::now() + Duration::from_secs(2);
-                let request: Authenticated =
-                    serde_json::from_slice(&canonical::read_frame(&mut stream, deadline).unwrap())
+                let (_, request) =
+                    canonical::accept_authenticated_sync(&mut stream, ["fixture-key"], deadline)
                         .unwrap();
-                assert_eq!(request.credential, "fixture-key");
-                let response = match request.request {
+                let response = match request {
                     canonical::Request::Ingest { origin, records } => {
                         let mut stored = remote.lock().unwrap();
                         for record in records {
@@ -1686,11 +1685,13 @@ mod forwarding_reclamation_tests {
         let remote_origin = origin.clone();
         let remote = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
-            let bytes =
-                crate::canonical::read_frame(&mut stream, Instant::now() + Duration::from_secs(2))
-                    .unwrap();
-            let request: crate::canonical::Authenticated = serde_json::from_slice(&bytes).unwrap();
-            match request.request {
+            let (_, request) = crate::canonical::accept_authenticated_sync(
+                &mut stream,
+                ["fixture-key"],
+                Instant::now() + Duration::from_secs(2),
+            )
+            .unwrap();
+            match request {
                 crate::canonical::Request::Ingest { origin, records } => {
                     assert_eq!(origin, remote_origin);
                     assert_eq!(records.len(), 1);

@@ -350,33 +350,64 @@ pub struct Client {
     endpoint: String,
     credential: String,
 }
-/// Reads the private credential file used by canonical readers.
-pub fn read_credential_file(path: &std::path::Path) -> Result<String, String> {
+/// Opens `path` once with `O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC`, validates ownership,
+/// regular-file type, optional `0o077` privacy mask, and byte ceiling on `fstat`,
+/// and reads directly from that opened descriptor (zero pathname TOCTOU).
+pub fn read_credential_fd(
+    path: &std::path::Path,
+    require_private_mode: bool,
+    max_bytes: u64,
+) -> Result<String, String> {
     use rustix::fs::{Mode, OFlags};
     use std::{fs::File, io::Read, os::unix::fs::MetadataExt};
-    let file = rustix::fs::open(
+    let fd = rustix::fs::open(
         path,
         OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
         Mode::empty(),
     )
-    .map(File::from)
-    .map_err(|error| error.to_string())?;
-    let metadata = file.metadata().map_err(|error| error.to_string())?;
+    .map_err(|error| {
+        if error == rustix::io::Errno::LOOP {
+            "credential file is symlinked".to_owned()
+        } else {
+            format!("credential file error: {error}")
+        }
+    })?;
+    let file = File::from(fd);
+    let metadata = file
+        .metadata()
+        .map_err(|error| format!("credential file error: {error}"))?;
     if !metadata.is_file()
         || metadata.uid() != rustix::process::getuid().as_raw()
-        || metadata.mode() & 0o077 != 0
-        || metadata.len() > 256
+        || (require_private_mode && metadata.mode() & 0o077 != 0)
+        || metadata.len() == 0
+        || metadata.len() > max_bytes
     {
-        return Err("credential file must be private, owned and <=256 bytes".into());
+        return Err(format!(
+            "credential file must be owned, {}regular, nonempty and <={max_bytes} bytes",
+            if require_private_mode {
+                "private, "
+            } else {
+                ""
+            }
+        ));
     }
     let mut value = String::new();
-    file.take(257)
+    file.take(max_bytes.saturating_add(1))
         .read_to_string(&mut value)
-        .map_err(|error| error.to_string())?;
-    if value.len() > 256 {
-        return Err("credential file exceeds 256 bytes".into());
+        .map_err(|error| format!("credential file read error: {error}"))?;
+    if value.len() as u64 > max_bytes {
+        return Err(format!("credential file exceeds {max_bytes} bytes"));
     }
-    validate_credential(value.trim().to_owned())
+    let trimmed = value.trim().to_owned();
+    if trimmed.is_empty() {
+        return Err("credential file is empty".into());
+    }
+    Ok(trimmed)
+}
+
+/// Reads the private credential file used by canonical readers.
+pub fn read_credential_file(path: &std::path::Path) -> Result<String, String> {
+    validate_credential(read_credential_fd(path, true, 256)?)
 }
 
 fn validate_credential(value: String) -> Result<String, String> {

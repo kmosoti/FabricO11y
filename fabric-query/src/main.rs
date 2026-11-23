@@ -9,7 +9,7 @@ use std::{
 };
 fn main() {
     if let Err(e) = run() {
-        eprintln!("fabric-query: {e}");
+        eprintln!("fabric-query: {}", fabric_core::sanitize_terminal_text(&e));
         std::process::exit(1);
     }
 }

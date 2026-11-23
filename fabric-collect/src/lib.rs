@@ -8,6 +8,7 @@ pub mod host;
 mod host_export;
 pub mod resource_budget;
 pub mod self_guard;
+mod socket_security;
 pub mod spindle_bridge;
 mod spindle_range;
 pub mod systemd;

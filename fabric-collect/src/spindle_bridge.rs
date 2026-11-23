@@ -10,12 +10,10 @@ use fabric::spindle::wire::MAX_READ_PAGE;
 use fabric_core::{LogRecord, MetricPoint, SpindleProvenance, TraceSpanRecord};
 use fabric_store::CatalogStore;
 use serde::{Deserialize, Serialize};
-use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, BufReader};
-use tokio::net::UnixListener;
 use tokio::sync::Semaphore;
 
 const MAX_INGEST_LINE_BYTES: usize = 64 * 1024;
@@ -556,14 +554,7 @@ pub async fn serve_ingest_socket_until_shutdown(
     default_host: String,
     mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
 ) -> Result<(), String> {
-    if let Some(parent) = sock_path.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    if sock_path.exists() {
-        let _ = fs::remove_file(sock_path);
-    }
-    let listener = UnixListener::bind(sock_path)
-        .map_err(|e| format!("failed binding {}: {e}", sock_path.display()))?;
+    let listener = crate::socket_security::bind_private_unix_listener(sock_path)?;
     let permits = Arc::new(Semaphore::new(MAX_CONCURRENT_INGEST_CONNS));
     let mut conn_tasks = tokio::task::JoinSet::new();
 
@@ -587,7 +578,13 @@ pub async fn serve_ingest_socket_until_shutdown(
                 break;
             }
             res = listener.accept() => match res {
-                Ok((s, _)) => s,
+                Ok((s, _)) => {
+                    if !crate::socket_security::is_same_uid_peer(&s) {
+                        drop(permit);
+                        continue;
+                    }
+                    s
+                }
                 Err(_) => {
                     drop(permit);
                     continue;
@@ -708,6 +705,7 @@ pub async fn serve_ingest_socket_until_shutdown(
 mod tests {
     use super::*;
     use fabric::observation::{Data, Identity, Observation, REGISTRY, VERSION};
+    use std::fs;
     use tokio::io::AsyncWriteExt;
 
     fn sample_obs_bytes(seq: u64) -> Vec<u8> {

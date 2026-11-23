@@ -49,6 +49,8 @@ fn pressure_child(root: &Path) {
         }],
         node_quota_bytes: Default::default(),
         engine_endpoint: None,
+        engine_auth_token_file: None,
+        allow_unauthenticated_loopback_engine: false,
         max_connections: 4,
     })
     .unwrap();
@@ -240,6 +242,8 @@ fn lease_child(root: &Path) {
         }],
         node_quota_bytes: Default::default(),
         engine_endpoint: None,
+        engine_auth_token_file: None,
+        allow_unauthenticated_loopback_engine: false,
         max_connections: 32,
     })
     .unwrap();
@@ -348,8 +352,7 @@ fn receiver_preserves_owned_ingest_and_replays_after_pressure_restart() {
             raw: RAW.into(),
         }],
     };
-    let bytes =
-        serde_json::to_vec(&serde_json::json!({"credential": node, "request": ingest})).unwrap();
+    let bytes = serde_json::to_vec(&ingest).unwrap();
     let child_fds = format!("/proc/{}/fd", child.0.id());
     let sockets = || {
         fs::read_dir(&child_fds)
@@ -367,11 +370,34 @@ fn receiver_preserves_owned_ingest_and_replays_after_pressure_restart() {
     };
     wait_for(|| sockets() == 1);
     let mut stream = TcpStream::connect(&endpoint).unwrap();
+    let handshake_deadline = Instant::now() + Duration::from_secs(3);
+    let client_nonce = canonical::random_nonce_hex().unwrap();
+    let hello = canonical::ClientHello {
+        version: canonical::AUTH_HANDSHAKE_VERSION,
+        client_nonce: client_nonce.clone(),
+    };
+    canonical::write_frame(
+        &mut stream,
+        &serde_json::to_vec(&hello).unwrap(),
+        handshake_deadline,
+    )
+    .unwrap();
+    let challenge_bytes = canonical::read_frame(&mut stream, handshake_deadline).unwrap();
+    let challenge: canonical::ServerChallenge = serde_json::from_slice(&challenge_bytes).unwrap();
+    canonical::verify_server_challenge(&node, &client_nonce, &challenge).unwrap();
+    let proof =
+        canonical::build_client_proof(&node, &client_nonce, &challenge.server_nonce, &bytes);
+    canonical::write_frame(
+        &mut stream,
+        &serde_json::to_vec(&proof).unwrap(),
+        handshake_deadline,
+    )
+    .unwrap();
     stream
         .write_all(&(bytes.len() as u32).to_be_bytes())
         .unwrap();
     stream.write_all(&bytes[..1]).unwrap();
-    // Confirm the server took ownership of the partial frame.
+    // Confirm the server took ownership of the authenticated partial request frame.
     wait_for(|| sockets() == 2);
     if !cgroup {
         apply_pressure();
@@ -398,9 +424,14 @@ fn receiver_preserves_owned_ingest_and_replays_after_pressure_restart() {
     assert!(
         matches!(exchange(&endpoint, &reader, &read), Response::Rows { rows } if rows.len() == 1 && rows[0].raw == RAW)
     );
-    assert!(
-        matches!(exchange(&endpoint, "unknown-test-credential", &read), Response::Error { error } if error == "unauthorized")
-    );
+    let unauth_err = canonical::exchange(
+        &endpoint,
+        "unknown-test-credential",
+        &read,
+        Instant::now() + Duration::from_secs(3),
+    )
+    .unwrap_err();
+    assert!(unauth_err.contains("unauthorized"), "{unauth_err}");
     let readiness = Request::ProjectionReady {
         request: ProjectionReadyRequest {
             authority: authority.clone(),

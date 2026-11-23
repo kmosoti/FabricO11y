@@ -35,7 +35,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use tokio::io::{AsyncWriteExt, BufReader as TokioBufReader};
-use tokio::net::{UnixListener, UnixStream};
+use tokio::net::UnixStream;
 use tokio::sync::Semaphore;
 
 const MAX_SPINDLE_STAGED_ITEMS: usize = 1024;
@@ -1172,14 +1172,7 @@ async fn run_daemon_mode(mut config: DaemonConfig, spindle_only: bool) -> Result
         .runtime_dir
         .as_ref()
         .map_or_else(|| default_daemon_socket(&layout), |d| d.join("daemon.sock"));
-    if let Some(parent) = daemon_sock.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    if daemon_sock.exists() {
-        let _ = fs::remove_file(&daemon_sock);
-    }
-    let rpc_listener = UnixListener::bind(&daemon_sock)
-        .map_err(|e| format!("failed binding {}: {e}", daemon_sock.display()))?;
+    let rpc_listener = crate::socket_security::bind_private_unix_listener(&daemon_sock)?;
     let rpc_runtime = runtime.clone();
     let rpc_permits = Arc::new(Semaphore::new(MAX_CONCURRENT_RPC_CONNS));
     let (shutdown_tx, mut shutdown_rx) = tokio::sync::watch::channel(false);
@@ -1205,7 +1198,13 @@ async fn run_daemon_mode(mut config: DaemonConfig, spindle_only: bool) -> Result
                     break;
                 }
                 res = rpc_listener.accept() => match res {
-                    Ok((s, _)) => s,
+                    Ok((s, _)) => {
+                        if !crate::socket_security::is_same_uid_peer(&s) {
+                            drop(permit);
+                            continue;
+                        }
+                        s
+                    }
                     Err(_) => {
                         drop(permit);
                         continue;
@@ -1396,6 +1395,7 @@ async fn run_daemon_mode(mut config: DaemonConfig, spindle_only: bool) -> Result
                 let force_shed = runtime.guard.is_shedding();
                 if cgroup_pressure || force_shed {
                     runtime.ring.write().release_hot_history();
+                    fs_tracker.clear();
                 }
                 let scheduled = tick_count == 1
                     || force_shed

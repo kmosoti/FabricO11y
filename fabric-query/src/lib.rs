@@ -126,6 +126,8 @@ impl Drop for ExclusiveLock {
 pub struct Projection {
     dir: PathBuf,
     quota: u64,
+    origin_quotas: BTreeMap<String, u64>,
+    default_origin_quota: Option<u64>,
     manifest: Manifest,
     _lock: ExclusiveLock,
     active: AtomicBool,
@@ -133,6 +135,15 @@ pub struct Projection {
 }
 impl Projection {
     pub fn open(dir: impl AsRef<Path>, quota_bytes: u64) -> Result<Self> {
+        Self::open_with_origin_quotas(dir, quota_bytes, BTreeMap::new(), None)
+    }
+
+    pub fn open_with_origin_quotas(
+        dir: impl AsRef<Path>,
+        quota_bytes: u64,
+        origin_quotas: BTreeMap<String, u64>,
+        default_origin_quota: Option<u64>,
+    ) -> Result<Self> {
         let dir = dir.as_ref().to_path_buf();
         ensure_private_directory(&dir)?;
         let lock_path = dir.join("projection.lock");
@@ -145,6 +156,7 @@ impl Projection {
             .mode(0o600)
             .open(&lock_path)
             .map_err(err)?;
+        enforce_private_file_mode(&lock, "projection.lock")?;
         lock.try_lock()
             .map_err(|e| format!("projection already open: {e}"))?;
         let lock = ExclusiveLock(lock);
@@ -209,6 +221,8 @@ impl Projection {
         let projection = Self {
             dir,
             quota: quota_bytes,
+            origin_quotas,
+            default_origin_quota,
             manifest,
             _lock: lock,
             active: AtomicBool::new(false),
@@ -234,6 +248,14 @@ impl Projection {
         }
         Ok(projection)
     }
+    /// Per-origin segment byte budget, falling back to `default_origin_quota` when omitted.
+    fn origin_quota(&self, origin: &str) -> Option<u64> {
+        self.origin_quotas
+            .get(origin)
+            .copied()
+            .or(self.default_origin_quota)
+    }
+
     /// Bind replay state to its canonical authority before accepting any rows.
     /// Reusing a projection for another ledger requires an explicit rebuild.
     pub fn bind_authority(&mut self, authority: &str) -> Result<()> {
@@ -466,6 +488,24 @@ impl Projection {
                     .open(&staging)
                     .map_err(err)?;
                 created_staging = Some(staging.clone());
+                enforce_private_file_mode(&output, &file)?;
+                let origin_cap = self.origin_quota(&first.origin);
+                let origin_used = if origin_cap.is_some() {
+                    next.segments
+                        .iter()
+                        .filter(|s| s.origin == first.origin)
+                        .try_fold(0u64, |n, s| {
+                            n.checked_add(s.bytes).ok_or("projection size overflow")
+                        })?
+                } else {
+                    0
+                };
+                let origin_remaining = origin_cap
+                    .map(|cap| {
+                        cap.checked_sub(origin_used)
+                            .ok_or("projection origin quota exhausted")
+                    })
+                    .transpose()?;
                 {
                     let committed_metadata =
                         fs::metadata(self.dir.join(MANIFEST)).map_err(err)?.len();
@@ -475,10 +515,12 @@ impl Projection {
                         .try_fold(RESERVE + committed_metadata, |n, s| {
                             n.checked_add(s.bytes).ok_or("projection size overflow")
                         })?;
-                    let remaining = self
+                    let global_remaining = self
                         .quota
                         .checked_sub(used)
                         .ok_or("projection quota exhausted")?;
+                    let remaining = origin_remaining
+                        .map_or(global_remaining, |orig| global_remaining.min(orig));
                     let limited = LimitedFile {
                         file: &mut output,
                         remaining,
@@ -505,6 +547,14 @@ impl Projection {
                 })?;
                 if used.checked_add(bytes).ok_or("projection size overflow")? > self.quota {
                     return Err("projection quota exhausted".into());
+                }
+                if let Some(cap) = origin_cap
+                    && origin_used
+                        .checked_add(bytes)
+                        .ok_or("projection size overflow")?
+                        > cap
+                {
+                    return Err("projection origin quota exhausted".into());
                 }
                 let hash = file_digest(&staging)?;
                 fs::rename(&staging, self.dir.join(&file)).map_err(err)?;
@@ -603,6 +653,11 @@ impl Projection {
             .open(&temp)
             .map_err(err)
             .map_err(&fail_pre)?;
+        if let Err(e) = enforce_private_file_mode(&file, "staging-manifest") {
+            drop(file);
+            let _ = fs::remove_file(&temp);
+            return Err((e, false));
+        }
         if let Err(e) = file
             .write_all(&bytes)
             .and_then(|()| file.sync_all())
@@ -1461,6 +1516,7 @@ impl Write for LimitedFile<'_> {
 }
 
 fn ensure_private_directory(path: &Path) -> Result<()> {
+    use rustix::fs::{Mode, OFlags, fchmod};
     use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
     match fs::symlink_metadata(path) {
         Ok(_) => {}
@@ -1471,6 +1527,13 @@ fn ensure_private_directory(path: &Path) -> Result<()> {
                 .mode(0o700)
                 .create(path)
                 .map_err(err)?;
+            let dir_fd = rustix::fs::open(
+                path,
+                OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+                Mode::empty(),
+            )
+            .map_err(err)?;
+            fchmod(&dir_fd, Mode::from_raw_mode(0o700)).map_err(err)?;
         }
         Err(error) => return Err(err(error)),
     }
@@ -1481,6 +1544,15 @@ fn ensure_private_directory(path: &Path) -> Result<()> {
         || metadata.permissions().mode() & 0o077 != 0
     {
         return Err("projection directory must be owned, private and nonsymlink".into());
+    }
+    Ok(())
+}
+
+fn enforce_private_file_mode(file: &File, label: &str) -> Result<()> {
+    let st = rustix::fs::fstat(file).map_err(err)?;
+    if ((st.st_mode as u32) & 0o777) != 0o600 {
+        rustix::fs::fchmod(file, rustix::fs::Mode::from_raw_mode(0o600))
+            .map_err(|e| format!("failed setting 0600 on {label}: {e}"))?;
     }
     Ok(())
 }

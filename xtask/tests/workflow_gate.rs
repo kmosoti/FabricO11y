@@ -439,6 +439,34 @@ fn release_workflow_and_deb_packaging_enforce_glibc_slsa_and_pins() {
     assert!(release.contains("packaging/deb/build-deb.sh"));
     assert!(release.contains("packaging/deb/build-tarball.sh"));
     assert!(release.contains("packaging/rpm/fabrico11y.spec"));
+    assert!(
+        release.contains("git merge-base --is-ancestor \"${GITHUB_SHA}\" refs/remotes/origin/main"),
+        "release workflow must verify protected-main ancestry on tags"
+    );
+    assert!(
+        release.contains("--define \"_pkg_ver ${pkg_ver}\""),
+        "release workflow must parameterize RPM pkg_ver dynamically"
+    );
+    assert!(
+        !release.contains("https://sh.rustup.rs"),
+        "release workflow must not pipe unverified sh.rustup.rs"
+    );
+    assert!(
+        release.contains("static.rust-lang.org/rustup/archive/")
+            && release.contains("sha256sum -c -"),
+        "release workflow must verify pinned rustup-init SHA-256 digest"
+    );
+    let install_toolchain =
+        fs::read_to_string(repo_root().join(".github/scripts/install-toolchain.sh")).unwrap();
+    assert!(
+        !install_toolchain.contains("https://sh.rustup.rs"),
+        "install-toolchain.sh must not download unverified sh.rustup.rs"
+    );
+    assert!(
+        install_toolchain.contains("static.rust-lang.org/rustup/archive/")
+            && install_toolchain.contains("sha256sum -c -"),
+        "install-toolchain.sh must verify pinned rustup-init SHA-256 digest"
+    );
     let without_vartmp = release.replace("/var/tmp", "");
     assert!(
         !without_vartmp.contains("/tmp"),
