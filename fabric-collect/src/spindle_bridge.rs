@@ -137,6 +137,12 @@ pub fn observation_to_telemetry(obs: &StoredObservation, default_host: &str) -> 
     let id = obs.identity();
     let span_id = format!("{}:{}", id.generation, id.sequence);
     let context_run_id = obs.context().map(|ctx| ctx.run_id.clone());
+    let with_run_context = |mut attributes: serde_json::Value| {
+        if let Some(run_id) = context_run_id.as_deref() {
+            attributes["context_run_id"] = serde_json::json!(run_id);
+        }
+        attributes.to_string()
+    };
 
     match obs.data() {
         Data::ServiceRequest {
@@ -234,7 +240,7 @@ pub fn observation_to_telemetry(obs: &StoredObservation, default_host: &str) -> 
             slice: "spindle".to_owned(),
             unit: obs.resource().to_owned(),
             pid: None,
-            labels_json: serde_json::json!({
+            labels_json: with_run_context(serde_json::json!({
                 "producer": id.producer,
                 "generation": id.generation,
                 "sequence": id.sequence,
@@ -242,8 +248,7 @@ pub fn observation_to_telemetry(obs: &StoredObservation, default_host: &str) -> 
                 "metric_type": metric_type_str(*metric_type),
                 "reset": reset,
                 "version": obs.version(),
-            })
-            .to_string(),
+            })),
         }),
         Data::Log { level, message } => IngestEnvelope::Log(LogRecord {
             timestamp_ms,
@@ -251,13 +256,12 @@ pub fn observation_to_telemetry(obs: &StoredObservation, default_host: &str) -> 
             source: id.producer.clone(),
             unit: obs.resource().to_owned(),
             message: message.clone(),
-            attributes_json: serde_json::json!({
+            attributes_json: with_run_context(serde_json::json!({
                 "kind": "log",
                 "generation": id.generation,
                 "sequence": id.sequence,
                 "version": obs.version(),
-            })
-            .to_string(),
+            })),
         }),
         Data::JsonLog { fields } => {
             let level = fields
@@ -287,14 +291,13 @@ pub fn observation_to_telemetry(obs: &StoredObservation, default_host: &str) -> 
             source: id.producer.clone(),
             unit: obs.resource().to_owned(),
             message: format!("{name}: {message}"),
-            attributes_json: serde_json::json!({
+            attributes_json: with_run_context(serde_json::json!({
                 "kind": "event",
                 "name": name,
                 "generation": id.generation,
                 "sequence": id.sequence,
                 "version": obs.version(),
-            })
-            .to_string(),
+            })),
         }),
         Data::Gap { source, reason } => IngestEnvelope::Log(LogRecord {
             timestamp_ms,
@@ -302,14 +305,13 @@ pub fn observation_to_telemetry(obs: &StoredObservation, default_host: &str) -> 
             source: id.producer.clone(),
             unit: obs.resource().to_owned(),
             message: format!("gap({source}): {reason}"),
-            attributes_json: serde_json::json!({
+            attributes_json: with_run_context(serde_json::json!({
                 "kind": "gap",
                 "source": source,
                 "generation": id.generation,
                 "sequence": id.sequence,
                 "version": obs.version(),
-            })
-            .to_string(),
+            })),
         }),
     }
 }
@@ -1035,5 +1037,181 @@ mod tests {
             .expect("split pre-shutdown frame must finish draining before abort");
         assert_eq!(drained.name, "shutdown.drain");
         drop(client);
+    }
+
+    #[test]
+    fn v3_run_context_correlates_metrics_logs_events_and_gaps_with_trace() {
+        use fabric::observation::{Identity, ObservationV3, REGISTRY_V3, VERSION_V3};
+        use fabric::run::RunContext;
+
+        let run_id = "11111111-2222-4333-8444-555555555555";
+        let mk_v3 = |sequence: u64, data: Data| {
+            StoredObservation::V3(ObservationV3 {
+                version: VERSION_V3,
+                registry: REGISTRY_V3.to_owned(),
+                identity: Identity {
+                    producer: "bench-worker".to_owned(),
+                    generation: "gen-1".to_owned(),
+                    sequence,
+                },
+                timestamp_ns: 1_700_000_000_000_000_000,
+                resource: "worker.service".to_owned(),
+                context: RunContext {
+                    run_id: run_id.to_owned(),
+                },
+                data,
+            })
+        };
+
+        let trace = observation_to_telemetry(
+            &mk_v3(
+                5,
+                Data::ServiceRequest {
+                    service: "bench-worker".to_owned(),
+                    operation: "checkpoint".to_owned(),
+                    duration_ns: 14_500_000,
+                    status: Outcome::Ok,
+                    trace_id: Some("request-trace".to_owned()),
+                },
+            ),
+            "node-a",
+        );
+        let IngestEnvelope::Trace(trace) = trace else {
+            panic!("expected Trace, got {trace:?}");
+        };
+        assert_eq!(trace.trace_id, "request-trace");
+        let trace_attributes: serde_json::Value =
+            serde_json::from_str(&trace.attributes_json).unwrap();
+        let correlation = &trace_attributes["context_run_id"];
+        assert_eq!(correlation, run_id);
+
+        let metric = observation_to_telemetry(
+            &mk_v3(
+                1,
+                Data::Metric {
+                    name: "step.latency_ms".to_owned(),
+                    unit: "ms".to_owned(),
+                    value: 14.5,
+                    metric_type: MetricType::Gauge,
+                    reset: false,
+                },
+            ),
+            "node-a",
+        );
+        match metric {
+            IngestEnvelope::Metric(pt) => {
+                let labels: serde_json::Value = serde_json::from_str(&pt.labels_json).unwrap();
+                assert_eq!(&labels["context_run_id"], correlation);
+                assert_eq!(labels["producer"], "bench-worker");
+            }
+            other => panic!("expected Metric, got {other:?}"),
+        }
+
+        for (seq, data, expected_kind) in [
+            (
+                2,
+                Data::Log {
+                    level: Level::Info,
+                    message: "checkpoint saved".to_owned(),
+                },
+                "log",
+            ),
+            (
+                3,
+                Data::Event {
+                    name: "stage.done".to_owned(),
+                    message: "completed".to_owned(),
+                },
+                "event",
+            ),
+            (
+                4,
+                Data::Gap {
+                    source: "collector".to_owned(),
+                    reason: "ring backpressure".to_owned(),
+                },
+                "gap",
+            ),
+        ] {
+            let env = observation_to_telemetry(&mk_v3(seq, data), "node-a");
+            match env {
+                IngestEnvelope::Log(log) => {
+                    let attrs: serde_json::Value =
+                        serde_json::from_str(&log.attributes_json).unwrap();
+                    assert_eq!(attrs["kind"], expected_kind);
+                    assert_eq!(&attrs["context_run_id"], correlation);
+                }
+                other => panic!("expected Log for {expected_kind}, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn v2_log_preserves_attributes_without_run_context() {
+        use fabric::observation::{Identity, Observation, REGISTRY, VERSION};
+
+        let obs = StoredObservation::V2(Observation {
+            version: VERSION,
+            registry: REGISTRY.to_owned(),
+            identity: Identity {
+                producer: "bench-worker".to_owned(),
+                generation: "gen-1".to_owned(),
+                sequence: 1,
+            },
+            timestamp_ns: 1_700_000_000_000_000_000,
+            resource: "worker.service".to_owned(),
+            data: Data::Log {
+                level: Level::Info,
+                message: "checkpoint saved".to_owned(),
+            },
+        });
+        match observation_to_telemetry(&obs, "node-a") {
+            IngestEnvelope::Log(log) => {
+                assert_eq!(
+                    log.attributes_json,
+                    serde_json::json!({
+                        "kind": "log",
+                        "generation": "gen-1",
+                        "sequence": 1,
+                        "version": VERSION,
+                    })
+                    .to_string()
+                );
+            }
+            other => panic!("expected Log, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn v3_json_log_preserves_absent_and_caller_supplied_run_context_fields() {
+        use fabric::observation::{Identity, ObservationV3, REGISTRY_V3, VERSION_V3};
+        use fabric::run::RunContext;
+
+        for submitted in [
+            r#"{"format":"app.result.v1","message":"app.result.v1/1","status":"passed"}"#,
+            r#"{"context_run_id":"caller-owned","format":"app.result.v1","message":"app.result.v1/1","status":"passed"}"#,
+        ] {
+            let fields = serde_json::from_str(submitted).unwrap();
+            let expected_json = serde_json::to_string(&fields).unwrap();
+            let obs = StoredObservation::V3(ObservationV3 {
+                version: VERSION_V3,
+                registry: REGISTRY_V3.to_owned(),
+                identity: Identity {
+                    producer: "bench-worker".to_owned(),
+                    generation: "gen-1".to_owned(),
+                    sequence: 9,
+                },
+                timestamp_ns: 1_700_000_000_000_000_000,
+                resource: "worker.service".to_owned(),
+                context: RunContext {
+                    run_id: "11111111-2222-4333-8444-555555555555".to_owned(),
+                },
+                data: Data::JsonLog { fields },
+            });
+            match observation_to_telemetry(&obs, "node-a") {
+                IngestEnvelope::Log(log) => assert_eq!(log.attributes_json, expected_json),
+                other => panic!("expected Log, got {other:?}"),
+            }
+        }
     }
 }
