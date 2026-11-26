@@ -171,7 +171,7 @@ pub fn build_unified_sql(
             select_items.push("COUNT(*) AS count".into());
         } else {
             for raw_agg in &spec.agg_specs {
-                select_items.push(parse_agg_expr(raw_agg)?);
+                select_items.push(parse_agg_expr_inner(raw_agg, Some(spec.domain))?);
             }
         }
         let group_sql = if spec.group_by.is_empty() {
@@ -332,8 +332,13 @@ pub fn parse_where_predicate(raw: &str) -> Result<String, String> {
     .to_sql(&DataType::Utf8)
 }
 
-/// Parses one `--agg` expression into validated SQL projection item.
+/// Compiles an isolated `--agg` expression. Use `build_unified_sql` to validate
+/// percentile columns against the selected schema and guard floating-point inputs.
 pub fn parse_agg_expr(raw: &str) -> Result<String, String> {
+    parse_agg_expr_inner(raw, None)
+}
+
+fn parse_agg_expr_inner(raw: &str, domain: Option<QueryDomain>) -> Result<String, String> {
     let trimmed = raw.trim();
     if trimmed.eq_ignore_ascii_case("count") || trimmed.eq_ignore_ascii_case("count(*)") {
         return Ok("COUNT(*) AS count".into());
@@ -344,19 +349,59 @@ pub fn parse_agg_expr(raw: &str) -> Result<String, String> {
         .or_else(|| trimmed.split_once(':'));
     let Some((func, col)) = normalized else {
         return Err(format!(
-            "invalid --agg spec '{raw}' (expected count, sum:col, avg:col, min:col, or max:col)"
+            "invalid --agg spec '{raw}' (expected count, sum:col, avg:col, min:col, max:col, p50:col, p90:col, p95:col, or p99:col)"
         ));
     };
     let col = col.trim();
     validate_ident(col)?;
-    match func.trim().to_ascii_lowercase().as_str() {
-        "sum" => Ok(format!("SUM({col}) AS sum_{col}")),
-        "min" => Ok(format!("MIN({col}) AS min_{col}")),
-        "max" => Ok(format!("MAX({col}) AS max_{col}")),
-        "avg" => Ok(format!("AVG({col}) AS avg_{col}")),
-        "count" => Ok(format!("COUNT({col}) AS count_{col}")),
-        other => Err(format!("unsupported aggregate '{other}'")),
+    let func = func.trim().to_ascii_lowercase();
+    let percentile = match func.as_str() {
+        "p50" => "0.5",
+        "p90" => "0.9",
+        "p95" => "0.95",
+        "p99" => "0.99",
+        "sum" => return Ok(format!("SUM({col}) AS sum_{col}")),
+        "min" => return Ok(format!("MIN({col}) AS min_{col}")),
+        "max" => return Ok(format!("MAX({col}) AS max_{col}")),
+        "avg" => return Ok(format!("AVG({col}) AS avg_{col}")),
+        "count" => return Ok(format!("COUNT({col}) AS count_{col}")),
+        other => return Err(format!("unsupported aggregate '{other}'")),
+    };
+
+    let alias = format!("{func}_{col}");
+    if let Some(domain) = domain {
+        let field = domain
+            .schema()
+            .field_with_name(&col.to_ascii_lowercase())
+            .map_err(|_| format!("unknown {domain} field '{col}'"))?;
+        match field.data_type() {
+            DataType::Float64 => {
+                // The digest sums centroid means times weights and interpolates
+                // between means. Even 2^78 samples at this magnitude leave
+                // more than 5x headroom in f64. That count covers the local
+                // snapshot limit (16,384 files), with i64 row counts, plus live
+                // rows. The difference between any two allowed means also fits.
+                // Arrow's total ordering places either sign of NaN outside it.
+                // Null out the percentile for the whole group if any input is
+                // unsafe, while keeping those inputs away from the digest.
+                let range = "BETWEEN -1e284 AND 1e284";
+                return Ok(format!(
+                    "CASE WHEN MAX(CASE WHEN {col} NOT {range} THEN 1 END) IS NULL THEN \
+                     APPROX_PERCENTILE_CONT({percentile}) WITHIN GROUP \
+                     (ORDER BY CASE WHEN {col} {range} THEN {col} END) END AS {alias}"
+                ));
+            }
+            DataType::Int64 | DataType::UInt32 | DataType::UInt64 => {}
+            data_type => {
+                return Err(format!(
+                    "percentile requires a numeric {domain} field, but '{col}' has type {data_type}"
+                ));
+            }
+        }
     }
+    Ok(format!(
+        "APPROX_PERCENTILE_CONT({percentile}) WITHIN GROUP (ORDER BY {col}) AS {alias}"
+    ))
 }
 
 #[cfg(test)]
@@ -405,5 +450,76 @@ mod tests {
             parse_where_predicate("message~a=b").unwrap(),
             "CAST(message AS VARCHAR) LIKE '%a=b%'"
         );
+    }
+
+    #[test]
+    fn percentile_agg_specs_compile_and_reject_bad_identifiers() {
+        for (name, quantile) in [
+            ("p50", "0.5"),
+            ("p90", "0.9"),
+            ("p95", "0.95"),
+            ("p99", "0.99"),
+        ] {
+            let expected = format!(
+                "APPROX_PERCENTILE_CONT({quantile}) WITHIN GROUP (ORDER BY duration_ms) AS {name}_duration_ms"
+            );
+            assert_eq!(
+                parse_agg_expr(&format!("{name}:duration_ms")).unwrap(),
+                expected
+            );
+            assert_eq!(
+                parse_agg_expr(&format!("{}(duration_ms)", name.to_ascii_uppercase())).unwrap(),
+                expected
+            );
+        }
+        assert!(parse_agg_expr("p95:value; DROP TABLE t").is_err());
+        assert!(parse_agg_expr("p42:value").is_err());
+    }
+    #[test]
+    fn percentile_targets_are_validated_in_the_selected_schema() {
+        for (domain, agg, expected_error) in [
+            (QueryDomain::Logs, "p95:duration_ms", "unknown logs field"),
+            (
+                QueryDomain::Logs,
+                "p95:message",
+                "requires a numeric logs field",
+            ),
+            (
+                QueryDomain::Units,
+                "p50(transient)",
+                "requires a numeric units field",
+            ),
+            (
+                QueryDomain::Metrics,
+                "p95:value;select",
+                "invalid column identifier",
+            ),
+            (QueryDomain::Metrics, "p100:value", "unsupported aggregate"),
+        ] {
+            let spec = UnifiedQuerySpec {
+                domain,
+                agg_specs: vec![agg.into()],
+                ..Default::default()
+            };
+            assert!(
+                build_unified_sql(&spec, None)
+                    .unwrap_err()
+                    .contains(expected_error)
+            );
+        }
+
+        for (domain, agg) in [
+            (QueryDomain::Traces, "P95(DURATION_MS)"),
+            (QueryDomain::Metrics, "p99:pid"),
+            (QueryDomain::Fs, "p90:size_bytes"),
+            (QueryDomain::Logs, "p50:timestamp_ms"),
+        ] {
+            let spec = UnifiedQuerySpec {
+                domain,
+                agg_specs: vec![agg.into()],
+                ..Default::default()
+            };
+            assert!(build_unified_sql(&spec, None).is_ok(), "{agg}");
+        }
     }
 }

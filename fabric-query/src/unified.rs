@@ -7430,4 +7430,322 @@ mod tests {
             "unexpected combined pool pressure err: {err_combined}"
         );
     }
+
+    #[tokio::test]
+    async fn unified_query_computes_percentile_aggregates() {
+        let dir = non_tmp_dir();
+        let points: Vec<_> = (1..=100)
+            .map(|i| percentile_metric(1_700_000_000_000 + i, "worker.latency_ms", i as f64, None))
+            .collect();
+
+        let res = execute_unified_query(
+            dir.path(),
+            &UnifiedQuerySpec {
+                domain: QueryDomain::Metrics,
+                since_ms: None,
+                where_clauses: vec!["name=worker.latency_ms".into()],
+                group_by: vec!["name".into()],
+                agg_specs: vec![
+                    "count".into(),
+                    "p50:value".into(),
+                    "p90:value".into(),
+                    "p95:value".into(),
+                    "p99:value".into(),
+                ],
+                limit: 10,
+            },
+            &points,
+            None,
+        )
+        .await
+        .expect("percentile aggregation over live metrics must succeed");
+
+        assert_eq!(res.row_count, 1);
+        let row = &res.rows[0];
+        assert_eq!(row["count"].as_i64(), Some(100));
+        // Exact continuous quantiles for the uniform sequence 1 through 100.
+        for (field, reference) in [
+            ("p50_value", 50.5),
+            ("p90_value", 90.1),
+            ("p95_value", 95.05),
+            ("p99_value", 99.01),
+        ] {
+            let estimate = row[field].as_f64().unwrap();
+            assert!((estimate - reference).abs() <= 1.0, "{field}: {estimate}");
+        }
+    }
+    fn percentile_metric(
+        timestamp_ms: i64,
+        name: &str,
+        value: f64,
+        pid: Option<u32>,
+    ) -> MetricPoint {
+        MetricPoint {
+            timestamp_ms,
+            name: name.into(),
+            value,
+            host: "node-a".into(),
+            slice: "spindle".into(),
+            unit: "worker.service".into(),
+            pid,
+            labels_json: "{}".into(),
+        }
+    }
+
+    #[tokio::test]
+    async fn percentile_handles_empty_nullable_and_unsafe_inputs_without_removing_rows() {
+        let dir = non_tmp_dir();
+        let timestamp = 1_700_000_000_000;
+        let mut spec = UnifiedQuerySpec {
+            agg_specs: [
+                "count",
+                "count:value",
+                "count:pid",
+                "min:pid",
+                "p50:pid",
+                "p50:value",
+                "p99(value)",
+            ]
+            .map(str::to_owned)
+            .to_vec(),
+            ..Default::default()
+        };
+
+        let empty = execute_unified_query(dir.path(), &spec, &[], None)
+            .await
+            .unwrap();
+        assert_eq!(
+            empty.rows,
+            [serde_json::json!({
+                "count": 0, "count_value": 0, "count_pid": 0, "min_pid": null,
+                "p50_pid": null, "p50_value": null, "p99_value": null,
+            })]
+        );
+
+        let invalid_groups = [
+            ("nan", f64::NAN, 10),
+            ("negative_nan", -f64::NAN, 11),
+            ("positive_infinity", f64::INFINITY, 12),
+            ("negative_infinity", f64::NEG_INFINITY, 13),
+            ("overflow", f64::MAX, 14),
+            ("negative_overflow", -f64::MAX, 15),
+            ("above_cutoff", 1e284_f64.next_up(), 16),
+            ("below_cutoff", -1e284_f64.next_up(), 17),
+        ];
+        let mut points: Vec<_> = [
+            ("regular", 10.0, Some(1)),
+            ("regular", 20.0, None),
+            ("regular", 30.0, Some(4)),
+            ("all_null_pid", 7.0, None),
+            ("extreme_but_supported", -1e284, None),
+            ("extreme_but_supported", 1e284, None),
+            ("signed_zero", -0.0, None),
+            ("signed_zero", 0.0, None),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(i, (name, value, pid))| percentile_metric(timestamp + i as i64, name, value, pid))
+        .collect();
+        for (name, value, pid) in invalid_groups {
+            points.push(percentile_metric(timestamp, name, value, Some(pid)));
+            points.push(percentile_metric(timestamp + 1, name, 42.0, None));
+        }
+
+        spec.group_by.push("name".into());
+        let result = execute_unified_query(dir.path(), &spec, &points, None)
+            .await
+            .unwrap();
+        let row = |name: &str| result.rows.iter().find(|row| row["name"] == name).unwrap();
+        let regular = row("regular");
+        assert_eq!(regular["count"], 3);
+        assert_eq!(regular["count_pid"], 2);
+        assert_eq!(regular["min_pid"], 1);
+        assert_eq!(regular["p50_pid"], 2.5);
+        assert_eq!(regular["p50_value"], 20.0);
+        assert_eq!(row("all_null_pid")["p50_pid"], serde_json::Value::Null);
+        assert_eq!(row("all_null_pid")["p50_value"], 7.0);
+        assert_eq!(row("extreme_but_supported")["p50_value"], 0.0);
+        assert_eq!(row("extreme_but_supported")["p99_value"], 1e284);
+        assert_eq!(row("signed_zero")["p50_value"], 0.0);
+
+        for (name, _, pid) in invalid_groups {
+            let row = row(name);
+            assert_eq!(row["count"], 2, "{name}");
+            assert_eq!(row["count_value"], 2, "{name}");
+            assert_eq!(row["count_pid"], 1, "{name}");
+            assert_eq!(row["min_pid"], pid, "{name}");
+            assert_eq!(row["p50_pid"], f64::from(pid), "{name}");
+            assert!(row["p50_value"].is_null(), "{name}");
+            assert!(row["p99_value"].is_null(), "{name}");
+        }
+        for field in ["p50_value", "p99_value"] {
+            let nulls: usize = result
+                .batches
+                .iter()
+                .map(|batch| batch.column_by_name(field).unwrap().null_count())
+                .sum();
+            assert_eq!(
+                nulls,
+                invalid_groups.len(),
+                "{field} must contain Arrow nulls for all invalid groups"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn percentile_rejects_targets_outside_the_selected_schema() {
+        let dir = non_tmp_dir();
+        for (agg, expected) in [
+            ("p90:value", "unknown logs field"),
+            ("p90(message)", "requires a numeric logs field"),
+            ("p90:timestamp_ms + 1", "invalid column identifier"),
+            ("p42:timestamp_ms", "unsupported aggregate"),
+        ] {
+            let spec = UnifiedQuerySpec {
+                domain: QueryDomain::Logs,
+                agg_specs: vec![agg.into()],
+                ..Default::default()
+            };
+            let error = execute_unified_query(dir.path(), &spec, &[], None)
+                .await
+                .expect_err("invalid percentile target must be rejected");
+            assert!(error.contains(expected), "{error}");
+        }
+    }
+
+    #[tokio::test]
+    async fn percentile_preserves_approximate_coercion_of_wide_integers() {
+        let dir = non_tmp_dir();
+        let catalog = fabric_store::CatalogStore::open(dir.path()).unwrap();
+        let olap = OlapParquetStore::new(catalog.layout().clone());
+        olap.write_fs_events(&[fabric_core::FsEventRecord {
+            timestamp_ms: 1_700_000_000_000,
+            size_bytes: u64::MAX,
+            delta_bytes: i64::MIN,
+            ..Default::default()
+        }])
+        .unwrap();
+        let spec = UnifiedQuerySpec {
+            domain: QueryDomain::Fs,
+            agg_specs: ["max:size_bytes", "p50:size_bytes", "p50(delta_bytes)"]
+                .map(str::to_owned)
+                .to_vec(),
+            ..Default::default()
+        };
+        let result = execute_unified_query(dir.path(), &spec, &[], None)
+            .await
+            .unwrap();
+        let row = &result.rows[0];
+        assert_eq!(row["max_size_bytes"].as_u64(), Some(u64::MAX));
+        assert_eq!(row["p50_size_bytes"].as_f64(), Some(u64::MAX as f64));
+        assert_eq!(row["p50_delta_bytes"].as_f64(), Some(i64::MIN as f64));
+    }
+
+    #[tokio::test]
+    async fn percentile_over_retained_metrics_uses_bucket_means_as_individual_rows() {
+        let dir = non_tmp_dir();
+        let catalog = fabric_store::CatalogStore::open(dir.path()).unwrap();
+        let olap = OlapParquetStore::new(catalog.layout().clone());
+        let start = fabric_core::align_rollup_bucket_ms(1_700_000_000_000);
+        // The first bucket has more samples and a high tail. The second bucket
+        // has a single zero. Retention exposes two values (means 25 and 0).
+        olap.write_metrics(&[
+            percentile_metric(start, "latency", 0.0, None),
+            percentile_metric(start + 1, "latency", 0.0, None),
+            percentile_metric(start + 2, "latency", 0.0, None),
+            percentile_metric(start + 3, "latency", 100.0, None),
+            percentile_metric(start + 300_000, "latency", 0.0, None),
+        ])
+        .unwrap();
+        let spec = UnifiedQuerySpec {
+            where_clauses: vec!["name=latency".into()],
+            agg_specs: vec!["count".into(), "p50:value".into(), "p99:value".into()],
+            ..Default::default()
+        };
+        let raw = execute_unified_query(dir.path(), &spec, &[], None)
+            .await
+            .unwrap();
+        assert_eq!(raw.rows[0]["count"], 5);
+        assert_eq!(raw.rows[0]["p50_value"], 0.0);
+        assert_eq!(raw.rows[0]["p99_value"], 100.0);
+
+        let today = chrono::NaiveDate::from_ymd_opt(2023, 12, 1).unwrap();
+        let janitor = fabric_store::RetentionJanitor::new(olap, Default::default());
+        assert_eq!(
+            janitor
+                .run_pass(Some(today))
+                .unwrap()
+                .downsampled_partitions,
+            1
+        );
+
+        let retained = execute_unified_query(dir.path(), &spec, &[], None)
+            .await
+            .unwrap();
+        assert_eq!(retained.rows[0]["count"], 2);
+        assert_eq!(retained.rows[0]["p50_value"], 12.5);
+        assert_eq!(retained.rows[0]["p99_value"], 25.0);
+    }
+
+    #[tokio::test]
+    async fn percentile_grouping_precedes_the_result_limit() {
+        check_percentile_group_budget(1).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "resource qualification: runs the real 64 MiB pool to exhaustion"]
+    async fn percentile_groups_refuse_and_recover_under_unified_query_budget() {
+        check_percentile_group_budget(24).await;
+    }
+
+    async fn check_percentile_group_budget(chunks: i64) {
+        let dir = non_tmp_dir();
+        let catalog = fabric_store::CatalogStore::open(dir.path()).unwrap();
+        let olap = OlapParquetStore::new(catalog.layout().clone());
+        let start = 1_700_000_000_000;
+        for chunk in 0..chunks {
+            let points: Vec<_> = (chunk * 8192..(chunk + 1) * 8192)
+                .map(|i| percentile_metric(start + i, &format!("g{i:06}"), i as f64, None))
+                .collect();
+            olap.write_metrics(&points).unwrap();
+        }
+        let mut spec = UnifiedQuerySpec {
+            group_by: vec!["name".into()],
+            agg_specs: ["count", "p50:value", "p90:value", "p95:value", "p99:value"]
+                .map(str::to_owned)
+                .to_vec(),
+            limit: 3,
+            ..Default::default()
+        };
+
+        // Restrict the scan to 8,192 groups, with only three results requested.
+        spec.where_clauses
+            .push(format!("timestamp_ms<{}", start + 8192));
+        let expected = [
+            serde_json::json!({"name": "g000000", "count": 1, "p50_value": 0.0, "p90_value": 0.0, "p95_value": 0.0, "p99_value": 0.0}),
+            serde_json::json!({"name": "g000001", "count": 1, "p50_value": 1.0, "p90_value": 1.0, "p95_value": 1.0, "p99_value": 1.0}),
+            serde_json::json!({"name": "g000002", "count": 1, "p50_value": 2.0, "p90_value": 2.0, "p95_value": 2.0, "p99_value": 2.0}),
+        ];
+        let result = execute_unified_query(dir.path(), &spec, &[], None)
+            .await
+            .unwrap();
+        assert_eq!(result.rows, expected);
+
+        if chunks == 1 {
+            return;
+        }
+
+        // The same output limit does not restrict the number of group states.
+        let filter = spec.where_clauses.pop().unwrap();
+        let error = execute_unified_query(dir.path(), &spec, &[], None)
+            .await
+            .expect_err("high-cardinality percentile query must exhaust its pool");
+        assert!(error.contains("Failed to allocate additional"), "{error}");
+
+        spec.where_clauses.push(filter);
+        let recovered = execute_unified_query(dir.path(), &spec, &[], None)
+            .await
+            .unwrap();
+        assert_eq!(recovered.rows, expected);
+    }
 }
