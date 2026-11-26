@@ -7430,4 +7430,61 @@ mod tests {
             "unexpected combined pool pressure err: {err_combined}"
         );
     }
+
+    #[tokio::test]
+    async fn unified_query_computes_percentile_aggregates() {
+        let dir = non_tmp_dir();
+        let day1 = chrono::NaiveDate::from_ymd_opt(2026, 5, 1)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap()
+            .and_utc()
+            .timestamp_millis();
+        let points: Vec<MetricPoint> = (1..=100)
+            .map(|i| MetricPoint {
+                timestamp_ms: day1 + i,
+                name: "worker.latency_ms".into(),
+                value: i as f64,
+                host: "node-a".into(),
+                slice: "spindle".into(),
+                unit: "worker.service".into(),
+                pid: None,
+                labels_json: "{}".into(),
+            })
+            .collect();
+
+        let res = execute_unified_query(
+            dir.path(),
+            &UnifiedQuerySpec {
+                domain: QueryDomain::Metrics,
+                since_ms: None,
+                where_clauses: vec!["name=worker.latency_ms".into()],
+                group_by: vec!["name".into()],
+                agg_specs: vec![
+                    "count".into(),
+                    "p50:value".into(),
+                    "p90:value".into(),
+                    "p95:value".into(),
+                    "p99:value".into(),
+                ],
+                limit: 10,
+            },
+            &points,
+            None,
+        )
+        .await
+        .expect("percentile aggregation over live metrics must succeed");
+
+        assert_eq!(res.row_count, 1);
+        let row = &res.rows[0];
+        assert_eq!(row["count"].as_i64(), Some(100));
+        let p50 = row["p50_value"].as_f64().expect("p50_value f64");
+        let p90 = row["p90_value"].as_f64().expect("p90_value f64");
+        let p95 = row["p95_value"].as_f64().expect("p95_value f64");
+        let p99 = row["p99_value"].as_f64().expect("p99_value f64");
+        assert!((48.0..=52.0).contains(&p50), "unexpected p50={p50}");
+        assert!((88.0..=92.0).contains(&p90), "unexpected p90={p90}");
+        assert!((93.0..=97.0).contains(&p95), "unexpected p95={p95}");
+        assert!((97.0..=100.0).contains(&p99), "unexpected p99={p99}");
+    }
 }

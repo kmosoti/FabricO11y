@@ -122,6 +122,7 @@ struct QueryArgs {
     #[arg(long, value_delimiter = ',')]
     group_by: Vec<String>,
     /// Aggregations separated by commas (count, sum:col, avg:col, min:col, max:col).
+    /// Approximate percentiles over query rows use p50:col, p90:col, p95:col, or p99:col.
     #[arg(long, value_delimiter = ',')]
     agg: Vec<String>,
     /// Maximum rows to return.

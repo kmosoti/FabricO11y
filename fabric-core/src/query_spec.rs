@@ -268,7 +268,7 @@ pub fn parse_agg_expr(raw: &str) -> Result<String, String> {
         .or_else(|| trimmed.split_once(':'));
     let Some((func, col)) = normalized else {
         return Err(format!(
-            "invalid --agg spec '{raw}' (expected count, sum:col, avg:col, min:col, or max:col)"
+            "invalid --agg spec '{raw}' (expected count, sum:col, avg:col, min:col, max:col, p50:col, p90:col, p95:col, or p99:col)"
         ));
     };
     let col = col.trim();
@@ -279,6 +279,18 @@ pub fn parse_agg_expr(raw: &str) -> Result<String, String> {
         "max" => Ok(format!("MAX({col}) AS max_{col}")),
         "avg" => Ok(format!("AVG({col}) AS avg_{col}")),
         "count" => Ok(format!("COUNT({col}) AS count_{col}")),
+        "p50" => Ok(format!(
+            "APPROX_PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY {col}) AS p50_{col}"
+        )),
+        "p90" => Ok(format!(
+            "APPROX_PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY {col}) AS p90_{col}"
+        )),
+        "p95" => Ok(format!(
+            "APPROX_PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY {col}) AS p95_{col}"
+        )),
+        "p99" => Ok(format!(
+            "APPROX_PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY {col}) AS p99_{col}"
+        )),
         other => Err(format!("unsupported aggregate '{other}'")),
     }
 }
@@ -310,5 +322,29 @@ mod tests {
             parse_where_predicate("message~a=b").unwrap(),
             "CAST(message AS VARCHAR) LIKE '%a=b%'"
         );
+    }
+
+    #[test]
+    fn percentile_agg_specs_compile_and_reject_bad_identifiers() {
+        for (name, quantile) in [
+            ("p50", "0.5"),
+            ("p90", "0.9"),
+            ("p95", "0.95"),
+            ("p99", "0.99"),
+        ] {
+            let expected = format!(
+                "APPROX_PERCENTILE_CONT({quantile}) WITHIN GROUP (ORDER BY duration_ms) AS {name}_duration_ms"
+            );
+            assert_eq!(
+                parse_agg_expr(&format!("{name}:duration_ms")).unwrap(),
+                expected
+            );
+            assert_eq!(
+                parse_agg_expr(&format!("{}(duration_ms)", name.to_ascii_uppercase())).unwrap(),
+                expected
+            );
+        }
+        assert!(parse_agg_expr("p95:value; DROP TABLE t").is_err());
+        assert!(parse_agg_expr("p42:value").is_err());
     }
 }
