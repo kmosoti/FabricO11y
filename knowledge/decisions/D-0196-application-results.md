@@ -29,3 +29,13 @@ precedes transaction commit and is not a measurement of fsync, Spindle custody,
 or visibility. Pending and confirmed rows retain it across replay; migrated v1
 rows have unknown timing. No original artifact bytes are retained. Parent
 authorization and receiver visibility remain separate contracts.
+
+A separately credentialed canonical reader can request an exact confirmed
+receipt with its pinned authority in one authenticated exchange. The adapter
+checks the returned observation and reconstructs its stored application digest
+before returning the bounded envelope. A parent ID comes from the verified
+child and resolves only within the same owner outbox. The reader's origin grant
+is not a per-parent authorization policy. A first verified-read observation is
+recorded once in a local transaction; it is not a global first-visible instant
+or analytical projection evidence. Migrated rows retain unknown values until a
+successful new read, and raw source artifacts are not retained.

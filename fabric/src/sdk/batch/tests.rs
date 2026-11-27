@@ -729,6 +729,13 @@ fn timing_stage_rollback_and_v1_migration_preserve_unknowns() {
         bytes: vec![1],
     };
     let completion = application_report(1, "batch-test", "origin").producer_completion;
+    assert!(outbox.record_verified_read(&report(1).report_id).is_err());
+    assert!(
+        outbox
+            .verified_read(&report(1).report_id)
+            .unwrap()
+            .is_none()
+    );
     // The sequence guard fails after both inserts; the transaction must roll back both.
     assert!(outbox.stage(&pending(1), 2, Some(&completion)).is_err());
     assert!(outbox.find(&report(1).report_id).unwrap().is_none());
@@ -754,8 +761,10 @@ fn timing_stage_rollback_and_v1_migration_preserve_unknowns() {
     drop(outbox);
     // v1 is precisely the old schema, with both a confirmed and a pending row.
     let db = rusqlite::Connection::open(path.join("outbox.sqlite")).unwrap();
-    db.execute_batch("DROP TABLE application_timing; PRAGMA user_version=1;")
-        .unwrap();
+    db.execute_batch(
+        "DROP TABLE verified_read; DROP TABLE application_timing; PRAGMA user_version=1;",
+    )
+    .unwrap();
     drop(db);
     let outbox = Outbox::open(&path, "batch-test", "local").unwrap();
     assert!(matches!(
@@ -779,6 +788,39 @@ fn timing_stage_rollback_and_v1_migration_preserve_unknowns() {
             .is_none()
     );
     assert_eq!(outbox.lease().unwrap().unwrap().sequence, 2);
+    assert!(
+        outbox
+            .verified_read(&report(1).report_id)
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        outbox
+            .verified_read(&report(2).report_id)
+            .unwrap()
+            .is_none()
+    );
+    drop(outbox);
+    // A v2 database has timing but no verified-read table.
+    let db = rusqlite::Connection::open(path.join("outbox.sqlite")).unwrap();
+    db.execute_batch("DROP TABLE verified_read; PRAGMA user_version=2;")
+        .unwrap();
+    drop(db);
+    let outbox = Outbox::open(&path, "batch-test", "local").unwrap();
+    assert!(matches!(
+        outbox.find(&report(1).report_id).unwrap(),
+        Some(SavedReport::Confirmed(_, _))
+    ));
+    assert!(matches!(
+        outbox.find(&report(2).report_id).unwrap(),
+        Some(SavedReport::Pending(_))
+    ));
+    assert!(
+        outbox
+            .verified_read(&report(1).report_id)
+            .unwrap()
+            .is_none()
+    );
     drop(outbox);
     // A failed migration cannot mark an incompatible v1 database as migrated.
     let db = rusqlite::Connection::open(path.join("outbox.sqlite")).unwrap();
@@ -794,4 +836,163 @@ fn timing_stage_rollback_and_v1_migration_preserve_unknowns() {
         .query_row("SELECT count(*) FROM reports", [], |row| row.get(0))
         .unwrap();
     assert_eq!(count, 2);
+}
+
+#[test]
+fn authenticated_exact_readback_rejects_mismatches_and_preserves_first_time() {
+    use crate::canonical::{self, CanonicalRow, Request as CanonicalRequest, Response};
+    use std::net::TcpListener;
+    let base = directory();
+    let path = base.path().join("outbox");
+    let credential_path = base.path().join("reader-credential");
+    fs::write(&credential_path, "independent-reader-credential").unwrap();
+    fs::set_permissions(&credential_path, fs::Permissions::from_mode(0o600)).unwrap();
+    let config = Config::local(base.path().join("unused.sock"), "batch-test".into()).unwrap();
+    let mut client = BatchClient::open(config.clone(), &path).unwrap();
+    client
+        .outbox
+        .save_lease(&Lease {
+            origin: "origin".into(),
+            generation: "lease".into(),
+            expires: wall_time().unwrap() + 3600,
+            expired: false,
+            sequence: 0,
+        })
+        .unwrap();
+    let mut rows = Vec::new();
+    for id in 1..=2 {
+        let report = application_report(id, "batch-test", "origin");
+        let result = ApplicationResult::new(
+            report.scope.clone(),
+            report.report_id.clone(),
+            if id == 2 {
+                Some(application_report(1, "batch-test", "origin").report_id)
+            } else {
+                None
+            },
+            report.schema.clone(),
+            report.producer_completion.clone(),
+            report.artifact_json.as_bytes(),
+        )
+        .unwrap();
+        let mut fields = serde_json::Map::new();
+        fields.insert(
+            APPLICATION_MARKER.into(),
+            serde_json::from_slice(&result.encode_bounded().unwrap()).unwrap(),
+        );
+        let observation = ObservationV3 {
+            version: observation::VERSION_V3,
+            registry: observation::REGISTRY_V3.into(),
+            context: report.context.clone(),
+            identity: Identity {
+                producer: config.producer.clone(),
+                generation: "lease".into(),
+                sequence: id,
+            },
+            timestamp_ns: report.timestamp_ns,
+            resource: config.resource.clone(),
+            data: Data::JsonLog { fields },
+        };
+        let raw = serde_json::to_string(&observation).unwrap();
+        let digest = application_digest(&report.context, report.timestamp_ns, &result).unwrap();
+        client
+            .outbox
+            .stage(
+                &Pending {
+                    report_id: report.report_id.clone(),
+                    digest,
+                    bytes: raw.as_bytes().to_vec(),
+                },
+                id,
+                Some(&report.producer_completion),
+            )
+            .unwrap();
+        client
+            .outbox
+            .confirm(
+                &report.report_id,
+                &Receipt {
+                    id,
+                    identity: observation.identity,
+                    duplicate: false,
+                },
+            )
+            .unwrap();
+        rows.push(CanonicalRow {
+            canonical_id: id,
+            origin: "origin".into(),
+            source_id: id,
+            raw,
+        });
+    }
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let endpoint = listener.local_addr().unwrap().to_string();
+    let responses = rows.clone();
+    let peer = thread::spawn(move || {
+        for step in 0..6 {
+            let (mut stream, _) = listener.accept().unwrap();
+            let deadline = Instant::now() + Duration::from_secs(10);
+            let (_, request) = canonical::accept_authenticated_sync(
+                &mut stream,
+                ["independent-reader-credential"],
+                deadline,
+            )
+            .unwrap();
+            let CanonicalRequest::ExactReceiptLookup { request } = request else {
+                panic!("wrong request")
+            };
+            let mut row = responses[(request.source_id - 1) as usize].clone();
+            let authority = if step == 0 { "wrong" } else { "authority" };
+            if step == 1 {
+                row.source_id += 1;
+            }
+            if step == 2 {
+                row.raw = row.raw.replace("café", "cafe");
+            }
+            let response = Response::ExactReceiptFound {
+                authority: authority.into(),
+                row: Some(row),
+            };
+            canonical::write_frame(
+                &mut stream,
+                &serde_json::to_vec(&response).unwrap(),
+                deadline,
+            )
+            .unwrap();
+        }
+    });
+    client
+        .configure_reader(endpoint, "authority".into(), &credential_path)
+        .unwrap();
+    let child_id = application_report(2, "batch-test", "origin").report_id;
+    for _ in 0..3 {
+        assert!(client.verify_application(&child_id).is_err());
+        assert!(client.outbox.verified_read(&child_id).unwrap().is_none());
+    }
+    let first = client.verify_application(&child_id).unwrap();
+    assert_eq!(
+        first.result.parent_report_id(),
+        Some(
+            application_report(1, "batch-test", "origin")
+                .report_id
+                .as_str()
+        )
+    );
+    let parent = client.read_application_parent(&child_id).unwrap();
+    assert_eq!(
+        parent.result.report_id(),
+        application_report(1, "batch-test", "origin").report_id
+    );
+    let saved = first.first_verified_read;
+    drop(client);
+    let reopened = BatchClient::open(config, &path).unwrap();
+    assert_eq!(
+        reopened
+            .report_status(&child_id)
+            .unwrap()
+            .unwrap()
+            .first_verified_read,
+        Some(saved)
+    );
+    peer.join().unwrap();
 }

@@ -89,6 +89,7 @@ pub struct ReportStatus {
     pub delivery_state: &'static str,
     pub receipt: Option<Receipt>,
     pub application_timing: Option<ApplicationTiming>,
+    pub first_verified_read: Option<ProvenancedTime>,
 }
 
 /// A confirmed local custody receipt and its separately named payload digests.
@@ -185,6 +186,18 @@ pub struct BatchStatus {
     pub last_error: Option<String>,
 }
 
+/// A verified application envelope and the first local verification observation.
+#[derive(Clone, Debug, Serialize)]
+pub struct VerifiedApplication {
+    pub result: ApplicationResult,
+    pub first_verified_read: ProvenancedTime,
+}
+
+struct CanonicalReader {
+    client: crate::query::Client,
+    authority: String,
+}
+
 /// An exclusively owned SQLite outbox for one producer and Spindle origin.
 /// `record` performs synchronous durable I/O. A delivery error can leave a
 /// pending report. Retry with the same report ID and fields or call `flush_local`.
@@ -192,6 +205,7 @@ pub struct BatchClient {
     config: Config,
     outbox: Outbox,
     last_error: Option<String>,
+    reader: Option<CanonicalReader>,
 }
 impl BatchClient {
     /// Opens an owner-only directory and attempts a bounded replay of any pending
@@ -203,6 +217,7 @@ impl BatchClient {
             config,
             outbox,
             last_error: None,
+            reader: None,
         };
         if client.outbox.pending_id()?.is_some() {
             let deadline = Instant::now() + client.config.delivery_timeout;
@@ -211,6 +226,129 @@ impl BatchClient {
             }
         }
         Ok(client)
+    }
+
+    /// Configure an independently provisioned canonical reader credential.
+    pub fn configure_reader(
+        &mut self,
+        endpoint: String,
+        authority: String,
+        credential_file: &Path,
+    ) -> Result<(), BatchError> {
+        let valid = |s: &str| !s.is_empty() && s.len() <= 128 && !s.contains('\0');
+        if !valid(&authority) {
+            return Err(BatchError::Invalid("invalid canonical authority".into()));
+        }
+        let credential =
+            crate::query::read_credential_file(credential_file).map_err(BatchError::Invalid)?;
+        self.reader = Some(CanonicalReader {
+            client: crate::query::Client::new(endpoint, credential),
+            authority,
+        });
+        Ok(())
+    }
+
+    /// Verify the exact confirmed application against the configured authority.
+    pub fn verify_application(
+        &mut self,
+        report_id: &str,
+    ) -> Result<VerifiedApplication, BatchError> {
+        validate_id(report_id).map_err(|()| BatchError::Invalid("invalid report_id".into()))?;
+        let (digest, receipt) = match self.outbox.find(report_id)? {
+            Some(SavedReport::Confirmed(digest, receipt)) => (digest, receipt),
+            _ => {
+                return Err(BatchError::Unavailable(
+                    "confirmed report unavailable".into(),
+                ));
+            }
+        };
+        let origin = self
+            .outbox
+            .lease()?
+            .ok_or_else(|| BatchError::Storage("missing outbox origin".into()))?
+            .origin;
+        let reader = self
+            .reader
+            .as_ref()
+            .ok_or_else(|| BatchError::Invalid("canonical reader not configured".into()))?;
+        let request = crate::canonical::ExactReceiptRequest {
+            authority: reader.authority.clone(),
+            origin: origin.clone(),
+            source_id: receipt.id,
+            identity: receipt.identity.clone(),
+        };
+        request.validate().map_err(BatchError::Invalid)?;
+        let response = reader
+            .client
+            .exchange(
+                &crate::canonical::Request::ExactReceiptLookup { request },
+                Instant::now() + self.config.delivery_timeout,
+            )
+            .map_err(BatchError::Unavailable)?;
+        let crate::canonical::Response::ExactReceiptFound {
+            authority,
+            row: Some(row),
+        } = response
+        else {
+            return Err(BatchError::Unavailable(
+                "exact canonical receipt unavailable".into(),
+            ));
+        };
+        if authority != reader.authority || row.origin != origin || row.source_id != receipt.id {
+            return Err(BatchError::MismatchedReceipt);
+        }
+        let observation::StoredObservation::V3(observation) =
+            observation::decode_versioned(row.raw.as_bytes()).map_err(BatchError::Unavailable)?
+        else {
+            return Err(BatchError::Unavailable(
+                "canonical observation is not v3".into(),
+            ));
+        };
+        if observation.identity != receipt.identity
+            || observation.identity.producer != self.config.producer
+            || observation.resource != self.config.resource
+        {
+            return Err(BatchError::MismatchedReceipt);
+        }
+        if pending_digest(report_id, &observation, &origin)
+            .map_err(|e| BatchError::Unavailable(e.to_string()))?
+            != digest
+        {
+            return Err(BatchError::Conflict);
+        }
+        let Data::JsonLog { fields } = &observation.data else {
+            return Err(BatchError::Unavailable("not an application result".into()));
+        };
+        let value = fields
+            .get(APPLICATION_MARKER)
+            .ok_or_else(|| BatchError::Unavailable("not an application result".into()))?;
+        let bytes =
+            serde_json::to_vec(value).map_err(|e| BatchError::Unavailable(e.to_string()))?;
+        let result = ApplicationResult::decode_bounded(&bytes)
+            .map_err(|e| BatchError::Unavailable(format!("invalid application result: {e:?}")))?;
+        let first_verified_read = self.outbox.record_verified_read(report_id)?;
+        Ok(VerifiedApplication {
+            result,
+            first_verified_read,
+        })
+    }
+
+    /// Verify a child and read its same-scope parent from this owner outbox.
+    pub fn read_application_parent(
+        &mut self,
+        child_id: &str,
+    ) -> Result<VerifiedApplication, BatchError> {
+        let child = self.verify_application(child_id)?;
+        let parent_id = child
+            .result
+            .parent_report_id()
+            .ok_or_else(|| BatchError::Unavailable("parent unavailable".into()))?
+            .to_owned();
+        let parent = self.verify_application(&parent_id)?;
+        if parent.result.scope() != child.result.scope() {
+            return Err(BatchError::OriginMismatch);
+        }
+        Ok(parent)
     }
 
     /// Persists and submits a new report, or returns its previously stored receipt.
@@ -394,6 +532,7 @@ impl BatchClient {
             delivery_state,
             receipt,
             application_timing: self.outbox.application_timing(report_id)?,
+            first_verified_read: self.outbox.verified_read(report_id)?,
         }))
     }
 
@@ -591,6 +730,8 @@ pub fn batch_adapter_reply(client: &mut BatchClient, bytes: &[u8]) -> serde_json
         Flush { timeout_ms: u64 },
         Status,
         ReportStatus { report_id: String },
+        VerifyApplication { report_id: String },
+        ReadApplicationParent { report_id: String },
     }
     fn error_reply(error: BatchError) -> serde_json::Value {
         serde_json::json!({"error":error.to_string(),"code":error.code()})
@@ -692,6 +833,17 @@ pub fn batch_adapter_reply(client: &mut BatchClient, bytes: &[u8]) -> serde_json
                     }
                     result
                 }
+            }
+        }
+        Ok(Command::VerifyApplication { report_id }) => match client.verify_application(&report_id)
+        {
+            Ok(result) => serde_json::json!({"verified_application":result}),
+            Err(error) => error_reply(error),
+        },
+        Ok(Command::ReadApplicationParent { report_id }) => {
+            match client.read_application_parent(&report_id) {
+                Ok(result) => serde_json::json!({"verified_parent":result}),
+                Err(error) => error_reply(error),
             }
         }
         Ok(Command::ReportStatus { report_id }) => match client.report_status(&report_id) {

@@ -114,6 +114,15 @@ flowchart LR
     Batch --> Adapter
 ```
 
+Canonical application readback uses an independently provisioned reader grant.
+An additive exact-receipt request binds the expected authority, origin, source
+ID, and observation identity in one authenticated response. The batch owner
+reconstructs its immutable application digest before exposing a result or
+recording its first local verified-read observation; parent selection comes
+from the verified child and is confined to the same outbox. Reader origin grants
+are not per-parent authorization, and this observation is distinct from
+analytical projection visibility.
+
 ### Application result envelope
 
 `fabric-evidence` defines a bounded application-result envelope (also re-exported

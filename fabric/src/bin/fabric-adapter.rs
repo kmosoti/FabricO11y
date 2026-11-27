@@ -32,6 +32,18 @@ fn run() -> Result<(), String> {
             );
         }
     };
+    let reader = match args.next().as_deref() {
+        None => None,
+        Some("--canonical-reader") if matches!(mode, Mode::Batch(_)) => Some((
+            args.next().ok_or("canonical reader endpoint required")?,
+            args.next().ok_or("canonical reader authority required")?,
+            PathBuf::from(
+                args.next()
+                    .ok_or("canonical reader credential file required")?,
+            ),
+        )),
+        Some(_) => return Err("unexpected argument".into()),
+    };
     if args.next().is_some() {
         return Err("unexpected argument".into());
     }
@@ -47,6 +59,14 @@ fn run() -> Result<(), String> {
             fabric::sdk::BatchClient::open(config, &path).map_err(|e| e.to_string())?,
         )),
     };
+    if let Some((endpoint, authority, credential)) = reader {
+        let Adapter::Batch(client) = &mut client else {
+            return Err("reader requires batch mode".into());
+        };
+        client
+            .configure_reader(endpoint, authority, &credential)
+            .map_err(|e| e.to_string())?;
+    }
     let input = io::stdin();
     let mut input = input.lock();
     let output = io::stdout();

@@ -18,7 +18,7 @@ pub use fabric_evidence::{ApplicationResult, ApplicationResultError, ReportScope
 mod batch;
 pub use batch::{
     ApplicationReceipt, ApplicationReport, ApplicationTiming, BatchClient, BatchError, BatchReport,
-    BatchStatus, ReportStatus, batch_adapter_reply,
+    BatchStatus, ReportStatus, VerifiedApplication, batch_adapter_reply,
 };
 
 #[derive(Clone, Debug)]

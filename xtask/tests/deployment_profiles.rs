@@ -446,6 +446,129 @@ fn open_batch_adapter(
     (child, responses)
 }
 
+fn open_batch_reader(
+    bins: &Path,
+    socket: &Path,
+    outbox: &Path,
+    endpoint: &str,
+    authority: &str,
+    credential: &Path,
+) -> (OwnedChild, mpsc::Receiver<Value>) {
+    let mut child = OwnedChild(
+        Command::new(bins.join("fabric-adapter"))
+            .arg(socket)
+            .args(["batch-fixture", "--batch-outbox"])
+            .arg(outbox)
+            .args(["--canonical-reader", endpoint, authority])
+            .arg(credential)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap(),
+    );
+    let stdout = BufReader::new(child.0.stdout.take().unwrap());
+    let (replies, responses) = mpsc::sync_channel(1);
+    thread::spawn(move || {
+        for line in stdout.lines() {
+            let json = serde_json::from_str(&line.unwrap()).unwrap();
+            if replies.send(json).is_err() {
+                break;
+            }
+        }
+    });
+    (child, responses)
+}
+
+#[test]
+#[ignore = "requires exact release executables and fabrico11y.slice"]
+fn application_exact_readback_with_independent_reader() {
+    assert!(
+        fs::read_to_string("/proc/self/cgroup")
+            .unwrap()
+            .contains("/fabrico11y.slice/")
+    );
+    let bins = PathBuf::from(std::env::var_os("FABRIC_TEST_BIN_DIR").unwrap());
+    let sandbox = xtask::evidence::non_tmp_tempdir().unwrap();
+    let root = sandbox.path();
+    let mut source = Node::open(&bins, root, NODE[0].0, NODE[0].1);
+    let beta = Node::open(&bins, root, NODE[1].0, NODE[1].1);
+    let lane = Node::open(&bins, root, NODE[2].0, NODE[2].1);
+    let endpoint = TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .to_string();
+    let credential = root.join("reader");
+    private_file(&credential, READER);
+    let (_server, authority) =
+        receiver(&bins, root, &endpoint, [&source, &beta, &lane], &credential);
+    source.forward(&bins, &endpoint, &authority, None);
+    let outbox = root.join("batch-outbox");
+    let (mut adapter, replies) = open_batch_reader(
+        &bins,
+        &source.config.socket,
+        &outbox,
+        &endpoint,
+        &authority,
+        &credential,
+    );
+    let parent_id = "00000000-0000-4001-8000-000000000001";
+    let child_id = "00000000-0000-4001-8000-000000000002";
+    for (id, parent) in [(parent_id, None), (child_id, Some(parent_id))] {
+        batch_send(
+            &mut adapter,
+            &json!({"command":"record_application","report_id":id,"context":{"run_id":"00000000-0000-4000-8000-000000000001"},"scope":{"origin":source.origin,"producer":"batch-fixture"},"parent_report_id":parent,"schema":"example.result.v1","producer_completion":{"unix_ms":42,"clock":{"clock_id":"producer","source":"fixture","uncertainty_ms":null}},"artifact_json":"{\"value\":1}\n","timestamp_ns":123}),
+        );
+        let response = batch_reply(&replies);
+        assert_eq!(
+            response["delivery_state"], "custody_confirmed",
+            "{response}"
+        );
+    }
+    until(
+        "canonical application handoff",
+        Duration::from_secs(20),
+        || (source.health().canonical_through >= 2).then_some(()),
+    );
+    batch_send(
+        &mut adapter,
+        &json!({"command":"verify_application","report_id":child_id}),
+    );
+    let verified = batch_reply(&replies);
+    assert_eq!(
+        verified["verified_application"]["result"]["report_id"], child_id,
+        "{verified}"
+    );
+    let first = verified["verified_application"]["first_verified_read"].clone();
+    batch_send(
+        &mut adapter,
+        &json!({"command":"read_application_parent","report_id":child_id}),
+    );
+    let parent = batch_reply(&replies);
+    assert_eq!(
+        parent["verified_parent"]["result"]["report_id"], parent_id,
+        "{parent}"
+    );
+    adapter.kill_wait();
+    let (mut adapter, replies) = open_batch_reader(
+        &bins,
+        &source.config.socket,
+        &outbox,
+        &endpoint,
+        &authority,
+        &credential,
+    );
+    batch_send(
+        &mut adapter,
+        &json!({"command":"report_status","report_id":child_id}),
+    );
+    assert_eq!(
+        batch_reply(&replies)["report_status"]["first_verified_read"],
+        first
+    );
+    adapter.kill_wait();
+}
+
 fn batch_record(sequence: u64) -> Value {
     let run_id = format!("00000000-0000-4000-8000-{sequence:012x}");
     json!({

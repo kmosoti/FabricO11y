@@ -859,6 +859,37 @@ fn handle(
                 },
             })
         }
+        Request::ExactReceiptLookup { request } => {
+            if !reader {
+                return Err("read credential required".into());
+            }
+            request.validate()?;
+            if request.authority != reads.authority || !allows(&request.origin) {
+                return Err("canonical authority or origin mismatch".into());
+            }
+            let row = if reads.engine.is_some() {
+                reads
+                    .reader
+                    .lock()
+                    .map_err(|_| "canonical read lock")?
+                    .lookup(&request.origin, &request.identity)?
+            } else {
+                canonical_state(ledger, reads)?.lookup(&request.origin, &request.identity)?
+            };
+            if let Some(row) = &row {
+                let observation = fabric::observation::decode_versioned(row.raw.as_bytes())?;
+                if row.origin != request.origin
+                    || row.source_id != request.source_id
+                    || observation.identity() != &request.identity
+                {
+                    return Err("canonical receipt mismatch".into());
+                }
+            }
+            Ok(Response::ExactReceiptFound {
+                authority: reads.authority.clone(),
+                row,
+            })
+        }
         Request::Progress => {
             let mut frontiers = reads
                 .frontiers
@@ -1301,6 +1332,93 @@ mod receipt_tests {
         );
         server.reads.pressure.store(false, Ordering::Release);
         assert!(reserve(&server.reads, "two", &mut None).is_ok());
+    }
+
+    #[test]
+    fn exact_receipt_lookup_binds_authority_role_origin_and_source() {
+        let (_root, server) = fixture();
+        let raw = serde_json::json!({"version":2,"registry":"fabrico11y/2", "identity":{"producer":"alpha","generation":"sample","sequence":1}, "timestamp_ns":0,"resource":"service","data":{"kind":"log","level":"info","message":"sample"}}).to_string();
+        call(
+            &server,
+            "alpha",
+            Request::Ingest {
+                origin: "alpha".into(),
+                records: vec![ForwardRecord {
+                    source_id: 1,
+                    raw: raw.clone(),
+                }],
+            },
+        )
+        .unwrap();
+        let request = fabric::canonical::ExactReceiptRequest {
+            authority: server.reads.authority.clone(),
+            origin: "alpha".into(),
+            source_id: 1,
+            identity: observation::decode_versioned(raw.as_bytes())
+                .unwrap()
+                .identity()
+                .clone(),
+        };
+        assert!(matches!(
+            call(
+                &server,
+                "reader",
+                Request::ExactReceiptLookup {
+                    request: request.clone()
+                }
+            ),
+            Ok(Response::ExactReceiptFound { row: Some(_), .. })
+        ));
+        assert!(
+            call(
+                &server,
+                "alpha",
+                Request::ExactReceiptLookup {
+                    request: request.clone()
+                }
+            )
+            .is_err()
+        );
+        let mut wrong = request.clone();
+        wrong.authority = "other".into();
+        assert!(
+            call(
+                &server,
+                "reader",
+                Request::ExactReceiptLookup { request: wrong }
+            )
+            .is_err()
+        );
+        let mut wrong = request.clone();
+        wrong.origin = "not-granted".into();
+        assert!(
+            call(
+                &server,
+                "reader",
+                Request::ExactReceiptLookup { request: wrong }
+            )
+            .is_err()
+        );
+        let mut wrong = request.clone();
+        wrong.source_id = 2;
+        assert!(
+            call(
+                &server,
+                "reader",
+                Request::ExactReceiptLookup { request: wrong }
+            )
+            .is_err()
+        );
+        let mut absent = request;
+        absent.identity.sequence = 2;
+        assert!(matches!(
+            call(
+                &server,
+                "reader",
+                Request::ExactReceiptLookup { request: absent }
+            ),
+            Ok(Response::ExactReceiptFound { row: None, .. })
+        ));
     }
 
     #[test]

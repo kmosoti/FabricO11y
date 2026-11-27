@@ -12,10 +12,11 @@ use std::{
 };
 
 const APPLICATION_ID: u32 = u32::from_be_bytes(*b"FBOX");
-const SCHEMA_VERSION: u32 = 2;
+const SCHEMA_VERSION: u32 = 3;
 const MAX_COMPLETION_BYTES: usize = 4096;
 const STAGE_CLOCK: &str = "system_time.unix_ms";
 const STAGE_SOURCE: &str = "batch_outbox.stage_transaction";
+const VERIFIED_SOURCE: &str = "batch_outbox.verified_read_transaction";
 const MAX_REPORTS: u64 = 4096;
 const MAX_DB_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_RECEIPT: usize = 4096;
@@ -49,6 +50,13 @@ const TIMING_SCHEMA: &str = "
         report_id TEXT PRIMARY KEY REFERENCES reports(report_id),
         producer_completion BLOB NOT NULL CHECK(length(producer_completion) BETWEEN 1 AND 4096),
         staged_unix_ms INTEGER NOT NULL
+    ) STRICT;
+";
+
+const VISIBILITY_SCHEMA: &str = "
+    CREATE TABLE verified_read(
+        report_id TEXT PRIMARY KEY REFERENCES reports(report_id),
+        observed_unix_ms INTEGER NOT NULL
     ) STRICT;
 ";
 
@@ -120,7 +128,7 @@ impl Outbox {
                 })
                 .map_err(storage)?;
         if !initialize
-            && (application_id != APPLICATION_ID || !matches!(version, 1 | SCHEMA_VERSION))
+            && (application_id != APPLICATION_ID || !matches!(version, 1 | 2 | SCHEMA_VERSION))
         {
             return Err(BatchError::Storage("unsupported outbox database".into()));
         }
@@ -161,6 +169,9 @@ impl Outbox {
             transaction.execute_batch(SCHEMA).map_err(storage)?;
             transaction.execute_batch(TIMING_SCHEMA).map_err(storage)?;
             transaction
+                .execute_batch(VISIBILITY_SCHEMA)
+                .map_err(storage)?;
+            transaction
                 .execute(
                     "INSERT INTO batch_state(singleton,producer,resource) VALUES(1,?1,?2)",
                     params![producer, resource],
@@ -186,9 +197,14 @@ impl Outbox {
                 "outbox is bound to another producer or resource".into(),
             ));
         }
-        if !initialize && version == 1 {
+        if !initialize && version < SCHEMA_VERSION {
             let transaction = conn.transaction().map_err(storage)?;
-            transaction.execute_batch(TIMING_SCHEMA).map_err(storage)?;
+            if version == 1 {
+                transaction.execute_batch(TIMING_SCHEMA).map_err(storage)?;
+            }
+            transaction
+                .execute_batch(VISIBILITY_SCHEMA)
+                .map_err(storage)?;
             transaction
                 .pragma_update(None, "user_version", SCHEMA_VERSION)
                 .map_err(storage)?;
@@ -360,6 +376,58 @@ impl Outbox {
             })
         })
         .transpose()
+    }
+
+    pub fn verified_read(&self, report_id: &str) -> Result<Option<ProvenancedTime>, BatchError> {
+        let unix_ms: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT observed_unix_ms FROM verified_read WHERE report_id=?1",
+                [report_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(storage)?;
+        Ok(unix_ms.map(|unix_ms| ProvenancedTime {
+            unix_ms,
+            clock: ClockProvenance {
+                clock_id: STAGE_CLOCK.into(),
+                source: VERIFIED_SOURCE.into(),
+                uncertainty_ms: None,
+            },
+        }))
+    }
+
+    pub fn record_verified_read(&mut self, report_id: &str) -> Result<ProvenancedTime, BatchError> {
+        let transaction = self.conn.transaction().map_err(storage)?;
+        let unix_ms: i64 = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(storage)?
+            .as_millis()
+            .try_into()
+            .map_err(storage)?;
+        transaction
+            .execute(
+                "INSERT OR IGNORE INTO verified_read(report_id,observed_unix_ms) VALUES(?1,?2)",
+                params![report_id, unix_ms],
+            )
+            .map_err(storage)?;
+        let stored = transaction
+            .query_row(
+                "SELECT observed_unix_ms FROM verified_read WHERE report_id=?1",
+                [report_id],
+                |row| row.get(0),
+            )
+            .map_err(storage)?;
+        transaction.commit().map_err(storage)?;
+        Ok(ProvenancedTime {
+            unix_ms: stored,
+            clock: ClockProvenance {
+                clock_id: STAGE_CLOCK.into(),
+                source: VERIFIED_SOURCE.into(),
+                uncertainty_ms: None,
+            },
+        })
     }
 
     pub fn pending(&self) -> Result<Option<Pending>, BatchError> {
