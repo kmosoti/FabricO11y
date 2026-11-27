@@ -1,16 +1,3 @@
----
-id: R-0001
-title: Converged Pure-Rust Storage Engine and Five Observability Pillars
-type: research
-status: preliminary
-date: 2026-11-14
-added_by: agent
-human_ratified: false
-related:
-  - D-0002
-  - O-0001
----
-
 # R-0001 · Converged Pure-Rust Storage & Five Observability Pillars
 
 ## Storage Access Patterns & Implementation Tradeoffs

@@ -1,10 +1,3 @@
----
-id: D-0185
-date: 2026-11-19
-added_by: agent
-human_ratified: false
----
-
 # Durable batch reports use the existing Spindle generation
 
 An adapter per terminal report consumes one retained generation per run even

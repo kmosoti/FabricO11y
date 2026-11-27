@@ -19,7 +19,7 @@
 - [ ] Self-preservation invariants respected (`fabrico11y.slice`, `rss_bytes < 100 MiB`, `open_fds < 64`, `tmp_files_created == 0`)
 
 ## Architecture for Human Review
-- **Overall architecture:** [docs/architecture.md](docs/architecture.md)
+- **Overall architecture:** [docs/architecture.md](../docs/architecture.md)
 - **Change diagram:** include a focused Mermaid diagram for changed crate boundaries, telemetry data flow, storage layout, or CI; for prose-only changes explain why no update is needed.
 - **Ownership/trust boundaries and impact:**
 
@@ -33,7 +33,7 @@
   - `...`
 
 ## Knowledge & Documentation
-- **Knowledge records added/updated (`knowledge/`):** `none` (or list IDs with `added_by` and `human_ratified` status)
+- **Knowledge records added/updated (`knowledge/`):** `none` (or list IDs; their metadata is in `knowledge/records.toml`)
 - **Stable docs updated (`docs/`):** `none` (or list files)
 
 ## Merge Readiness & Review Gate (`develop` vs `main`)

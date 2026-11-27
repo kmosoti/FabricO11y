@@ -1,15 +1,3 @@
----
-id: D-0009
-title: Separate Spindle origin for service telemetry
-type: decision
-status: accepted
-date: 2026-11-18
-added_by: agent
-human_ratified: false
-related:
-  - D-0003
----
-
 # Separate Spindle origin for service telemetry
 
 Sharing a workload origin would couple its contiguous forwarding prefix to

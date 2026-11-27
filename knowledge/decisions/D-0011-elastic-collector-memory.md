@@ -1,10 +1,3 @@
----
-id: D-0011
-date: 2026-11-18
-added_by: agent
-human_ratified: false
----
-
 # Elastic collector memory
 
 Use the lowest finite ancestor cgroup memory threshold for the automatic

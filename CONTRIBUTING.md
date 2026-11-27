@@ -107,7 +107,7 @@ Export `TMPDIR=/data/tmp`, `CARGO_BUILD_TARGET_DIR=/data/cargo-target`, and
 
 Follow the product constraints in [the direction document](docs/direction.md) and
 [architecture specification](docs/architecture.md).
-Keep changes focused, preserve existing behavior and Sans-I/O boundaries (`admission-kernel`, `fabric-core`, `fabric-graph`), make errors and resource limits explicit, and keep optional frontend dependencies out of headless builds. Update `knowledge/` records (`added_by: agent`, `human_ratified: false`) alongside code changes.
+Keep changes focused, preserve existing behavior and Sans-I/O boundaries (`admission-kernel`, `fabric-core`, `fabric-graph`), make errors and resource limits explicit, and keep optional frontend dependencies out of headless builds. When adding or updating a knowledge record, keep its content in Markdown and its provenance, ratification state, and relations in [`knowledge/records.toml`](knowledge/records.toml).
 
 ## Verification
 
@@ -119,6 +119,10 @@ cargo xtask check --tier medium
 cargo xtask check --tier extensive
 cargo xtask check --tier acceptance
 ```
+
+Every `check --tier` run also validates the Markdown inventory, local links,
+reference definitions, fences, knowledge graph references, and metadata rules.
+Run `cargo xtask documentation` alone when you only need those checks.
 
 | Tier | Checks |
 | --- | --- |

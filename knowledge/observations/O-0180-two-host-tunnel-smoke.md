@@ -1,10 +1,3 @@
----
-id: O-0180
-date: 2026-11-18
-added_by: agent
-human_ratified: false
----
-
 # Release deployment and physical two-host qualification
 
 The release executables were built with Rust 1.100.0 from

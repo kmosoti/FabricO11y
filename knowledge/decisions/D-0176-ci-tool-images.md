@@ -1,9 +1,3 @@
----
-added_by: agent
-human_ratified: false
-date: 2026-11-18
----
-
 # D-0176 · Qualify Fedora tool images before adoption
 
 The existing proof tools are provisioned per job or restored from a large

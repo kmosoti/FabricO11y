@@ -1,10 +1,3 @@
----
-id: D-0008
-created: 2026-11-18
-added_by: agent
-human_ratified: false
----
-
 # Reuse collected host samples for fleet evidence
 
 A local host collector already reads pressure, memory, cgroups, systemd unit

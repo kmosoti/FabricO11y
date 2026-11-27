@@ -1,16 +1,3 @@
----
-id: D-0192
-title: Headless Defaults and an Optional Frontend
-type: decision
-status: accepted
-date: 2026-11-26
-added_by: agent
-human_ratified: false
-related:
-  - D-0002
-  - D-0190
----
-
 # D-0192 · Headless defaults and an optional frontend
 
 The headless deployment and typed Rust client remain supported. This decision

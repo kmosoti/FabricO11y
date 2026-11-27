@@ -1,10 +1,3 @@
----
-id: O-0188
-date: 2026-11-18
-added_by: agent
-human_ratified: false
----
-
 # Offline CI qualification and retained hosted evidence
 
 The [paired native trial](https://github.com/kmosoti/FabricO11y/actions/runs/44415669269)

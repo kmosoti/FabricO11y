@@ -1,16 +1,3 @@
----
-id: D-0006
-title: Product Toolchain and Verifier Cache Provenance
-type: decision
-status: accepted
-date: 2026-11-18
-added_by: agent
-human_ratified: false
-related:
-  - D-0001
-  - D-0003
----
-
 # D-0006 · Product Toolchain and Verifier Cache Provenance
 
 Product CI pins Rust 1.100.0. Verus and Charon keep the compiler versions

@@ -1,17 +1,3 @@
----
-id: R-0002
-title: Formal Proofs and Fuzz Verification for Converged Telemetry Predicates
-type: research
-status: preliminary
-date: 2026-11-15
-added_by: agent
-human_ratified: false
-related:
-  - R-0001
-  - D-0002
-  - O-0001
----
-
 # R-0002 · Formal Proofs & Fuzz Verification for Converged Telemetry Predicates
 
 ## Verification Coverage Split

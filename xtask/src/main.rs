@@ -6,6 +6,7 @@ use std::{
 mod architecture;
 mod benchmark;
 mod coverage;
+mod documentation;
 use xtask::evidence;
 mod extraction;
 mod fuzz;
@@ -112,6 +113,7 @@ fn capture_to(root: &Path, file: &Path) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 fn workspace_checks(root: &Path, include_lints: bool) -> Result<(), String> {
+    documentation::check(root)?;
     coverage::validate(root)?;
     registry::check(root, false)?;
     run("cargo", &["fmt", "--all", "--", "--check"], root)?;
@@ -369,6 +371,7 @@ fn main() -> ExitCode {
         ["prove"] => proof::check("verus", &root),
         ["prove", checker] => proof::check(checker, &root),
         ["architecture"] => architecture::check(&root),
+        ["documentation"] => documentation::check(&root),
         ["coverage", "validate"] => coverage::validate(&root),
         ["coverage", "check"] => coverage::run(&root),
         ["guide", "wiki", revision] => guide::wiki(&root, revision),
@@ -382,7 +385,7 @@ fn main() -> ExitCode {
         ["candidate", "capture", file] => capture_to(&root, Path::new(file)),
         ["candidate", "verify", file] => verify(&root, Path::new(file)),
         _ => Err(
-            "usage: integration verify FILE | doctor | prove | check --tier fast|medium|extensive|acceptance | check --group workspace|workflow|native | candidate capture|verify FILE | coverage validate|check | guide wiki REVISION"
+            "usage: integration verify FILE | doctor | prove | check --tier fast|medium|extensive|acceptance | check --group workspace|workflow|native | candidate capture|verify FILE | coverage validate|check | documentation | guide wiki REVISION"
                 .into(),
         ),
     };

@@ -1,15 +1,3 @@
----
-id: D-0181
-title: Versioned TOML configuration for observability services
-type: decision
-status: accepted
-date: 2026-11-18
-added_by: agent
-human_ratified: false
-related:
-  - D-0010
----
-
 # Versioned TOML configuration for observability services
 
 Fabric, Spindle, and Fabric Server share one bounded configuration file loader.

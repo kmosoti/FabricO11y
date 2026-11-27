@@ -1,15 +1,3 @@
----
-id: D-0004
-title: Local Collection and One Canonical Authority
-type: decision
-status: accepted
-date: 2026-11-18
-added_by: agent
-human_ratified: false
-related:
-  - D-0003
----
-
 # D-0004 · Local Collection and One Canonical Authority
 
 Retain independent local custody and projection on each host. A multi-host
