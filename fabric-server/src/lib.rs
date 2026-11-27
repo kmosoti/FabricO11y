@@ -1271,7 +1271,11 @@ mod receipt_tests {
         (root, server)
     }
 
-    fn call(server: &Server, credential: &str, request: Request) -> Result<Response, String> {
+    fn test_grant(
+        server: &Server,
+        credential: &str,
+        request: &Request,
+    ) -> handshake::AuthenticatedGrant {
         let auth = handshake::HandshakeAuth {
             reader: server.auth.reader.clone(),
             nodes: server.auth.nodes.clone(),
@@ -1285,14 +1289,17 @@ mod receipt_tests {
         };
         let client_nonce = canonical::random_nonce_hex().unwrap();
         let server_nonce = canonical::random_nonce_hex().unwrap();
-        let bytes = serde_json::to_vec(&request).unwrap();
+        let bytes = serde_json::to_vec(request).unwrap();
         let proof = canonical::build_client_proof(secret, &client_nonce, &server_nonce, &bytes);
         let peer = auth
             .verify_proof(&client_nonce, &server_nonce, &proof.proof)
             .unwrap();
-        let grant = peer
-            .verify_request(&client_nonce, &server_nonce, &bytes, &proof.request_mac)
-            .unwrap();
+        peer.verify_request(&client_nonce, &server_nonce, &bytes, &proof.request_mac)
+            .unwrap()
+    }
+
+    fn call(server: &Server, credential: &str, request: Request) -> Result<Response, String> {
+        let grant = test_grant(server, credential, &request);
         handle(
             &grant,
             request,
@@ -1373,7 +1380,7 @@ mod receipt_tests {
         };
         let mut wrote = false;
         respond(
-            Ok((true, None, None, request)),
+            Ok((test_grant(&server, "reader", &request), request)),
             &server.ledger,
             &server.projection,
             &server.auth,
