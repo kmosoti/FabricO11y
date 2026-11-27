@@ -302,6 +302,15 @@ added_by = "agent"
 human_ratified = false
 
 [[records]]
+id = "D-0196"
+source_path = "knowledge/decisions/D-0196-application-results.md"
+title = "Bounded application result identity"
+type = "decision"
+date = 2026-11-27
+added_by = "agent"
+human_ratified = false
+
+[[records]]
 id = "D-0195"
 source_path = "knowledge/decisions/D-0195-operation-lifecycle.md"
 title = "Runtime-neutral operation lifecycles"

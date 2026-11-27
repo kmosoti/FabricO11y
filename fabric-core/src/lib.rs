@@ -2,6 +2,7 @@
 //! Five Data Observability Pillar evaluators, and Arrow IPC schemas.
 
 pub mod anomaly;
+pub mod application_result;
 pub mod arrow_schemas;
 pub mod evidence_manifest;
 pub mod guide;
@@ -15,6 +16,9 @@ pub mod terminal;
 pub use anomaly::{
     AnomalyScore, DriftContext, DriftReport, EwmaMadDetector, PillarFinding, PillarKind, Severity,
     evaluate_five_pillars,
+};
+pub use application_result::{
+    ApplicationPayloadDigest, ApplicationResult, ApplicationResultError, ReportScope,
 };
 pub use arrow_schemas::{
     BLAME_SCHEMA, FS_EVENTS_SCHEMA, GRAPH_EDGES_SCHEMA, LINEAGE_NODES_SCHEMA, LOGS_SCHEMA,
