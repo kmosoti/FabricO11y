@@ -44,18 +44,24 @@ facts and review assertions are not trusted. Store the evidence outside the cand
 1. Query the live repository and PR: require an open, non-draft PR targeting
    `develop`, capture its current base and head, and reject conflicts or an
    unavailable merge preview. Inspect the preview Git commit and tree: its two
-   ordered parents must be the live base and head. Derive changed paths from
+   ordered parents must be the live base and head. Independently inspect the head
+   tree and require it to equal the preview tree. Collect the ordered commit
+   chain from the exact base through the head; each commit must have exactly
+   one parent, the preceding commit. Reject missing, divergent or merge-commit
+   chains. Derive changed paths from
    the base to the preview tree, including both old and new paths for renames.
 2. Identify the implementation author independently of the GitHub account that
    posts the PR. Obtain a review in a separate context by a distinct reviewer,
    bound to repository, PR, base, head and preview tree. Record the reviewer,
-   implementation author, independent context and review receipt reference.
+   implementation author, independent context, affirmative approval and review
+   receipt reference.
    Review the complete diff for protected semantics, including changes outside
    the inventory; set `semantic_review_required` when that inspection identifies
    protected semantics, and record the specific semantics reviewed when relevant. A shared
    public GitHub identity used to post work is not itself independent approval.
 3. Identify the `pull_request` run of `.github/workflows/development-checks.yml`
-   for the candidate and the same run attempt's successful `verify` and
+   for the candidate, using the latest applicable run and its latest attempt,
+   and the same run attempt's successful `verify` and
    `native-acceptance` jobs. Record their unique job IDs and the checkout commit
    from each hosted job's checkout log, not the run summary's head SHA. Correlate
    the run's source branch/head and checkout preview with the PR and ordered
@@ -73,10 +79,13 @@ facts and review assertions are not trusted. Store the evidence outside the cand
    dispatcher and manifest. This inventory is a conservative floor, not a
    complete classifier of semantic changes.
 5. While holding the integration serialization lock, re-query the PR, develop,
-   merge preview, run and review immediately before landing. If any bound fact
+   merge preview, latest applicable run and attempt, and review immediately
+   before landing. If any bound fact
    changes, stop and repeat collection, review and checks. Land one PR using
    `gh pr merge <number> --rebase --match-head-commit <verified-head>` and
-   verify the resulting develop ref before proceeding. If an actor can update
+   verify the actual resulting develop tree equals the tested preview tree and
+   that its history from the verified base is linear before proceeding. Stop and
+   investigate any mismatch; a rebase creates different commit IDs. If an actor can update
    develop outside the lock, serialization is not assured: stop and coordinate
    that actor. The head guard alone is not a base compare-and-swap.
 

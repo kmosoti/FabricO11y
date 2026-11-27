@@ -19,7 +19,8 @@
     "reviewer": "independent-reviewer",
     "independent_context": "fresh-review-context",
     "receipt": "review-record-reference",
-    "semantic_scope": "reviewed theorem and assumptions"
+    "semantic_scope": "reviewed theorem and assumptions",
+    "approved": true
   },
   "base_ref": "develop",
   "pr_open": true,
@@ -62,5 +63,14 @@
   },
   "implementation_author": "implementation-agent",
   "pr_draft": false,
-  "semantic_review_required": true
+  "semantic_review_required": true,
+  "head_tree": "cccccccccccccccccccccccccccccccccccccccc",
+  "linear_commits": [
+    {
+      "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "parents": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ]
+    }
+  ]
 }
