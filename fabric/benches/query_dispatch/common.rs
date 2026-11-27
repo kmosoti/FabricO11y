@@ -23,9 +23,20 @@ fn handle(request: &QueryRequest, tag: u64) -> QueryResponse {
         Operation::Activity { bucket_ns } => bucket_ns,
         _ => 0,
     };
+    // Synthetic but distinct response shapes for each real query variant.
+    let row = match tag {
+        0 => serde_json::json!({"operation": 0, "schemas": ["1"]}),
+        1 => serde_json::json!({"operation": 1, "run_id": "run-1"}),
+        2 => serde_json::json!({"operation": 2, "run_id": "run-1", "events": "12"}),
+        3 => serde_json::json!({"operation": 3, "tool": "compiler", "count": "3"}),
+        4 => serde_json::json!({"operation": 4, "service": "worker", "count": "4"}),
+        5 => serde_json::json!({"operation": 5, "bucket_ns": n.to_string(), "count": "5"}),
+        6 => serde_json::json!({"operation": 6, "evidence_id": "42"}),
+        _ => unreachable!(),
+    };
     QueryResponse {
         version: request.version,
-        rows: vec![serde_json::json!({"operation": tag, "bucket": n})],
+        rows: vec![row],
         coverage: Coverage {
             canonical_authority: "fixture".into(),
             scope: vec!["fixture".into()],
@@ -77,16 +88,15 @@ impl Handler for Choice {
     }
 }
 #[inline(never)]
-fn static_dispatch(i: usize, r: &QueryRequest) -> QueryResponse {
-    match i {
-        0 => H::<0>.call(r),
-        1 => H::<1>.call(r),
-        2 => H::<2>.call(r),
-        3 => H::<3>.call(r),
-        4 => H::<4>.call(r),
-        5 => H::<5>.call(r),
-        6 => H::<6>.call(r),
-        _ => unreachable!(),
+fn static_dispatch(r: &QueryRequest) -> QueryResponse {
+    match &r.operation {
+        Operation::Capabilities => H::<0>.call(r),
+        Operation::ListRuns => H::<1>.call(r),
+        Operation::RunSummary => H::<2>.call(r),
+        Operation::ToolSummary => H::<3>.call(r),
+        Operation::ServiceSummary => H::<4>.call(r),
+        Operation::Activity { .. } => H::<5>.call(r),
+        Operation::Evidence => H::<6>.call(r),
     }
 }
 #[inline(never)]
@@ -95,15 +105,40 @@ fn dyn_dispatch(h: &dyn Handler, r: &QueryRequest) -> QueryResponse {
 }
 fn dispatch(
     mode: &str,
-    i: usize,
     r: &QueryRequest,
-    choices: &[Choice],
     dynamic: &[&dyn Handler],
+    corrupt: bool,
 ) -> QueryResponse {
+    // The negative control routes Activity to the Evidence handler.
+    if corrupt && matches!(r.operation, Operation::Activity { .. }) {
+        return H::<6>.call(r);
+    }
     match mode {
-        "static" => static_dispatch(black_box(i), r),
-        "enum" => choices[black_box(i)].call(r),
-        "dyn" => dyn_dispatch(dynamic[black_box(i)], r),
+        "static" => static_dispatch(r),
+        "enum" => {
+            let choice = match &r.operation {
+                Operation::Capabilities => Choice::A,
+                Operation::ListRuns => Choice::B,
+                Operation::RunSummary => Choice::C,
+                Operation::ToolSummary => Choice::D,
+                Operation::ServiceSummary => Choice::E,
+                Operation::Activity { .. } => Choice::F,
+                Operation::Evidence => Choice::G,
+            };
+            black_box(choice).call(r)
+        }
+        "dyn" => {
+            let handler = match &r.operation {
+                Operation::Capabilities => dynamic[0],
+                Operation::ListRuns => dynamic[1],
+                Operation::RunSummary => dynamic[2],
+                Operation::ToolSummary => dynamic[3],
+                Operation::ServiceSummary => dynamic[4],
+                Operation::Activity { .. } => dynamic[5],
+                Operation::Evidence => dynamic[6],
+            };
+            dyn_dispatch(black_box(handler), r)
+        }
         _ => panic!("invalid mode"),
     }
 }
@@ -133,15 +168,6 @@ pub fn run(mode: &str) {
     .into_iter()
     .map(request)
     .collect::<Vec<_>>();
-    let choices = [
-        Choice::A,
-        Choice::B,
-        Choice::C,
-        Choice::D,
-        Choice::E,
-        Choice::F,
-        Choice::G,
-    ];
     let dynamic: [&dyn Handler; 7] = [
         &H::<0>, &H::<1>, &H::<2>, &H::<3>, &H::<4>, &H::<5>, &H::<6>,
     ];
@@ -150,14 +176,10 @@ pub fn run(mode: &str) {
         .enumerate()
         .map(|(i, r)| handle(r, i as u64))
         .collect();
-    let mut actual: Vec<_> = requests
+    let actual: Vec<_> = requests
         .iter()
-        .enumerate()
-        .map(|(i, r)| dispatch(mode, i, r, &choices, &dynamic))
+        .map(|r| dispatch(mode, r, &dynamic, corrupt))
         .collect();
-    if corrupt {
-        actual[5].rows[0]["operation"] = serde_json::json!(99);
-    }
     let expected_hash = digest(&expected);
     let actual_hash = digest(&actual);
     assert_eq!(actual_hash, expected_hash, "dispatch outputs differ");
@@ -165,7 +187,7 @@ pub fn run(mode: &str) {
     let mut checksum = 0u64;
     for n in 0..iterations {
         let i = n % requests.len();
-        let output = dispatch(mode, i, black_box(&requests[i]), &choices, &dynamic);
+        let output = dispatch(mode, black_box(&requests[i]), &dynamic, false);
         checksum = checksum.wrapping_add(black_box(output.rows[0]["operation"].as_u64().unwrap()));
     }
     let elapsed = start.elapsed().as_nanos();
