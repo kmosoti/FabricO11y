@@ -4,8 +4,8 @@
 
 ## Core Architectural Principles
 
-1. **Zero UI Scope (`fabric` CLI Only):**
-   - Operators and autonomous orchestrators (`agy`, `Metron`, CI harnesses) query telemetry strictly via the `fabric` CLI (`--json`, `--arrow`, `--table`) or the typed MCP server (`fabric-mcp`). Web UIs, browser bundles, and HTTP UI servers are out of scope.
+1. **Headless by default:**
+   - Operators and automation can query telemetry through the `fabric` CLI, the typed Rust client, and MCP. Optional web and desktop packages reuse the same authorized read contracts. Installing a frontend is explicit and starts no collectors or network listeners by default.
 2. **Human + Agent + Host Telemetry as First-Class Signals:**
    - Cgroup v2 slice accounting (`app.slice`, `agent.slice`, `session.slice`, `fabrico11y.slice`, `system.slice`), kernel PSI (`/proc/pressure/*`), `/sys/block/zram0/mm_stat`, `tmpfs` and disk filesystem churn (`/tmp`, `/data/tmp`, `~/.cache`, `target/`), unlinked open descriptors, and systemd transient unit `--collect` hygiene share the same causal graph (`fabric-graph`) and storage plane (`fabric-store`) as application traces, metrics, and logs.
 3. **Zero-Daemon Converged Pure-Rust Storage (`/data/fabrico11y`):**

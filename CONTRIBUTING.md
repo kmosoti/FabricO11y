@@ -11,17 +11,39 @@ git config commit.template .github/.gitmessage
 Write repository utilities and tests in Rust under `xtask`. Keep CI bootstrap
 scripts under `.github` and linked architecture rationale under `knowledge/`.
 
-## Two-Branch Stacked Workflow
+## Two-branch stacked workflow
 
-- **`develop` (day-to-day integration):** Develop atomic linear commits on stacked Jujutsu bookmarks (`stack/<topic>/01-...`). Before landing onto `develop`, PRs must pass `development-checks.yml`, include focused Mermaid diagrams in [`docs/architecture.md`](docs/architecture.md) when boundaries/dataflows change, and receive an independent standard/medium-reasoning review (preferring an alternative model family). Rebase-only linear history is required.
-- **`main` (human-gated release):** Updated exclusively by promotion PRs from `develop`, gated by `.github/workflows/main-human-gate.yml` (`main-release` environment). Autonomous agents never merge into `main` or approve `main-release`.
-- **Storage discipline:** Export `TMPDIR=/data/tmp`, `CARGO_BUILD_TARGET_DIR=/data/cargo-target`, and `FABRIC_DATA_DIR=/data/fabrico11y` locally (or `/var/tmp/...` in ephemeral containers) — never write scratch or target artifacts to RAM-backed `/tmp`.
+Create isolated colocated Jujutsu changes and export only the bookmarks you
+intend to publish. The first pull request targets `develop`. Each dependent
+pull request targets its predecessor. Publish under the authorized collaborator
+identity. GitHub CLI 2.97.0 and `github/gh-stack` 0.3.0 support this bridge:
+
+```sh
+jj git push --remote origin --bookmark stack/topic/01-change --bookmark stack/topic/02-followup
+gh stack link --base develop <lower-pr-url> <upper-pr-url>
+```
+
+Open the PRs with their intended bases before linking them by URL. Review each
+diff, wait for `verify` and `native-acceptance` on its current merge candidate,
+and review policy, schema, authorization and proof changes independently.
+GitHub can request a CODEOWNERS review on develop. Only main enforces the
+owner's pull request review. On a lower-layer amendment, rebase
+its dependents and rerun their evidence. Integrate one layer at a time by rebase,
+then retarget the next PR and recheck its actual base and head. Require an
+independent review for agent-authored work.
+
+Only the owner promotes `develop` into `main` and publishes releases. Follow the
+[promotion runbook](docs/release-promotion.md).
+
+Export `TMPDIR=/data/tmp`, `CARGO_BUILD_TARGET_DIR=/data/cargo-target`, and
+`FABRIC_DATA_DIR=/data/fabrico11y` locally. Hosted containers use disk-backed
+`/var/tmp`.
 
 ## Changes
 
 Follow the product constraints in [the direction document](docs/direction.md) and
 [architecture specification](docs/architecture.md).
-Keep changes focused, preserve existing behavior and Sans-I/O boundaries (`admission-kernel`, `fabric-core`, `fabric-graph`), make errors and resource limits explicit, and keep UI/frontend scope out of the repository. Update `knowledge/` records (`added_by: agent`, `human_ratified: false`) alongside code changes.
+Keep changes focused, preserve existing behavior and Sans-I/O boundaries (`admission-kernel`, `fabric-core`, `fabric-graph`), make errors and resource limits explicit, and keep optional frontend dependencies out of headless builds. Update `knowledge/` records (`added_by: agent`, `human_ratified: false`) alongside code changes.
 
 ## Verification
 

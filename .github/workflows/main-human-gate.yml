@@ -2,59 +2,73 @@ name: Main Branch Human Gate
 
 on:
   pull_request:
-    branches:
-      - main
-    types:
-      - opened
-      - synchronize
-      - reopened
-      - ready_for_review
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review, edited]
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
-  group: main-human-gate-${{ github.event.pull_request.number || github.ref }}
+  group: main-human-gate-${{ github.event.pull_request.number }}
   cancel-in-progress: true
+
+env:
+  PROMOTION_PR: ${{ github.event.pull_request.number }}
+  BASE_REF: ${{ github.event.pull_request.base.ref }}
+  BASE_SHA: ${{ github.event.pull_request.base.sha }}
+  RELEASE_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+  RELEASE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+  HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
 
 jobs:
   verify-promotion-source:
     name: verify-promotion-source
-    if: github.event.pull_request.base.ref == 'main'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    outputs:
+      candidate-digest: ${{ steps.freeze.outputs.candidate-digest }}
     steps:
-      - name: Enforce promotion only from same-repo develop branch
+      - name: Freeze the promotion candidate
+        id: freeze
         env:
-          BASE_REF: ${{ github.base_ref }}
-          RELEASE_HEAD_REF: ${{ github.head_ref }}
-          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
-          BASE_REPO: ${{ github.repository }}
-        run: |
-          if [ "$BASE_REF" != "main" ]; then
-            echo "::error::Promotion check only permits base branch main, got $BASE_REF"
-            exit 1
-          fi
-          if [ "$HEAD_REPO" != "$BASE_REPO" ]; then
-            echo "::error::PRs into main must originate from $BASE_REPO, got $HEAD_REPO"
-            exit 1
-          fi
-          if [ "$RELEASE_HEAD_REF" != "develop" ]; then
-            echo "::error::Only the develop branch may promote into main, got $RELEASE_HEAD_REF"
-            exit 1
-          fi
+          GH_TOKEN: ${{ github.token }}
+          PROMOTION_PHASE: freeze
+        run: &check-candidate |
+          set -euo pipefail
+          api="repos/$GITHUB_REPOSITORY"
+          test "$BASE_REF" = main
+          test "$RELEASE_HEAD_REF" = develop
+          test "$HEAD_REPO" = "$GITHUB_REPOSITORY"
+          test "$(gh api "$api/git/ref/heads/main" --jq .object.sha)" = "$BASE_SHA"
+          test "$(gh api "$api/git/ref/heads/develop" --jq .object.sha)" = "$RELEASE_HEAD_SHA"
+          gh api "$api/pulls/$PROMOTION_PR" | jq -e \
+            --arg repo "$GITHUB_REPOSITORY" --arg base "$BASE_SHA" --arg head "$RELEASE_HEAD_SHA" \
+            '.state == "open" and .draft == false
+             and .base.ref == "main" and .base.sha == $base and .base.repo.full_name == $repo
+             and .head.ref == "develop" and .head.sha == $head and .head.repo.full_name == $repo' >/dev/null
+          tree=$(gh api "$api/git/commits/$RELEASE_HEAD_SHA" --jq .tree.sha)
+          test "$(gh api "$api/git/commits/$GITHUB_SHA" --jq .tree.sha)" = "$tree"
+          manifest=$(printf 'repository=%s\npull_request=%s\nbase=%s\nhead=%s\ntree=%s\n' \
+            "$GITHUB_REPOSITORY" "$PROMOTION_PR" "$BASE_SHA" "$RELEASE_HEAD_SHA" "$tree")
+          digest=$(printf '%s\n' "$manifest" | sha256sum | cut -d' ' -f1)
+          case "$PROMOTION_PHASE" in
+            freeze) printf 'candidate-digest=%s\n' "$digest" >> "$GITHUB_OUTPUT" ;;
+            approved) test "$digest" = "$APPROVED_DIGEST" ;;
+            *) exit 1 ;;
+          esac
+          printf '### Promotion candidate\n\n```text\n%s\nsha256=%s\n```\n' "$manifest" "$digest" >> "$GITHUB_STEP_SUMMARY"
 
   main-human-approval:
     name: main-human-approval
-    if: github.event.pull_request.base.ref == 'main'
     needs: [verify-promotion-source]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     environment: main-release
     steps:
-      - name: Verify human release approval for main
+      - name: Recheck the approved candidate against live main and develop
         env:
-          RELEASE_HEAD_REF: ${{ github.head_ref }}
-          RELEASE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          echo "Human reviewer approved promotion of $RELEASE_HEAD_REF ($RELEASE_HEAD_SHA) into main."
+          GH_TOKEN: ${{ github.token }}
+          PROMOTION_PHASE: approved
+          APPROVED_DIGEST: ${{ needs.verify-promotion-source.outputs.candidate-digest }}
+        run: *check-candidate

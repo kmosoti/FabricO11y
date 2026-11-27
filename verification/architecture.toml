@@ -1,3 +1,8 @@
+# The default distribution and typed client resolve without renderer dependencies.
+[headless]
+roots = ["fabric-cli", "fabric-client", "fabric-mcp", "fabric-server"]
+renderer_families = ["leptos", "tauri", "wgpu"]
+
 # Direct dependency boundaries, including test dependencies.
 [crates]
 admission-kernel = ["vstd"]

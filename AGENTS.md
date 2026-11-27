@@ -6,8 +6,8 @@ Read [README.md](README.md), [docs/architecture.md](docs/architecture.md), [docs
 
 - Use the existing user-installed `jj` from `PATH` with its colocated Git backend for snapshots, atomic commits, and stacked bookmarks (`stack/<topic>/01-...`). Configure `git config commit.template .github/.gitmessage`.
 - **Two-branch model:**
-  - `develop`: day-to-day agent integration branch fed by linear `jj` stacks after CI (`development-checks.yml`) and independent review (prefer an alternative model family or a fresh independent standard/medium-reasoning reviewer context).
-  - `main`: human-gated release branch promoted strictly from `develop` via PR and protected by the `main-release` GitHub Environment ([`.github/workflows/main-human-gate.yml`](.github/workflows/main-human-gate.yml)).
+  - `develop`: integration branch. Land linear `jj` stacks bottom-up after current-base CI and independent review. Use the non-admin collaborator account for agent PRs. Independent review covers protected policy and trust boundaries.
+  - `main`: human release branch. Promote same-repository `develop` through a PR bound to the exact candidate and protected by `main-release`. The owner performs promotion, tagging and release approval. Follow the [promotion runbook](docs/release-promotion.md).
 - **Hard publication constraints:** Never push directly to `main`, never merge into `main`, never approve `main-release`, and never rewrite verified commits without updating verification receipts. Keep `archive/*` and `stack/*` bookmarks local unless explicitly asked to publish.
 
 ## Storage Routing, Zero `/tmp`, and Self-Preservation
@@ -16,7 +16,7 @@ Read [README.md](README.md), [docs/architecture.md](docs/architecture.md), [docs
   - `CARGO_BUILD_TARGET_DIR=/data/cargo-target`
   - `TMPDIR=/data/tmp`
   - `FABRIC_DATA_DIR=/data/fabrico11y`
-- **Zero UI scope:** Never reintroduce `fabric-view`, HTML/JS/CSS dashboards, or web UI servers. All operator and agent consumption goes through the deterministic `fabric` CLI (`--json`, `--arrow`, `--table`).
+- **Headless by default:** Keep the backend, CLI, MCP, and typed client free of renderer dependencies. Optional, separately packaged frontends use the shared typed boundary and require explicit installation.
 - **Slice confinement:** Daemon/collection tests and resident `fabric daemon` runs operate inside `fabrico11y.slice` (`MemoryHigh=256M`, `MemoryMax=512M`, `CPUQuota=15%`, `IOWeight=30`, `TasksMax=64`), keeping RSS `< 100 MiB` (`< 200 MiB` self-shedding ceiling) and open FDs `< 64`.
 - **Transient systemd test units:** Whenever invoking `systemd-run` for tests or agent tools, always pass `--collect` (`CollectMode=inactive-or-failed`) so finished or failed units never leak in `systemd --user` RAM.
 

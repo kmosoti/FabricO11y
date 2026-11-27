@@ -9,62 +9,77 @@ fn main_human_gate_and_ci_workflows_enforce_promotion_invariants() {
     let gate_path = repo_root().join(".github/workflows/main-human-gate.yml");
     let gate = fs::read_to_string(&gate_path).expect("read main-human-gate.yml");
 
-    // Human approval and promotion source checks run exclusively on PRs targeting main.
-    assert!(gate.contains("pull_request:"));
-    assert!(gate.contains("- main"));
-    assert!(!gate.contains("pull_request_target:"));
-    assert!(!gate.contains("push:"));
-    assert!(!gate.contains("workflow_dispatch:"));
-    assert!(!gate.contains("actions/checkout"));
-    assert!(gate.contains("permissions:\n  contents: read"));
-    assert!(gate.contains("concurrency:"));
-    assert!(gate.contains("main-human-gate-${{ github.event.pull_request.number || github.ref }}"));
-    assert!(gate.contains("verify-promotion-source:"));
-    assert!(gate.contains("name: verify-promotion-source"));
-    assert!(gate.contains("if: github.event.pull_request.base.ref == 'main'"));
-    assert!(gate.contains("github.base_ref"));
-    assert!(gate.contains("github.head_ref"));
-    assert!(gate.contains("github.event.pull_request.head.repo.full_name"));
-    assert!(gate.contains("BASE_REF\" != \"main\""));
-    assert!(gate.contains("RELEASE_HEAD_REF\" != \"develop\""));
-    assert!(gate.contains("HEAD_REPO\" != \"$BASE_REPO\""));
-    assert!(gate.contains("main-human-approval:"));
-    assert!(gate.contains("name: main-human-approval"));
-    assert!(gate.contains("needs: [verify-promotion-source]"));
-    assert!(gate.contains("environment: main-release"));
-    assert!(gate.contains("RELEASE_HEAD_SHA"));
+    for required in [
+        "pull_request:",
+        "branches: [main]",
+        "opened, synchronize, reopened, ready_for_review, edited",
+        "permissions:\n  contents: read\n  pull-requests: read",
+        "name: verify-promotion-source",
+        "name: main-human-approval",
+        "needs: [verify-promotion-source]",
+        "environment: main-release",
+        "pull_request.base.sha",
+        "pull_request.head.sha",
+        "git/ref/heads/main",
+        "git/ref/heads/develop",
+        "git/commits/$GITHUB_SHA",
+        "steps.freeze.outputs.candidate-digest",
+        "needs.verify-promotion-source.outputs.candidate-digest",
+        "PROMOTION_PHASE: approved",
+        "approved) test \"$digest\" = \"$APPROVED_DIGEST\"",
+        "run: *check-candidate",
+    ] {
+        assert!(gate.contains(required), "missing gate contract: {required}");
+    }
 
-    // Legacy split promotion-source workflow must be removed so develop PRs/pushes stay clean.
-    let src_path = repo_root().join(".github/workflows/main-promotion-source.yml");
+    for forbidden in [
+        "pull_request_target:",
+        "push:",
+        "workflow_dispatch:",
+        "actions/checkout",
+    ] {
+        assert!(
+            !gate.contains(forbidden),
+            "unexpected gate behavior: {forbidden}"
+        );
+    }
     assert!(
-        !src_path.exists(),
-        "main-promotion-source.yml must be removed"
+        !repo_root()
+            .join(".github/workflows/main-promotion-source.yml")
+            .exists()
     );
 
-    // Development checks must target develop only (avoiding duplicate main+develop triggers),
-    // isolate fuzz target binaries outside the repo, and save caches only on develop pushes.
     let dev_path = repo_root().join(".github/workflows/development-checks.yml");
     let dev = fs::read_to_string(&dev_path).expect("read development-checks.yml");
-    assert!(dev.contains("pull_request:\n  push:\n    branches: [develop]"));
-    assert!(!dev.contains("branches: [main, develop]"));
-    assert!(
-        dev.contains("development-checks-${{ github.event.pull_request.number || github.ref }}")
-    );
-    assert!(dev.contains("cancel-in-progress: ${{ github.event_name == 'pull_request' }}"));
-    assert!(dev.contains("CARGO_BUILD_JOBS: '4'"));
-    assert!(dev.contains("LEAN_NUM_THREADS: '4'"));
-    assert!(dev.contains("FABRIC_FUZZ_TARGET_DIR: /github/home/.cache/fabrico11y-fuzz-target"));
-    assert!(dev.contains(
-        "FABRIC_FUZZ_SMOKE_SECONDS: ${{ github.event_name == 'pull_request' && '15' || '60' }}"
-    ));
-    assert!(dev.contains("verify:"));
-    assert!(dev.contains("native-acceptance:"));
-    assert!(dev.contains("timeout-minutes:"));
-    assert!(dev.contains("./.github/actions/restore-ci-cache"));
-    assert!(dev.contains("./.github/actions/save-ci-cache"));
+    for required in [
+        "branches: [main, develop, 'stack/**']",
+        "opened, synchronize, reopened, ready_for_review, edited",
+        "push:\n    branches: [develop]",
+        "development-checks-${{ github.event.pull_request.number || github.ref }}",
+        "cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
+        "CARGO_BUILD_JOBS: '4'",
+        "LEAN_NUM_THREADS: '4'",
+        "FABRIC_FUZZ_TARGET_DIR: /github/home/.cache/fabrico11y-fuzz-target",
+        "FABRIC_FUZZ_SMOKE_SECONDS: ${{ github.event_name == 'pull_request' && '15' || '60' }}",
+        "verify:",
+        "native-acceptance:",
+        "timeout-minutes:",
+        "./.github/actions/restore-ci-cache",
+        "./.github/actions/save-ci-cache",
+        "github.event_name == 'push' && github.ref == 'refs/heads/develop'",
+        r#"GIT_CONFIG_GLOBAL="$config" git cat-file commit "$1""#,
+        "predecessor_parents=$(parents_of",
+        "PR_BASE_SHA",
+        "PR_HEAD_SHA",
+    ] {
+        assert!(
+            dev.contains(required),
+            "missing development workflow contract: {required}"
+        );
+    }
     assert_eq!(dev.matches("ref: ${{ github.sha }}").count(), 2);
     assert_eq!(dev.matches("persist-credentials: false").count(), 2);
-    assert!(dev.contains("github.event_name == 'push' && github.ref == 'refs/heads/develop'"));
+    assert_eq!(dev.matches("fetch-depth: 2").count(), 2);
 
     let restore =
         fs::read_to_string(repo_root().join(".github/actions/restore-ci-cache/action.yml"))
@@ -433,4 +448,150 @@ fn compiler_seed_publication_and_qualification_keep_the_trusted_boundaries() {
             "measure restart_smoke in_container 120 target/release/xtask collection smoke"
         )
     );
+}
+
+#[test]
+fn release_workflow_and_deb_packaging_enforce_glibc_slsa_and_pins() {
+    let release = fs::read_to_string(repo_root().join(".github/workflows/release.yml"))
+        .expect("read .github/workflows/release.yml");
+    for job in ["fedora-rpm:", "debian-deb-and-tarball:", "release:"] {
+        assert!(release.contains(job), "release workflow missing {job}");
+    }
+    let deb_job = release
+        .split_once("\n  debian-deb-and-tarball:\n")
+        .and_then(|(_, rest)| rest.split_once("\n  qualify-bundle:\n"))
+        .map(|(deb, _)| deb)
+        .expect("debian-deb-and-tarball job section");
+    let apt_pos = deb_job
+        .find("Install Debian 12 toolchain prerequisites")
+        .expect("debian-deb-and-tarball missing apt prerequisites step");
+    let checkout_pos = deb_job
+        .find("actions/checkout@")
+        .expect("debian-deb-and-tarball missing actions/checkout");
+    assert!(
+        apt_pos < checkout_pos,
+        "install Debian prerequisites before checkout"
+    );
+    assert!(release.contains("actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8"));
+    assert!(release.contains("actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"));
+    assert!(release.contains("actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333"));
+    assert!(
+        release
+            .contains("actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8")
+    );
+    assert!(
+        release.contains("softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3")
+    );
+    assert!(release.contains("MAX_GLIBC: '2.36'"));
+    assert!(release.contains("packaging/deb/build-deb.sh"));
+    assert!(release.contains("packaging/deb/build-tarball.sh"));
+    assert!(release.contains("packaging/rpm/fabrico11y.spec"));
+    let (qualification, publication) = release.split_once("\n  release:\n").unwrap();
+    assert!(
+        qualification.contains(
+            "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.mode == 'qualify'"
+        )
+    );
+    assert!(qualification.contains("git/ref/heads/main"));
+    assert!(qualification.contains(".head_sha == $sha"));
+    assert!(qualification.contains(".conclusion == \"success\""));
+    let preflight = qualification
+        .split_once("\n  package-source:\n")
+        .unwrap()
+        .1
+        .split_once("\n  fedora-rpm:\n")
+        .unwrap()
+        .0;
+    assert!(preflight.contains("if: github.event_name == 'workflow_dispatch'"));
+    assert!(preflight.contains("qualify:refs/heads/main|preflight:refs/heads/*"));
+    assert!(preflight.contains("test \"$live\" = \"$GITHUB_SHA\""));
+    assert_eq!(qualification.matches("needs: [package-source]").count(), 2);
+    assert!(publication.contains("git/ref/tags/$GITHUB_REF_NAME"));
+    assert!(publication.contains("EXPECTED_TAG_OID"));
+    assert!(qualification.contains("verify-tag:"));
+    assert!(publication.contains("needs: [verify-tag]"));
+    assert!(
+        publication
+            .contains("github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')")
+    );
+    assert!(publication.contains("environment: main-release"));
+    assert!(!publication.contains("actions/checkout"));
+    assert!(publication.contains("run-id: ${{ needs.verify-tag.outputs.run-id }}"));
+    assert!(publication.contains("gh attestation verify"));
+    assert!(publication.contains("sha256sum --strict --check SHA256SUMS"));
+    assert!(!qualification.contains("contents: write"));
+    assert!(
+        release.contains("--define \"_pkg_ver ${pkg_ver}\""),
+        "release workflow must parameterize RPM pkg_ver dynamically"
+    );
+    assert!(
+        !release.contains("https://sh.rustup.rs"),
+        "release workflow must not pipe unverified sh.rustup.rs"
+    );
+    assert!(
+        release.contains("static.rust-lang.org/rustup/archive/")
+            && release.contains("sha256sum -c -"),
+        "release workflow must verify pinned rustup-init SHA-256 digest"
+    );
+    let dev_checks =
+        fs::read_to_string(repo_root().join(".github/workflows/development-checks.yml"))
+            .expect("read .github/workflows/development-checks.yml");
+    assert!(
+        dev_checks.contains("ghcr.io/kmosoti/fabrico11y-ci@sha256:"),
+        "development-checks.yml must pin immutable ghcr.io/kmosoti/fabrico11y-ci@sha256: images"
+    );
+    assert!(
+        dev_checks.contains("bootstrap=/opt/fabrico11y/bootstrap")
+            && dev_checks.contains(".github/scripts/install-toolchain.sh")
+            && dev_checks.contains("sha256sum < \"$1\"")
+            && dev_checks.contains("sha256sum < \"$2\"")
+            && dev_checks.contains("require_image_input \"$path\" \"$bootstrap/$path\""),
+        "development-checks.yml must verify /opt/fabrico11y/bootstrap/.github/scripts/install-toolchain.sh via sha256sum"
+    );
+    let without_vartmp = release.replace("/var/tmp", "");
+    assert!(
+        !without_vartmp.contains("/tmp"),
+        "release workflow must not reference /tmp paths"
+    );
+    for line in release.lines() {
+        let trimmed = line.trim();
+        if let Some(action) = trimmed
+            .strip_prefix("uses: ")
+            .or_else(|| trimmed.strip_prefix("- uses: "))
+            && !action.starts_with("./")
+        {
+            let (_, rest) = action
+                .split_once('@')
+                .expect("release action must be pinned");
+            let sha = rest.split_whitespace().next().unwrap_or("");
+            assert!(
+                sha.len() == 40 && sha.bytes().all(|b| b.is_ascii_hexdigit()),
+                "unpinned release action: {action}"
+            );
+        }
+    }
+
+    for script in [
+        "packaging/deb/check-glibc.sh",
+        "packaging/deb/stage-root.sh",
+        "packaging/deb/build-deb.sh",
+        "packaging/deb/build-tarball.sh",
+        "packaging/deb/debian/postinst",
+        "packaging/deb/debian/prerm",
+        "packaging/deb/debian/postrm",
+    ] {
+        let path = repo_root().join(script);
+        assert!(path.is_file(), "missing {script}");
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(!text.contains("patchelf"), "{script} must not use patchelf");
+        let output = std::process::Command::new("sh")
+            .args(["-n", path.to_str().unwrap()])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "sh -n failed for {script}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 }

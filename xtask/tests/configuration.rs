@@ -15,11 +15,18 @@ fn repository_configuration() {
         "docs/architecture.md",
         "knowledge/README.md",
         ".github/.gitmessage",
+        ".github/CODEOWNERS",
         ".github/pull_request_template.md",
         ".github/workflows/main-human-gate.yml",
     ] {
         assert!(root().join(file).is_file(), "missing {file}");
     }
+    let codeowners = fs::read_to_string(root().join(".github/CODEOWNERS")).unwrap();
+    assert_eq!(
+        codeowners.trim(),
+        "* @kmosoti",
+        "main requires owner review for all paths"
+    );
     let hooks: Value =
         serde_json::from_str(&fs::read_to_string(root().join(".codex/hooks.json")).unwrap())
             .unwrap();
