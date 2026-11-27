@@ -1,0 +1,20 @@
+# Frozen experiment snapshots
+
+Use a bounded in-memory contract in `fabric-evidence` with a fixed nonempty
+roster, named reporting cutoff, evaluator and configuration digest claims,
+unit and aggregation. Each roster member has exactly one typed known or
+unknown outcome. A supplementary snapshot names its parent and a distinct
+cutoff; validation checks the same population and measurement definition.
+Cutoff names do not imply a wall-clock time or ordering.
+
+Comparisons fail on population or definition changes. They retain exactness for
+known values, expose unknown outcomes from both sides, and compute numeric
+differences in a width that covers all pairs of signed 64-bit values. They do
+not infer significance or causality. Missing cases cannot silently disappear
+from the denominator, though explicitly unknown cases may become known later.
+
+The type is immutable after validated construction. It is not a wire schema,
+receipt, durable record, authorization decision, corpus cluster or review input
+binding. Callers must independently bound decoding and reject duplicate keys
+before constructing the ordered roster and outcome maps. Exact cutoff and
+identity persistence and authorized parent readback remain separate work.

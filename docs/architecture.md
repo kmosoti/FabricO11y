@@ -123,6 +123,17 @@ from the verified child and is confined to the same outbox. Reader origin grants
 are not per-parent authorization, and this observation is distinct from
 analytical projection visibility.
 
+### Frozen experiment snapshots
+
+`fabric-evidence::snapshot` keeps a bounded case roster, named cutoff and
+validated evaluator/configuration digest claims with one known or explicitly
+unknown outcome per case. Supplementary snapshots identify their parent and a
+distinct boundary. Comparisons require the same roster, unit, aggregation and
+references, preserve missingness and exactness, and report observed numeric
+differences only. This in-memory contract does not establish custody, cutoff
+time ordering, corpus membership or statistical significance. Adapters must
+bound input and reject duplicate keys before constructing sets and maps.
+
 ### Application result envelope
 
 `fabric-evidence` defines a bounded application-result envelope (also re-exported
