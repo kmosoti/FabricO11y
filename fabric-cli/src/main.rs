@@ -159,7 +159,7 @@ struct CustodyArgs {
     /// Path to Spindle Unix socket (defaults to the Spindle settings file or XDG_RUNTIME_DIR/spindle/spindle.sock).
     #[arg(long, env = "SPINDLE_SOCKET")]
     spindle_socket: Option<PathBuf>,
-    /// HTTP endpoint of fabric-server (defaults to Spindle forwarding or server listen settings).
+    /// Canonical fabric-server host:port (defaults to Spindle forwarding or server listen settings).
     #[arg(long, env = "FABRIC_SERVER_ENDPOINT")]
     server_endpoint: Option<String>,
     /// Reader credential file used to query canonical progress from fabric-server.
