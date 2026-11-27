@@ -6,11 +6,11 @@ license.workspace = true
 
 [dependencies]
 admission-kernel = { path = "../admission-kernel" }
+fabric-evidence = { path = "../fabric-evidence" }
 arrow.workspace = true
 chrono.workspace = true
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sha2 = "0.10"
 
 [dev-dependencies]
 proptest.workspace = true

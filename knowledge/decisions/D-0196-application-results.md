@@ -1,5 +1,8 @@
 # Bounded application result identity
 
+The shared `fabric-evidence` crate exposes this contract to the SDK and retains
+the existing `fabric-core` paths as re-exports.
+
 Application reporting needs to preserve the identity of the exact source file
 and of its normalized JSON content. A trailing newline or Unicode escape can
 change source bytes without changing the decoded application payload. The

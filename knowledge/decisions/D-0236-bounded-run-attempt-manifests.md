@@ -7,8 +7,8 @@
 
 ## Decision
 
-Keep run context and attempt provenance in versioned `fabric-core` Sans-I/O
-manifests. A run manifest owns shared code, tree, configuration, input,
+Keep run context and attempt provenance in versioned `fabric-evidence` Sans-I/O
+manifests, re-exported through the existing `fabric-core` paths. A run manifest owns shared code, tree, configuration, input,
 dataset/cohort, evaluator, toolchain, capture-policy, and artifact references.
 Attempt manifests point to the run by immutable ID and digest and may state
 explicit input, evaluator, toolchain, or capture-policy overrides. Observations
@@ -53,10 +53,10 @@ explicit input disclosure. Empty replacement is unsupported; `available([])`
 at the run level explicitly describes an empty set. This avoids treating a
 missing override as either clear or partial replacement.
 
-The manifest digest profile does not define canonical bytes for #196's future
-application result schema. That result needs its own closed, versioned encoding
-contract; until it exists, canonical-record digests cover the exact accepted
-payload bytes and original artifacts retain their separate exact-byte hashes.
+The manifest digest profile does not define canonical bytes for application
+results. The separate application-result contract uses its own versioned
+profile and digest role. Canonical-record digests cover exact accepted record
+bytes, and original artifacts retain their separate exact-byte hashes.
 
 This DTO alone does not collect, persist, transmit, or verify manifests. Its
 size choices are initial wire limits for small provenance records, not measured

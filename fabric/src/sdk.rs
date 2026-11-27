@@ -12,6 +12,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// Validated application result contracts for SDK callers.
+pub use fabric_evidence::{ApplicationResult, ApplicationResultError, ReportScope};
+
 mod batch;
 pub use batch::{BatchClient, BatchError, BatchReport, BatchStatus, batch_adapter_reply};
 

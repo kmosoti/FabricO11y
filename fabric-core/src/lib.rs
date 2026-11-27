@@ -2,9 +2,13 @@
 //! Five Data Observability Pillar evaluators, and Arrow IPC schemas.
 
 pub mod anomaly;
-pub mod application_result;
+pub mod application_result {
+    pub use fabric_evidence::application_result::*;
+}
 pub mod arrow_schemas;
-pub mod evidence_manifest;
+pub mod evidence_manifest {
+    pub use fabric_evidence::evidence_manifest::*;
+}
 pub mod guide;
 pub mod model;
 pub mod paths;
