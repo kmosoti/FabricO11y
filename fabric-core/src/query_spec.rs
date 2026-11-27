@@ -21,15 +21,6 @@ pub enum QueryDomain {
 }
 
 impl QueryDomain {
-    const ALL: [Self; 6] = [
-        Self::Metrics,
-        Self::Logs,
-        Self::Traces,
-        Self::Units,
-        Self::Fs,
-        Self::Agents,
-    ];
-
     fn schema(self) -> &'static Schema {
         match self {
             Self::Metrics => METRICS_SCHEMA.as_ref(),
@@ -297,14 +288,48 @@ impl<'a> Predicate<'a> {
 /// Compiles an isolated `--where` fragment. Use `build_unified_sql` to enforce a domain's schema.
 pub fn parse_where_predicate(raw: &str) -> Result<String, String> {
     let predicate = Predicate::parse(raw)?;
-    let column = predicate.column.to_ascii_lowercase();
-    let data_type = QueryDomain::ALL
-        .into_iter()
-        .find_map(|domain| domain.schema().field_with_name(&column).ok())
-        .map_or(&DataType::Utf8, |field| field.data_type());
-    predicate
-        .to_sql(data_type)
-        .or_else(|_| predicate.to_sql(&DataType::Utf8))
+    let Predicate {
+        column,
+        operator,
+        value,
+    } = predicate;
+    let legacy_numeric_column = matches!(
+        column,
+        "timestamp_ms"
+            | "value"
+            | "duration_ms"
+            | "pid"
+            | "bytes_delta"
+            | "size_bytes"
+            | "rss_bytes"
+            | "memory_current_bytes"
+            | "memory_high_bytes"
+            | "memory_max_bytes"
+            | "pids_current"
+            | "restart_count"
+            | "used_bytes"
+            | "available_bytes"
+            | "used_pct"
+    );
+    if matches!(operator, ">" | ">=" | "<" | "<=")
+        || (matches!(operator, "=" | "!=") && legacy_numeric_column)
+    {
+        if let Ok(number) = value.parse::<i64>() {
+            return Ok(format!("{column} {operator} {number}"));
+        }
+        if let Ok(number) = value.parse::<f64>()
+            && number.is_finite()
+        {
+            let normalized = if number == 0.0 { 0.0 } else { number };
+            return Ok(format!("{column} {operator} {normalized}"));
+        }
+    }
+    Predicate {
+        column,
+        operator,
+        value,
+    }
+    .to_sql(&DataType::Utf8)
 }
 
 /// Parses one `--agg` expression into validated SQL projection item.
@@ -337,6 +362,25 @@ pub fn parse_agg_expr(raw: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn standalone_predicate_preserves_legacy_domainless_behavior() {
+        for (input, expected) in [
+            ("custom>2", "custom > 2"),
+            ("custom=2", "custom = '2'"),
+            ("pid=42", "pid = 42"),
+            ("PID=42", "PID = '42'"),
+            ("transient=true", "transient = 'true'"),
+            ("main_pid=42", "main_pid = '42'"),
+            ("value=not-a-number", "value = 'not-a-number'"),
+            (
+                "message~it's=ok",
+                "CAST(message AS VARCHAR) LIKE '%it''s=ok%'",
+            ),
+        ] {
+            assert_eq!(parse_where_predicate(input).unwrap(), expected, "{input}");
+        }
+    }
 
     #[test]
     fn non_finite_float_predicates_are_quoted_never_emitted_raw() {
