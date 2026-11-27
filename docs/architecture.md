@@ -59,6 +59,7 @@ flowchart TD
         SRV["fabric-server (Canonical TCP ledger & elastic analytical admission)"]
         MCP["fabric-mcp (Typed stdio MCP adapter)"]
         FAB --> AK
+        FAB --> OPS
         SRV --> FAB
         SRV --> FQ
         SRV --> AK
@@ -91,6 +92,8 @@ kernel does not authenticate peers or deliver effects. A bounded static registry
 validates independent protocol and operation versions before returning a typed
 handler token. Registry metadata conveys no authority; adapters retain request
 and response types and choose their own transport and compatibility policy.
+The `fabric::query` adapter binds its seven v1 operations to its existing query
+DTOs, without changing their wire representation.
 Batch construction is atomic with the in-memory transition; an adapter owns
 any external delivery or durable transaction semantics.
 

@@ -7,8 +7,9 @@ the binding's entire descriptor, including lifecycle shape. A successful token
 retains concrete request and response types. Adapters authenticate callers and
 choose dispatch and wire formats; registry metadata is not authority.
 
-The query inventory maps the seven `fabric::query::Operation` names and its
-existing `QueryRequest` / `QueryResponse` API version 1. The inventory's
+The query-owned inventory maps the seven `fabric::query::Operation` variants
+and binds their existing `QueryRequest` / `QueryResponse` API version 1. The
+gate holds the validated request through the typed handler call. The inventory's
 operation version is local contract metadata: current query wire requests have
 only the top-level version. Canonical `Request` / `Response` and Spindle
 `Request` / `Reply` are separate command families without a per-operation
