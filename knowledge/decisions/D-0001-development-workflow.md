@@ -2,10 +2,11 @@
 id: D-0001
 title: Two-Branch Stacked Development Workflow and Human Gate on main
 type: decision
-status: accepted
+status: superseded
 date: 2026-11-14
 added_by: agent
 human_ratified: false
+superseded_by: D-0189
 related:
   - D-0002
   - O-0001
@@ -31,7 +32,7 @@ Adopt the two-branch repository governance model established in `rust-ui-templat
 ## Constraints
 
 - Colocated Jujutsu (`jj`) over the Git backend; bookmarks `develop`, `main`, and `stack/*` remain explicit.
-- Zero `/tmp` usage in CI bootstrap or local build/test recipes (`TMPDIR=/var/tmp` in CI containers; `TMPDIR=/data/tmp` and `CARGO_BUILD_TARGET_DIR=/data/cargo-target` locally on `fedora-blade`).
+- Zero `/tmp` usage in CI bootstrap or local build/test recipes (`TMPDIR=/var/tmp` in CI containers; `TMPDIR=/data/tmp` and `CARGO_BUILD_TARGET_DIR=/data/cargo-target` locally on developer workstations).
 
 ## Alternatives Considered
 
@@ -44,5 +45,5 @@ Adopt the two-branch repository governance model established in `rust-ui-templat
 
 ## Relations
 
-- *informed-by*: [O-0001](../observations/O-0001-fedora-blade-resource-postmortem.md)
+- *informed-by*: [O-0001](../observations/O-0001-workstation-resource-postmortem.md)
 - *enables*: [D-0002](D-0002-cli-pivot-and-converged-telemetry-engine.md)

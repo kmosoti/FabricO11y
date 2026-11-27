@@ -44,7 +44,7 @@ stores and a SQLite/Parquet receiver on the same Linux host.
 The same receiver and a debug-stripped copy of the release Spindle were used
 with two independent DigitalOcean Linux hosts. Each origin ran in its own
 scoped transient systemd service over a separate authenticated SSH reverse
-tunnel. The receiver ran on fedora-blade. The edge spool directories were on
+tunnel. The receiver ran on workstation-01. The edge spool directories were on
 persistent ext4. The transferred Spindle had SHA-256
 `84d3a5e445f3058fba1ccba0a94973b831088b106b84df0c7f832dddba4989e2`.
 
@@ -74,7 +74,7 @@ Rust 1.100.0 ran in the pinned builder image
 
 The 4 minute 49 second trial ran the edge services natively on two DigitalOcean
 Ubuntu hosts with glibc 2.39, Linux 6.8.0-142, and ext4. The receiver ran on
-fedora-blade in the installed `fabrico11y.slice`. Both remote test slices
+workstation-01 in the installed `fabrico11y.slice`. Both remote test slices
 reported `MemoryHigh=256M`, `MemoryMax=512M`, `CPUQuota=15%`, `IOWeight=30`, and
 `TasksMax=64`. Each host exporter delivered 16 selected metric names under a
 distinct node ID and authenticated Spindle origin.

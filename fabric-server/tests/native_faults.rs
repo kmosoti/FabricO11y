@@ -236,6 +236,8 @@ fn unknown_inflight_write_and_gateway_death_preserve_pending_binding() {
         }],
         node_quota_bytes: [("owned-fault-origin".into(), (RAW.len() + raw2.len()) as u64)].into(),
         engine_endpoint: Some(proxy.endpoint.clone()),
+        engine_auth_token_file: None,
+        allow_unauthenticated_loopback_engine: true,
         max_connections: 16,
     };
     let mut gateway = Gateway::start(&config, &root.path().join("server.json"));
@@ -352,7 +354,13 @@ fn unknown_inflight_write_and_gateway_death_preserve_pending_binding() {
     let current_control = root.path().join("current-control.sqlite");
     fs::rename(config.storage.join("canonical.sqlite"), &current_control).unwrap();
     fs::copy(&old_control, config.storage.join("canonical.sqlite")).unwrap();
-    let error = match Ledger::open_with_engine(&config.storage, config.quota_bytes, Some(&engine)) {
+    let error = match Ledger::open_with_engine_auth(
+        &config.storage,
+        config.quota_bytes,
+        Some(&engine),
+        None,
+        true,
+    ) {
         Ok(_) => panic!("old control accepted newer engine tail"),
         Err(error) => error,
     };
@@ -405,8 +413,14 @@ fn unknown_inflight_write_and_gateway_death_preserve_pending_binding() {
         Response::Error { error } if error.contains("node payload quota exhausted")
     ));
     drop(gateway);
-    let ledger =
-        Ledger::open_with_engine(&config.storage, config.quota_bytes, Some(&engine)).unwrap();
+    let ledger = Ledger::open_with_engine_auth(
+        &config.storage,
+        config.quota_bytes,
+        Some(&engine),
+        None,
+        true,
+    )
+    .unwrap();
     assert_eq!(ledger.count().unwrap(), 2);
     let connection = rusqlite::Connection::open(config.storage.join("canonical.sqlite")).unwrap();
     let retained: u64 = connection

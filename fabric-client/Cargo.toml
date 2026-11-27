@@ -1,0 +1,16 @@
+[package]
+name = "fabric-client"
+version = "0.1.1-alpha.2"
+edition.workspace = true
+license.workspace = true
+description = "Zero-UI async client and strongly typed fabric.cli.v1 schemas for FabricO11y"
+
+[features]
+default = ["cli"]
+cli = ["dep:tokio", "dep:fabric"]
+
+[dependencies]
+fabric = { path = "../fabric", optional = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "process", "rt", "sync", "time"], optional = true }

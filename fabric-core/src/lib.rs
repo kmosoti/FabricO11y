@@ -9,6 +9,7 @@ pub mod paths;
 pub mod query_spec;
 pub mod ring;
 pub mod sketch;
+pub mod terminal;
 
 pub use anomaly::{
     AnomalyScore, DriftContext, DriftReport, EwmaMadDetector, PillarFinding, PillarKind, Severity,
@@ -39,3 +40,4 @@ pub use ring::{
     roundtrip_series_block,
 };
 pub use sketch::DDSketch;
+pub use terminal::sanitize_terminal_text;

@@ -37,6 +37,7 @@ mod guide;
 mod production_ready;
 mod projection_ready;
 mod settings;
+mod table;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OutputFormat {
@@ -202,7 +203,7 @@ struct QueryJsonPayload {
 #[tokio::main(worker_threads = 4)]
 async fn main() {
     if let Err(err) = run().await {
-        eprintln!("fabric: {err}");
+        eprintln!("fabric: {}", fabric_core::sanitize_terminal_text(&err));
         std::process::exit(1);
     }
 }
@@ -681,183 +682,28 @@ fn write_stdout_bytes(bytes: &[u8]) -> Result<(), String> {
     stdout.flush().map_err(|e| e.to_string())
 }
 
-fn mib(bytes: u64) -> String {
-    format!("{:.1} MiB", (bytes as f64) / (1024.0 * 1024.0))
-}
-
 fn print_snapshot_table(s: &HostSnapshot) {
-    println!(
-        "HOST {} | mem_avail={} | swap_used={} | psi(mem={:.2}, io={:.2}) | self_rss={}",
-        s.hostname,
-        mib(s.memory.mem_available_bytes),
-        mib(s.memory.swap_used_bytes),
-        s.psi.memory_some.avg10,
-        s.psi.io_some.avg10,
-        mib(s.self_health.rss_bytes),
-    );
-    println!(
-        "{:<20} {:>12} {:>12} {:>8}",
-        "SLICE", "MEM_CUR", "MEM_HIGH", "PIDS"
-    );
-    for sl in &s.slices {
-        let high = sl.memory_high_bytes.map_or_else(|| "max".into(), mib);
-        println!(
-            "{:<20} {:>12} {:>12} {:>8}",
-            sl.slice_name,
-            mib(sl.memory_current_bytes),
-            high,
-            sl.pids_current
-        );
-    }
-    println!();
-    println!(
-        "{:<12} {:<10} {:>12} {:>12} {:>8}",
-        "MOUNT", "FSTYPE", "USED", "AVAIL", "USED%"
-    );
-    for m in &s.mounts {
-        println!(
-            "{:<12} {:<10} {:>12} {:>12} {:>7.1}%",
-            m.mount_point,
-            m.fs_type,
-            mib(m.used_bytes),
-            mib(m.available_bytes),
-            m.used_pct
-        );
-    }
+    let _ = table::render_snapshot_table(&mut std::io::stdout(), s);
 }
 
 fn print_query_table(domain: &str, rows: &[serde_json::Value]) {
-    println!("QUERY domain={domain} rows={}", rows.len());
-    let Some(first) = rows.first().and_then(|v| v.as_object()) else {
-        return;
-    };
-    let cols: Vec<&String> = first.keys().take(7).collect();
-    for c in &cols {
-        print!("{:<20} ", truncate(c, 20));
-    }
-    println!();
-    for row in rows.iter().take(50) {
-        if let Some(obj) = row.as_object() {
-            for c in &cols {
-                let s = match obj.get(*c) {
-                    Some(serde_json::Value::String(v)) => v.clone(),
-                    Some(v) => v.to_string(),
-                    None => String::new(),
-                };
-                print!("{:<20} ", truncate(&s, 20));
-            }
-            println!();
-        }
-    }
+    let _ = table::render_query_table(&mut std::io::stdout(), domain, rows);
 }
 
 fn print_lineage_table(sub: &LineageSubgraph) {
-    println!(
-        "LINEAGE target={} matched={:?} nodes={} edges={}",
-        sub.target,
-        sub.matched_roots,
-        sub.nodes.len(),
-        sub.edges.len()
-    );
-    println!("{:<40} {:<16} {:<30}", "NODE_ID", "KIND", "LABEL");
-    for n in &sub.nodes {
-        println!(
-            "{:<40} {:<16} {:<30}",
-            truncate(&n.id, 40),
-            n.kind,
-            truncate(&n.label, 30)
-        );
-    }
-    for e in &sub.edges {
-        println!("  {} --[{}]--> {}", e.src, e.kind, e.dst);
-    }
+    let _ = table::render_lineage_table(&mut std::io::stdout(), sub);
 }
 
 fn print_blame_table(report: &BlameReport) {
-    println!(
-        "BLAME resource={} | {}",
-        report.resource, report.pressure_summary
-    );
-    println!(
-        "{:<4} {:<26} {:>12} {:>7} {:<14} {:<28}",
-        "RANK", "LABEL", "VALUE", "SHARE", "SLICE", "UNIT/PATH"
-    );
-    for e in &report.entries {
-        let val = if e.unit_label == "bytes" {
-            mib(e.contribution_value)
-        } else {
-            format!("{} {}", e.contribution_value, e.unit_label)
-        };
-        let extra = e
-            .target_path
-            .as_deref()
-            .or(e.unit.as_deref())
-            .unwrap_or("-");
-        println!(
-            "{:<4} {:<26} {:>12} {:>6.1}% {:<14} {:<28}",
-            e.rank,
-            truncate(&e.label, 26),
-            val,
-            e.share_pct,
-            truncate(&e.slice, 14),
-            truncate(extra, 28)
-        );
-    }
+    let _ = table::render_blame_table(&mut std::io::stdout(), report);
 }
 
 fn print_drift_table(report: &DriftReport) {
-    println!(
-        "DRIFT findings={} critical={} warn={} info={}",
-        report.total_findings, report.critical_count, report.warn_count, report.info_count
-    );
-    println!(
-        "{:<14} {:<10} {:<28} SUMMARY",
-        "PILLAR", "SEVERITY", "TARGET"
-    );
-    for f in &report.findings {
-        println!(
-            "{:<14} {:<10} {:<28} {}",
-            f.pillar,
-            f.severity,
-            truncate(&f.target, 28),
-            f.summary
-        );
-    }
+    let _ = table::render_drift_table(&mut std::io::stdout(), report);
 }
 
 fn print_doctor_table(report: &DoctorReport) {
-    println!(
-        "DOCTOR healthy={} daemon_running={} pid={} rss={} fds={} tmp_fds={} slice={}",
-        report.healthy,
-        report.daemon_running,
-        report.pid,
-        mib(report.rss_bytes),
-        report.open_fds,
-        report.tmp_files_created,
-        report.cgroup_path
-    );
-    println!("{:<22} {:<8} {:<32} THRESHOLD", "CHECK", "STATUS", "ACTUAL");
-    for c in &report.checks {
-        println!(
-            "{:<22} {:<8} {:<32} {}",
-            c.name,
-            if c.passed { "PASS" } else { "FAIL" },
-            truncate(&c.actual, 32),
-            c.threshold
-        );
-    }
-}
-
-fn truncate(s: &str, max: usize) -> String {
-    if s.chars().count() <= max {
-        s.to_owned()
-    } else if max > 3 {
-        let mut out: String = s.chars().take(max - 3).collect();
-        out.push_str("...");
-        out
-    } else {
-        s.chars().take(max).collect()
-    }
+    let _ = table::render_doctor_table(&mut std::io::stdout(), report);
 }
 
 #[derive(Debug, Deserialize, Serialize, Default)]
@@ -893,23 +739,23 @@ struct NodeCredentialHint {
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct CustodyStatusReport {
-    spindle_socket: Option<String>,
-    spindle_online: bool,
-    spindle_origin: Option<String>,
-    spindle_error: Option<String>,
-    records: u64,
-    highest_record_id: u64,
-    canonical_through: u64,
-    reclaimed_through: u64,
-    forwarding_error: Option<String>,
-    server_endpoint: Option<String>,
-    server_online: bool,
-    server_authority: Option<String>,
-    server_error: Option<String>,
-    server_frontiers: BTreeMap<String, u64>,
-    collector_spindle_watermark_id: Option<u64>,
-    catalog_error: Option<String>,
+pub(crate) struct CustodyStatusReport {
+    pub(crate) spindle_socket: Option<String>,
+    pub(crate) spindle_online: bool,
+    pub(crate) spindle_origin: Option<String>,
+    pub(crate) spindle_error: Option<String>,
+    pub(crate) records: u64,
+    pub(crate) highest_record_id: u64,
+    pub(crate) canonical_through: u64,
+    pub(crate) reclaimed_through: u64,
+    pub(crate) forwarding_error: Option<String>,
+    pub(crate) server_endpoint: Option<String>,
+    pub(crate) server_online: bool,
+    pub(crate) server_authority: Option<String>,
+    pub(crate) server_error: Option<String>,
+    pub(crate) server_frontiers: BTreeMap<String, u64>,
+    pub(crate) collector_spindle_watermark_id: Option<u64>,
+    pub(crate) catalog_error: Option<String>,
 }
 
 fn non_empty_path(path: Option<PathBuf>) -> Option<PathBuf> {
@@ -1175,43 +1021,7 @@ fn custody_to_record_batch(report: &CustodyStatusReport) -> Result<RecordBatch, 
 }
 
 fn print_custody_table(report: &CustodyStatusReport) {
-    println!(
-        "SPINDLE online={} socket={} origin={} records={} highest={} canonical={} reclaimed={}",
-        report.spindle_online,
-        report.spindle_socket.as_deref().unwrap_or("-"),
-        report.spindle_origin.as_deref().unwrap_or("-"),
-        report.records,
-        report.highest_record_id,
-        report.canonical_through,
-        report.reclaimed_through,
-    );
-    if let Some(err) = &report.spindle_error {
-        println!("  spindle_error={err}");
-    }
-    if let Some(err) = &report.forwarding_error {
-        println!("  forwarding_error={err}");
-    }
-    println!(
-        "SERVER  online={} endpoint={} authority={}",
-        report.server_online,
-        report.server_endpoint.as_deref().unwrap_or("-"),
-        report.server_authority.as_deref().unwrap_or("-"),
-    );
-    if let Some(err) = &report.server_error {
-        println!("  server_error={err}");
-    }
-    for (origin, frontier) in &report.server_frontiers {
-        println!("  frontier origin={origin} through={frontier}");
-    }
-    println!(
-        "COLLECTOR spindle_watermark_id={}",
-        report
-            .collector_spindle_watermark_id
-            .map_or_else(|| "none".to_owned(), |id| id.to_string())
-    );
-    if let Some(err) = &report.catalog_error {
-        println!("  catalog_error={err}");
-    }
+    let _ = table::render_custody_table(&mut std::io::stdout(), report);
 }
 
 #[cfg(test)]

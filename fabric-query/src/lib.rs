@@ -28,7 +28,7 @@ use std::{
     os::unix::fs::OpenOptionsExt,
     path::{Path, PathBuf},
     sync::{
-        Arc,
+        Arc, OnceLock,
         atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -47,6 +47,21 @@ const SPILL: u64 = 512 * 1024 * 1024;
 const FILE_REQUESTS: usize = 8;
 const METADATA_PREFETCH_BYTES: usize = 8 * 1024;
 const EXECUTION_THREADS: usize = 2;
+
+fn shared_query_runtime() -> Result<&'static tokio::runtime::Runtime> {
+    static RUNTIME: OnceLock<std::result::Result<tokio::runtime::Runtime, String>> =
+        OnceLock::new();
+    match RUNTIME.get_or_init(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(EXECUTION_THREADS)
+            .enable_all()
+            .build()
+            .map_err(err)
+    }) {
+        Ok(rt) => Ok(rt),
+        Err(e) => Err(e.clone()),
+    }
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -80,12 +95,23 @@ struct Envelope {
     digest: String,
     manifest: Manifest,
 }
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "k", content = "v", rename_all = "snake_case")]
+enum CursorKey {
+    CanonicalId(u64),
+    Key(String),
+    BucketNs(u64),
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Cursor {
     identity: String,
     snapshot: Snapshot,
+    #[serde(default)]
     offset: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    after: Option<CursorKey>,
     expires: u64,
 }
 
@@ -100,6 +126,8 @@ impl Drop for ExclusiveLock {
 pub struct Projection {
     dir: PathBuf,
     quota: u64,
+    origin_quotas: BTreeMap<String, u64>,
+    default_origin_quota: Option<u64>,
     manifest: Manifest,
     _lock: ExclusiveLock,
     active: AtomicBool,
@@ -107,6 +135,15 @@ pub struct Projection {
 }
 impl Projection {
     pub fn open(dir: impl AsRef<Path>, quota_bytes: u64) -> Result<Self> {
+        Self::open_with_origin_quotas(dir, quota_bytes, BTreeMap::new(), None)
+    }
+
+    pub fn open_with_origin_quotas(
+        dir: impl AsRef<Path>,
+        quota_bytes: u64,
+        origin_quotas: BTreeMap<String, u64>,
+        default_origin_quota: Option<u64>,
+    ) -> Result<Self> {
         let dir = dir.as_ref().to_path_buf();
         ensure_private_directory(&dir)?;
         let lock_path = dir.join("projection.lock");
@@ -119,6 +156,7 @@ impl Projection {
             .mode(0o600)
             .open(&lock_path)
             .map_err(err)?;
+        enforce_private_file_mode(&lock, "projection.lock")?;
         lock.try_lock()
             .map_err(|e| format!("projection already open: {e}"))?;
         let lock = ExclusiveLock(lock);
@@ -183,6 +221,8 @@ impl Projection {
         let projection = Self {
             dir,
             quota: quota_bytes,
+            origin_quotas,
+            default_origin_quota,
             manifest,
             _lock: lock,
             active: AtomicBool::new(false),
@@ -208,6 +248,14 @@ impl Projection {
         }
         Ok(projection)
     }
+    /// Per-origin segment byte budget, falling back to `default_origin_quota` when omitted.
+    fn origin_quota(&self, origin: &str) -> Option<u64> {
+        self.origin_quotas
+            .get(origin)
+            .copied()
+            .or(self.default_origin_quota)
+    }
+
     /// Bind replay state to its canonical authority before accepting any rows.
     /// Reusing a projection for another ledger requires an explicit rebuild.
     pub fn bind_authority(&mut self, authority: &str) -> Result<()> {
@@ -440,6 +488,24 @@ impl Projection {
                     .open(&staging)
                     .map_err(err)?;
                 created_staging = Some(staging.clone());
+                enforce_private_file_mode(&output, &file)?;
+                let origin_cap = self.origin_quota(&first.origin);
+                let origin_used = if origin_cap.is_some() {
+                    next.segments
+                        .iter()
+                        .filter(|s| s.origin == first.origin)
+                        .try_fold(0u64, |n, s| {
+                            n.checked_add(s.bytes).ok_or("projection size overflow")
+                        })?
+                } else {
+                    0
+                };
+                let origin_remaining = origin_cap
+                    .map(|cap| {
+                        cap.checked_sub(origin_used)
+                            .ok_or("projection origin quota exhausted")
+                    })
+                    .transpose()?;
                 {
                     let committed_metadata =
                         fs::metadata(self.dir.join(MANIFEST)).map_err(err)?.len();
@@ -449,10 +515,12 @@ impl Projection {
                         .try_fold(RESERVE + committed_metadata, |n, s| {
                             n.checked_add(s.bytes).ok_or("projection size overflow")
                         })?;
-                    let remaining = self
+                    let global_remaining = self
                         .quota
                         .checked_sub(used)
                         .ok_or("projection quota exhausted")?;
+                    let remaining = origin_remaining
+                        .map_or(global_remaining, |orig| global_remaining.min(orig));
                     let limited = LimitedFile {
                         file: &mut output,
                         remaining,
@@ -479,6 +547,14 @@ impl Projection {
                 })?;
                 if used.checked_add(bytes).ok_or("projection size overflow")? > self.quota {
                     return Err("projection quota exhausted".into());
+                }
+                if let Some(cap) = origin_cap
+                    && origin_used
+                        .checked_add(bytes)
+                        .ok_or("projection size overflow")?
+                        > cap
+                {
+                    return Err("projection origin quota exhausted".into());
                 }
                 let hash = file_digest(&staging)?;
                 fs::rename(&staging, self.dir.join(&file)).map_err(err)?;
@@ -577,6 +653,11 @@ impl Projection {
             .open(&temp)
             .map_err(err)
             .map_err(&fail_pre)?;
+        if let Err(e) = enforce_private_file_mode(&file, "staging-manifest") {
+            drop(file);
+            let _ = fs::remove_file(&temp);
+            return Err((e, false));
+        }
         if let Err(e) = file
             .write_all(&bytes)
             .and_then(|()| file.sync_all())
@@ -597,7 +678,7 @@ impl Projection {
         })?;
         dir_file.sync_all().map_err(|e| (err(e), true))
     }
-    fn resolve(&self, mut request: QueryRequest) -> Result<(QueryRequest, u64)> {
+    fn resolve(&self, mut request: QueryRequest) -> Result<(QueryRequest, u64, Option<CursorKey>)> {
         if self.poisoned {
             return Err("projection publication uncertain; reopen required".into());
         }
@@ -608,6 +689,7 @@ impl Projection {
         request.scope.sort();
         request.scope.dedup();
         let mut offset = 0;
+        let mut after = None;
         if let Some(token) = request.cursor.take() {
             let cursor = self.decode_cursor(&token)?;
             if now() > cursor.expires {
@@ -621,6 +703,7 @@ impl Projection {
                 return Err("cursor query or scope mismatch".into());
             }
             offset = cursor.offset;
+            after = cursor.after;
         } else if request.snapshot.is_empty() {
             request.snapshot = request
                 .scope
@@ -654,7 +737,7 @@ impl Projection {
         {
             return Err("snapshot is unavailable in projection".into());
         }
-        Ok((request, offset))
+        Ok((request, offset, after))
     }
     fn selected<'a>(&'a self, r: &QueryRequest) -> Vec<&'a Segment> {
         self.manifest
@@ -674,7 +757,7 @@ impl Projection {
             .collect()
     }
     pub fn plan(&self, request: QueryRequest) -> Result<QueryPlan> {
-        let (r, _) = self.resolve(request)?;
+        let (r, _, _) = self.resolve(request)?;
         let selected = self.selected(&r);
         Ok(QueryPlan {
             version: API_VERSION,
@@ -737,7 +820,7 @@ impl Projection {
         }
         let _guard = Guard(&self.active);
         let started = Instant::now();
-        let (r, offset) = self.resolve(request)?;
+        let (r, offset, after) = self.resolve(request)?;
         let deadline = deadline.min(started + Duration::from_millis(r.budgets.timeout_ms.into()));
         if Instant::now() >= deadline {
             return Err("query timeout".into());
@@ -751,21 +834,24 @@ impl Projection {
             return Err("query cancelled".into());
         }
         // Scope-selected files only enter this session; filters precede every aggregate.
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(EXECUTION_THREADS)
-            .enable_all()
-            .build()
-            .map_err(err)?;
-        let result=runtime.block_on(async {
-            let query=self.execute(&r,&selected,offset);
+        let runtime = shared_query_runtime()?;
+        let result = runtime.block_on(async {
+            let query = self.execute(&r, &selected, offset, after.as_ref());
             tokio::pin!(query);
-            let timeout=tokio::time::sleep_until(tokio::time::Instant::from_std(deadline));tokio::pin!(timeout);
-            let mut poll=tokio::time::interval(Duration::from_millis(5));
-            loop {tokio::select! {result=&mut query=>break result,_=&mut timeout=>break Err("query timeout".into()),_=poll.tick()=>if cancel.load(Ordering::Acquire){break Err("query cancelled".into());}}}
+            let timeout = tokio::time::sleep_until(tokio::time::Instant::from_std(deadline));
+            tokio::pin!(timeout);
+            let mut poll = tokio::time::interval(Duration::from_millis(5));
+            loop {
+                tokio::select! {
+                    result = &mut query => break result,
+                    _ = &mut timeout => break Err("query timeout".into()),
+                    _ = poll.tick() => if cancel.load(Ordering::Acquire) {
+                        break Err("query cancelled".into());
+                    }
+                }
+            }
         });
-        // Wait for runtime tasks to stop before releasing the one-worker reservation.
-        drop(runtime);
-        let (mut rows, gaps, schemas, has_more) = result?;
+        let (mut rows, mut cursor_keys, gaps, schemas, has_more) = result?;
         let mut coverage = Coverage {
             canonical_authority: self
                 .manifest
@@ -790,10 +876,12 @@ impl Projection {
         let mut next_offset = offset + rows.len() as u64;
         loop {
             let next_cursor = if coverage.truncated {
+                let key = cursor_keys.last().cloned();
                 Some(self.encode_cursor(&Cursor {
                     identity: identity(&r)?,
                     snapshot: r.snapshot.clone(),
-                    offset: next_offset,
+                    offset: if key.is_some() { 0 } else { next_offset },
+                    after: key,
                     expires: now() + 900,
                 })?)
             } else {
@@ -819,7 +907,8 @@ impl Projection {
                 return Err("output budget too small for coverage".into());
             }
             rows.pop();
-            next_offset -= 1;
+            cursor_keys.pop();
+            next_offset = next_offset.saturating_sub(1);
             coverage.truncated = true;
             coverage.complete = false;
             if rows.is_empty() {
@@ -852,12 +941,20 @@ impl Projection {
         r: &QueryRequest,
         segments: &[&Segment],
         offset: u64,
-    ) -> Result<(Vec<serde_json::Value>, Vec<String>, Vec<String>, bool)> {
+        after: Option<&CursorKey>,
+    ) -> Result<(
+        Vec<serde_json::Value>,
+        Vec<CursorKey>,
+        Vec<String>,
+        Vec<String>,
+        bool,
+    )> {
         if matches!(r.operation, Operation::Capabilities) {
             return Ok((
                 vec![
                     serde_json::json!({"api_version":API_VERSION,"operations":["capabilities","list_runs","run_summary","tool_summary","service_summary","activity","evidence"],"free_sql":false,"integer_encoding":"unsigned decimal strings","pool_bytes":POOL.to_string(),"spill_bytes":SPILL.to_string()}),
                 ],
+                vec![],
                 vec![],
                 vec![],
                 false,
@@ -956,18 +1053,68 @@ impl Projection {
             .filter_map(|v| v.get("gap").and_then(|s| s.as_str()).map(str::to_owned))
             .collect();
         let stats = "COUNT(*) AS count, SUM(CASE WHEN status='error' THEN 1 ELSE 0 END) AS errors, SUM(CASE WHEN status='cancelled' THEN 1 ELSE 0 END) AS cancelled, COUNT(duration_ns) AS duration_count, MIN(duration_ns) AS min_ns, MAX(duration_ns) AS max_ns, SUM(CAST(duration_ns AS DECIMAL(38,0))) AS sum_ns";
-        let base=match r.operation {
-            Operation::Evidence=>"SELECT canonical_id, origin, source_id, timestamp_ns, run_key, resource, raw FROM scoped ORDER BY canonical_id".into(),
-            Operation::ListRuns|Operation::RunSummary=>format!("SELECT run_key, {stats} FROM scoped WHERE run_key IS NOT NULL GROUP BY run_key ORDER BY run_key"),
-            Operation::ToolSummary=>format!("SELECT name AS tool, {stats} FROM scoped WHERE kind='tool_execution' GROUP BY name ORDER BY name"),
-            Operation::ServiceSummary=>format!("SELECT name AS service, {stats} FROM scoped WHERE kind='service_request' GROUP BY name ORDER BY name"),
-            Operation::Activity{bucket_ns}=>format!("SELECT (timestamp_ns / CAST({} AS BIGINT UNSIGNED))*CAST({} AS BIGINT UNSIGNED) AS bucket_start_ns, {stats} FROM scoped GROUP BY bucket_start_ns ORDER BY bucket_start_ns",quote(&bucket_ns.to_string()),quote(&bucket_ns.to_string())),
-            Operation::Capabilities=>unreachable!(),
+        let schemas = segments
+            .iter()
+            .flat_map(|s| s.schemas.iter().cloned())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        let base = match (&r.operation, after) {
+            (Operation::Evidence, Some(CursorKey::CanonicalId(id))) => format!(
+                "SELECT canonical_id, origin, source_id, timestamp_ns, run_key, resource, raw FROM scoped WHERE canonical_id > CAST({} AS BIGINT UNSIGNED) ORDER BY canonical_id",
+                quote(&id.to_string())
+            ),
+            (Operation::Evidence, None) => {
+                "SELECT canonical_id, origin, source_id, timestamp_ns, run_key, resource, raw FROM scoped ORDER BY canonical_id".into()
+            }
+            (Operation::ListRuns | Operation::RunSummary, Some(CursorKey::Key(key))) => format!(
+                "SELECT run_key, {stats} FROM scoped WHERE run_key IS NOT NULL AND run_key > {} GROUP BY run_key ORDER BY run_key",
+                quote(key)
+            ),
+            (Operation::ListRuns | Operation::RunSummary, None) => format!(
+                "SELECT run_key, {stats} FROM scoped WHERE run_key IS NOT NULL GROUP BY run_key ORDER BY run_key"
+            ),
+            (Operation::ToolSummary, Some(CursorKey::Key(key))) => format!(
+                "SELECT name AS tool, {stats} FROM scoped WHERE kind='tool_execution' AND name > {} GROUP BY name ORDER BY name",
+                quote(key)
+            ),
+            (Operation::ToolSummary, None) => format!(
+                "SELECT name AS tool, {stats} FROM scoped WHERE kind='tool_execution' GROUP BY name ORDER BY name"
+            ),
+            (Operation::ServiceSummary, Some(CursorKey::Key(key))) => format!(
+                "SELECT name AS service, {stats} FROM scoped WHERE kind='service_request' AND name > {} GROUP BY name ORDER BY name",
+                quote(key)
+            ),
+            (Operation::ServiceSummary, None) => format!(
+                "SELECT name AS service, {stats} FROM scoped WHERE kind='service_request' GROUP BY name ORDER BY name"
+            ),
+            (Operation::Activity { bucket_ns }, Some(CursorKey::BucketNs(last_bucket))) => {
+                let Some(next_start) = last_bucket.checked_add(*bucket_ns) else {
+                    return Ok((Vec::new(), Vec::new(), gaps, schemas, false));
+                };
+                format!(
+                    "SELECT (timestamp_ns / CAST({} AS BIGINT UNSIGNED))*CAST({} AS BIGINT UNSIGNED) AS bucket_start_ns, {stats} FROM scoped WHERE timestamp_ns >= CAST({} AS BIGINT UNSIGNED) GROUP BY bucket_start_ns ORDER BY bucket_start_ns",
+                    quote(&bucket_ns.to_string()),
+                    quote(&bucket_ns.to_string()),
+                    quote(&next_start.to_string())
+                )
+            }
+            (Operation::Activity { bucket_ns }, None) => format!(
+                "SELECT (timestamp_ns / CAST({} AS BIGINT UNSIGNED))*CAST({} AS BIGINT UNSIGNED) AS bucket_start_ns, {stats} FROM scoped GROUP BY bucket_start_ns ORDER BY bucket_start_ns",
+                quote(&bucket_ns.to_string()),
+                quote(&bucket_ns.to_string())
+            ),
+            (Operation::Capabilities, _) => unreachable!(),
+            _ => return Err("cursor key type mismatch".into()),
         };
-        let sql = format!(
-            "{base} LIMIT {} OFFSET {offset}",
-            u64::from(r.budgets.rows) + 1
-        );
+        let sql = if after.is_none() && offset > 0 {
+            format!(
+                "{base} LIMIT {} OFFSET {offset}",
+                u64::from(r.budgets.rows) + 1
+            )
+        } else {
+            format!("{base} LIMIT {}", u64::from(r.budgets.rows) + 1)
+        };
         let batches = ctx
             .sql(&sql)
             .await
@@ -978,8 +1125,51 @@ impl Projection {
         let mut rows = values(&batches)?;
         let has_more = rows.len() > r.budgets.rows as usize;
         rows.truncate(r.budgets.rows as usize);
+        let mut cursor_keys = Vec::with_capacity(rows.len());
         for row in &mut rows {
             if let Some(o) = row.as_object_mut() {
+                match &r.operation {
+                    Operation::Evidence => {
+                        let id = o
+                            .get("canonical_id")
+                            .and_then(|v| v.as_str())
+                            .ok_or("missing canonical_id for cursor")?
+                            .parse::<u64>()
+                            .map_err(err)?;
+                        cursor_keys.push(CursorKey::CanonicalId(id));
+                    }
+                    Operation::ListRuns | Operation::RunSummary => {
+                        let key = o
+                            .get("run_key")
+                            .and_then(|v| v.as_str())
+                            .ok_or("missing run_key for cursor")?;
+                        cursor_keys.push(CursorKey::Key(key.to_owned()));
+                    }
+                    Operation::ToolSummary => {
+                        let key = o
+                            .get("tool")
+                            .and_then(|v| v.as_str())
+                            .ok_or("missing tool for cursor")?;
+                        cursor_keys.push(CursorKey::Key(key.to_owned()));
+                    }
+                    Operation::ServiceSummary => {
+                        let key = o
+                            .get("service")
+                            .and_then(|v| v.as_str())
+                            .ok_or("missing service for cursor")?;
+                        cursor_keys.push(CursorKey::Key(key.to_owned()));
+                    }
+                    Operation::Activity { .. } => {
+                        let b = o
+                            .get("bucket_start_ns")
+                            .and_then(|v| v.as_str())
+                            .ok_or("missing bucket_start_ns for cursor")?
+                            .parse::<u64>()
+                            .map_err(err)?;
+                        cursor_keys.push(CursorKey::BucketNs(b));
+                    }
+                    Operation::Capabilities => {}
+                }
                 if let Some(key) = o.remove("run_key") {
                     let key = match key.as_str() {
                         Some(s) => serde_json::from_str(s).map_err(err)?,
@@ -1001,13 +1191,7 @@ impl Projection {
                 }
             }
         }
-        let schemas = segments
-            .iter()
-            .flat_map(|s| s.schemas.iter().cloned())
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect();
-        Ok((rows, gaps, schemas, has_more))
+        Ok((rows, cursor_keys, gaps, schemas, has_more))
     }
 }
 fn err(e: impl std::fmt::Display) -> String {
@@ -1332,6 +1516,7 @@ impl Write for LimitedFile<'_> {
 }
 
 fn ensure_private_directory(path: &Path) -> Result<()> {
+    use rustix::fs::{Mode, OFlags, fchmod};
     use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
     match fs::symlink_metadata(path) {
         Ok(_) => {}
@@ -1342,6 +1527,13 @@ fn ensure_private_directory(path: &Path) -> Result<()> {
                 .mode(0o700)
                 .create(path)
                 .map_err(err)?;
+            let dir_fd = rustix::fs::open(
+                path,
+                OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+                Mode::empty(),
+            )
+            .map_err(err)?;
+            fchmod(&dir_fd, Mode::from_raw_mode(0o700)).map_err(err)?;
         }
         Err(error) => return Err(err(error)),
     }
@@ -1352,6 +1544,15 @@ fn ensure_private_directory(path: &Path) -> Result<()> {
         || metadata.permissions().mode() & 0o077 != 0
     {
         return Err("projection directory must be owned, private and nonsymlink".into());
+    }
+    Ok(())
+}
+
+fn enforce_private_file_mode(file: &File, label: &str) -> Result<()> {
+    let st = rustix::fs::fstat(file).map_err(err)?;
+    if ((st.st_mode as u32) & 0o777) != 0o600 {
+        rustix::fs::fchmod(file, rustix::fs::Mode::from_raw_mode(0o600))
+            .map_err(|e| format!("failed setting 0600 on {label}: {e}"))?;
     }
     Ok(())
 }

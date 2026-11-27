@@ -33,6 +33,7 @@ pub struct Store {
     dir: PathBuf,
     quota: u64,
     admission_full: bool,
+    connection_batch_armed: bool,
     connection_batch_active: bool,
     _lock: File,
     origin: String,
@@ -75,8 +76,12 @@ impl Store {
             .mode(0o600)
             .open(dir.join("owner.lock"))
             .map_err(err)?;
+        lock.set_permissions(fs::Permissions::from_mode(0o600))
+            .map_err(err)?;
         flock(&lock, FlockOperation::NonBlockingLockExclusive).map_err(err)?;
-        let conn = Connection::open(dir.join("custody.sqlite")).map_err(err)?;
+        let db_path = dir.join("custody.sqlite");
+        let conn = Connection::open(&db_path).map_err(err)?;
+        fs::set_permissions(&db_path, fs::Permissions::from_mode(0o600)).map_err(err)?;
         conn.busy_timeout(std::time::Duration::from_millis(100))
             .map_err(err)?;
         // DELETE journal and no auto-vacuum: quota accounts for worst-case rollback
@@ -180,6 +185,7 @@ INSERT OR IGNORE INTO custody_state VALUES('clock_floor','0');").map_err(err)?;
             dir: dir.to_owned(),
             quota,
             admission_full: false,
+            connection_batch_armed: false,
             connection_batch_active: false,
             _lock: lock,
             origin,
@@ -190,6 +196,19 @@ INSERT OR IGNORE INTO custody_state VALUES('clock_floor','0');").map_err(err)?;
     // The daemon owns one synchronous connection batch, bounded by its existing
     // connection/frame budgets. RELEASE is the durability boundary; callers must
     // not publish prepared receipts until it succeeds. No remote I/O spans it.
+    pub(crate) fn arm_connection_batch(&mut self) -> Result<(), String> {
+        if self.connection_batch_active || !self.conn.is_autocommit() {
+            return Err("custody connection batch already active".into());
+        }
+        self.connection_batch_armed = true;
+        Ok(())
+    }
+    fn ensure_connection_batch(&mut self) -> Result<(), String> {
+        if self.connection_batch_armed && !self.connection_batch_active {
+            self.begin_connection_batch()?;
+        }
+        Ok(())
+    }
     pub(crate) fn begin_connection_batch(&mut self) -> Result<(), String> {
         if self.connection_batch_active || !self.conn.is_autocommit() {
             return Err("custody connection batch already active".into());
@@ -200,6 +219,14 @@ INSERT OR IGNORE INTO custody_state VALUES('clock_floor','0');").map_err(err)?;
         self.connection_batch_active = true;
         Ok(())
     }
+    pub(crate) fn commit_connection_batch_if_active(&mut self) -> Result<bool, String> {
+        self.connection_batch_armed = false;
+        if !self.connection_batch_active {
+            return Ok(false);
+        }
+        self.commit_connection_batch()?;
+        Ok(true)
+    }
     pub(crate) fn commit_connection_batch(&mut self) -> Result<(), String> {
         if !self.connection_batch_active {
             return Err("custody connection batch absent".into());
@@ -208,9 +235,11 @@ INSERT OR IGNORE INTO custody_state VALUES('clock_floor','0');").map_err(err)?;
             .execute_batch("RELEASE daemon_connections")
             .map_err(err)?;
         self.connection_batch_active = false;
+        self.connection_batch_armed = false;
         Ok(())
     }
     pub(crate) fn rollback_connection_batch(&mut self) -> Result<(), String> {
+        self.connection_batch_armed = false;
         if self.connection_batch_active {
             // SQLite can automatically roll back the whole transaction on I/O or
             // disk-full failures; do not mask that original failure with no-such-savepoint.
@@ -315,6 +344,7 @@ CREATE TRIGGER fail_batch_commit AFTER INSERT ON records BEGIN INSERT INTO commi
             self.admission_full = true;
             return Err("storage full".into());
         }
+        self.ensure_connection_batch()?;
         let tx = self.conn.savepoint().map_err(err)?;
         let previous: String = tx
             .query_row(
@@ -391,7 +421,7 @@ CREATE TRIGGER fail_batch_commit AFTER INSERT ON records BEGIN INSERT INTO commi
         }
         Ok(total)
     }
-    /// Original validated payload bytes; bounded before allocating SQLite blobs.
+    /// Original validated payload bytes; packed up to `MAX_READ_PAGE` records within `MAX_REPLY`.
     pub fn read_raw(&self, after: u64, limit: usize) -> Result<Vec<(u64, Vec<u8>)>, String> {
         if limit == 0 {
             return Ok(Vec::new());
@@ -399,12 +429,13 @@ CREATE TRIGGER fail_batch_commit AFTER INSERT ON records BEGIN INSERT INTO commi
         if after < self.reclaimed()? {
             return self.read_canonical(after);
         }
+        let capped = limit.min(super::wire::MAX_READ_PAGE);
         let mut stmt = self
             .conn
             .prepare("SELECT id,payload FROM records WHERE id>?1 ORDER BY id LIMIT ?2")
             .map_err(err)?;
         let rows = stmt
-            .query_map(params![after, limit.min(1)], |r| {
+            .query_map(params![after, capped], |r| {
                 let raw = r.get_ref(1)?.as_blob()?;
                 if raw.len() > crate::observation::MAX_FRAME {
                     return Err(rusqlite::Error::InvalidQuery);
@@ -412,22 +443,39 @@ CREATE TRIGGER fail_batch_commit AFTER INSERT ON records BEGIN INSERT INTO commi
                 Ok((r.get::<_, u64>(0)?, raw.to_vec()))
             })
             .map_err(err)?;
-        rows.map(|r| {
-            let (id, bytes) = r.map_err(err)?;
+        let mut out = Vec::new();
+        let mut budget_used = super::wire::RECORD_ENVELOPE_BYTES;
+        for row in rows {
+            let (id, bytes) = row.map_err(err)?;
+            let entry_bytes = bytes
+                .len()
+                .saturating_add(super::wire::RECORD_ENTRY_OVERHEAD);
+            if !out.is_empty() && budget_used.saturating_add(entry_bytes) > super::MAX_REPLY {
+                break;
+            }
             observation::decode_versioned(&bytes)?;
-            Ok((id, bytes))
-        })
-        .collect()
+            budget_used = budget_used.saturating_add(entry_bytes);
+            out.push((id, bytes));
+        }
+        Ok(out)
     }
     pub fn read(&self, after: u64, limit: usize) -> Result<Vec<(u64, Observation)>, String> {
         let mut records = Vec::new();
         let mut cursor = after;
-        for _ in 0..limit.min(1000) {
-            let Some((id, bytes)) = self.read_raw(cursor, 1)?.into_iter().next() else {
+        let max_total = limit.min(1000);
+        while records.len() < max_total {
+            let want = (max_total - records.len()).min(super::wire::MAX_READ_PAGE);
+            let page = self.read_raw(cursor, want)?;
+            if page.is_empty() {
                 break;
-            };
-            records.push((id, observation::decode(&bytes)?));
-            cursor = id;
+            }
+            for (id, bytes) in page {
+                records.push((id, observation::decode(&bytes)?));
+                cursor = id;
+                if records.len() >= max_total {
+                    break;
+                }
+            }
         }
         Ok(records)
     }
@@ -652,6 +700,7 @@ impl Store {
             return Err("clock behind persisted lease floor".into());
         }
         if now > floor {
+            self.ensure_connection_batch()?;
             self.conn
                 .execute(
                     "UPDATE custody_state SET value=?1 WHERE key='clock_floor'",
@@ -681,6 +730,7 @@ impl Store {
             return Err("invalid lease producer".into());
         }
         let now = self.lease_clock()?;
+        self.ensure_connection_batch()?;
         // Expiry and confirmed handoff jointly retire generation metadata; pending
         // generations continue to consume a bounded slot until their custody ends.
         let forwarded = self.forwarded()?;
@@ -925,6 +975,7 @@ impl Store {
         }
         // Outermost when invoked independently; nested under canonical_ack when
         // its first batch is reclaimed together with a validated receipt.
+        self.ensure_connection_batch()?;
         let tx = self.conn.savepoint().map_err(err)?;
         let rows = {
             let mut statement=tx.prepare("SELECT id,producer,generation,sequence,payload FROM records WHERE id>?1 AND id<=?2 ORDER BY id LIMIT 32").map_err(err)?;

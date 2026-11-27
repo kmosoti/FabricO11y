@@ -486,3 +486,63 @@ fn pre_rename_apply_failure_does_not_poison_projection() {
         .expect("projection must recover cleanly without reopen after pre-rename error");
     assert_eq!(progress.checkpoint, 1);
 }
+
+#[test]
+fn origin_quota_caps_noisy_origin_and_preserves_fair_share_for_peers() {
+    let dir = private_tempdir();
+    let base = records();
+    // Cap each omitted origin at 16 KiB while keeping plenty of global quota (32 MiB).
+    let mut p = Projection::open_with_origin_quotas(
+        dir.path(),
+        32 * 1024 * 1024,
+        Default::default(),
+        Some(16 * 1024),
+    )
+    .unwrap();
+
+    let mut cid = 0u64;
+    let mut noisy_seq = 0u64;
+    let noisy_row = |cid: &mut u64, seq: &mut u64| {
+        *cid += 1;
+        *seq += 1;
+        CanonicalRow {
+            canonical_id: *cid,
+            origin: "noisy-origin".into(),
+            source_id: *seq,
+            raw: base[0].raw.clone(),
+        }
+    };
+
+    // First segment from noisy-origin succeeds and consumes part of its 4096-byte origin budget.
+    let first = noisy_row(&mut cid, &mut noisy_seq);
+    p.apply(&[first]).unwrap();
+
+    // Additional segments for noisy-origin hit the per-origin cap well before global 32 MiB.
+    let mut hit_cap = false;
+    for _ in 0..8 {
+        let row = noisy_row(&mut cid, &mut noisy_seq);
+        if let Err(err) = p.apply(&[row]) {
+            assert!(
+                err.contains("origin quota") || err.contains("projection quota"),
+                "unexpected quota error: {err}"
+            );
+            hit_cap = true;
+            // Roll back cid counter since failed apply didn't advance checkpoint.
+            cid -= 1;
+            break;
+        }
+    }
+    assert!(hit_cap, "noisy-origin must hit fair-share origin cap");
+
+    // Quiet peer origin still has its own fair share available.
+    let quiet = CanonicalRow {
+        canonical_id: cid + 1,
+        origin: "quiet-origin".into(),
+        source_id: 1,
+        raw: base[0].raw.clone(),
+    };
+    let progress = p
+        .apply(&[quiet])
+        .expect("quiet peer origin must remain unblocked by noisy-origin quota exhaustion");
+    assert_eq!(progress.frontiers.get("quiet-origin"), Some(&1));
+}

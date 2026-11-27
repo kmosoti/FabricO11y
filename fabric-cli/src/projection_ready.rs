@@ -502,14 +502,14 @@ pub(crate) fn run(args: Args, data_dir: PathBuf, unsupported_format: bool) -> i3
                     break;
                 }
                 Update::Invalid(err) => {
-                    eprintln!("fabric: {err}");
+                    eprintln!("fabric: {}", fabric_core::sanitize_terminal_text(&err));
                     return 2;
                 }
             }
         }
     }
     if let Err(err) = super::emit_json("projection-ready", &report) {
-        eprintln!("fabric: {err}");
+        eprintln!("fabric: {}", fabric_core::sanitize_terminal_text(&err));
         return 1;
     }
     match report.status {

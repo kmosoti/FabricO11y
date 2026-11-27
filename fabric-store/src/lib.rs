@@ -4,6 +4,7 @@
 //! - `OlapParquetStore`: ZSTD date-partitioned Arrow/Parquet store
 //! - `RetentionJanitor`: bounded disk cap (`4 GiB` default), compaction, and downsampling
 
+mod atomic_fd;
 pub mod catalog;
 pub mod janitor;
 pub mod olap;

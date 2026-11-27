@@ -9,7 +9,7 @@ use redb::{
 };
 use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions};
-use std::io::{ErrorKind, Write};
+use std::io::ErrorKind;
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::Path;
@@ -156,6 +156,7 @@ impl CatalogStore {
                 .write(true)
                 .create(true)
                 .truncate(false)
+                .mode(0o600)
                 .custom_flags(crate::olap::O_NOFOLLOW_FLAG | crate::olap::O_NONBLOCK_FLAG)
                 .open(&proc_path)
                 .map_err(|e| {
@@ -193,6 +194,7 @@ impl CatalogStore {
                     db_path.display()
                 ));
             }
+            crate::atomic_fd::enforce_private_file_mode(&file, "catalog.redb")?;
             let mut builder = Builder::new();
             builder.set_cache_size(REDB_CACHE_BYTES);
             match builder.create_file(file) {
@@ -643,100 +645,32 @@ impl CatalogStore {
     }
 
     fn write_live_state_atomic(&self, state: &PersistedLiveState) -> Result<(), String> {
-        let staging_dir =
+        let _staging_dir =
             crate::olap::ensure_durable_layout_subdir(&self.layout, &self.layout.staging_dir())?;
-        let state_dir =
+        let _state_dir =
             crate::olap::ensure_durable_layout_subdir(&self.layout, &self.layout.state_dir())?;
-        let staging_meta_before = fs::symlink_metadata(&staging_dir).map_err(|e| {
-            format!(
-                "failed inspecting staging dir {}: {e}",
-                staging_dir.display()
-            )
-        })?;
-        let state_meta_before = fs::symlink_metadata(&state_dir)
-            .map_err(|e| format!("failed inspecting state dir {}: {e}", state_dir.display()))?;
         let live_state_path = self.layout.live_state_json();
         crate::olap::reject_symlinks_below_stop(Some(self.layout.data_dir()), &live_state_path)?;
-        let validated_live_state =
+        let _validated_live_state =
             crate::validate_non_tmp_path_on_disk(&live_state_path).map_err(|e| e.to_string())?;
 
+        let data_fd = std::os::fd::OwnedFd::from(crate::olap::open_anchor_data_dir(&self.layout)?);
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|e| e.to_string())?
             .as_nanos();
-        let tmp_file = staging_dir.join(format!("live_state.{}.{stamp}.json", std::process::id()));
+        let tmp_name = format!("live_state.{}.{stamp}.json", std::process::id());
         let bytes = serde_json::to_vec(state).map_err(|e| e.to_string())?;
-        {
-            let mut f = OpenOptions::new()
-                .create_new(true)
-                .write(true)
-                .open(&tmp_file)
-                .map_err(|e| format!("failed creating {}: {e}", tmp_file.display()))?;
-            if let Err(e) = f.write_all(&bytes).and_then(|()| f.sync_all()) {
-                drop(f);
-                let _ = fs::remove_file(&tmp_file);
-                return Err(e.to_string());
-            }
-        }
-        let dir_identity_check = || -> Result<(), String> {
-            let staging_meta_now = fs::symlink_metadata(&staging_dir).map_err(|e| {
-                format!(
-                    "failed re-inspecting staging dir {}: {e}",
-                    staging_dir.display()
-                )
-            })?;
-            let state_meta_now = fs::symlink_metadata(&state_dir).map_err(|e| {
-                format!(
-                    "failed re-inspecting state dir {}: {e}",
-                    state_dir.display()
-                )
-            })?;
-            if staging_meta_now.file_type().is_symlink()
-                || !staging_meta_now.is_dir()
-                || staging_meta_now.dev() != staging_meta_before.dev()
-                || staging_meta_now.ino() != staging_meta_before.ino()
-            {
-                return Err(format!(
-                    "staging dir {} changed concurrently during live state write",
-                    staging_dir.display()
-                ));
-            }
-            if state_meta_now.file_type().is_symlink()
-                || !state_meta_now.is_dir()
-                || state_meta_now.dev() != state_meta_before.dev()
-                || state_meta_now.ino() != state_meta_before.ino()
-            {
-                return Err(format!(
-                    "state dir {} changed concurrently during live state write",
-                    state_dir.display()
-                ));
-            }
-            Ok(())
-        };
-        if let Err(e) =
-            crate::olap::reject_symlinks_below_stop(Some(self.layout.data_dir()), &live_state_path)
-                .and_then(|()| {
-                    crate::olap::reject_symlinks_below_stop(
-                        Some(self.layout.data_dir()),
-                        &self.layout.staging_dir(),
-                    )
-                })
-                .and_then(|()| {
-                    crate::validate_non_tmp_path_on_disk(&live_state_path)
-                        .map_err(|err| err.to_string())
-                })
-                .and_then(|_| dir_identity_check())
-        {
-            let _ = fs::remove_file(&tmp_file);
-            return Err(e);
-        }
-        if let Err(e) = fs::rename(&tmp_file, &validated_live_state) {
-            let _ = fs::remove_file(&tmp_file);
-            return Err(format!("failed renaming live state: {e}"));
-        }
-        dir_identity_check()?;
-        crate::olap::sync_directory(&state_dir)?;
-        Ok(())
+
+        crate::atomic_fd::write_staged_then_renameat(
+            self.layout.data_dir(),
+            &data_fd,
+            "staging",
+            "state",
+            &tmp_name,
+            "live_state.json",
+            &bytes,
+        )
     }
 }
 
@@ -877,7 +811,7 @@ mod tests {
         let store = CatalogStore::open(dir.path()).unwrap();
         let snap = HostSnapshot {
             timestamp_unix_ms: 1_700_000_000_000,
-            hostname: "fedora-blade".into(),
+            hostname: "workstation-01".into(),
             ..Default::default()
         };
         let drift = evaluate_five_pillars(&snap, &Default::default(), None);
@@ -889,7 +823,7 @@ mod tests {
             Some(1_700_000_000_000)
         );
         let loaded = store.load_live_state().unwrap().unwrap();
-        assert_eq!(loaded.snapshot.hostname, "fedora-blade");
+        assert_eq!(loaded.snapshot.hostname, "workstation-01");
     }
 
     #[test]
@@ -899,7 +833,7 @@ mod tests {
 
         let snap1 = HostSnapshot {
             timestamp_unix_ms: 1_700_000_000_000,
-            hostname: "fedora-blade".into(),
+            hostname: "workstation-01".into(),
             units: vec![fabric_core::UnitRecord {
                 name: "ephemeral-1.scope".into(),
                 manager: "user".into(),
@@ -938,7 +872,7 @@ mod tests {
 
         let snap2 = HostSnapshot {
             timestamp_unix_ms: 1_700_000_002_000,
-            hostname: "fedora-blade".into(),
+            hostname: "workstation-01".into(),
             ..Default::default()
         };
         let drift2 = evaluate_five_pillars(&snap2, &Default::default(), None);
@@ -1002,7 +936,7 @@ mod tests {
 
         let snap = HostSnapshot {
             timestamp_unix_ms: 1_700_000_003_000,
-            hostname: "fedora-blade".into(),
+            hostname: "workstation-01".into(),
             ..Default::default()
         };
         let drift = evaluate_five_pillars(&snap, &Default::default(), None);
@@ -1018,5 +952,104 @@ mod tests {
             !evil_staging.exists(),
             "commit_cycle must never create or write inside symlinked /tmp staging dir"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_staged_then_renameat_rejects_dir_swap_and_symlinked_target() {
+        use std::os::unix::fs::symlink;
+
+        let dir = non_tmp_dir();
+        let store = CatalogStore::open(dir.path()).unwrap();
+        let layout = StorageLayout::new(dir.path()).unwrap();
+        let snap = HostSnapshot {
+            timestamp_unix_ms: 1_700_000_003_500,
+            hostname: "workstation-atomic".into(),
+            ..Default::default()
+        };
+        let drift = evaluate_five_pillars(&snap, &Default::default(), None);
+        let graph = CausalGraph::from_snapshot(&snap, &drift.findings);
+        store.commit_cycle(&snap, &drift, &graph).unwrap();
+        let state = store.load_live_state().unwrap().unwrap();
+
+        // Replace state dir with symlink inside data_dir after layout creation.
+        let decoy_dir = dir.path().join("decoy");
+        fs::create_dir_all(&decoy_dir).unwrap();
+        let data_fd =
+            std::os::fd::OwnedFd::from(crate::olap::open_anchor_data_dir(&layout).unwrap());
+        let state_bytes = serde_json::to_vec(&state).unwrap();
+
+        fs::remove_dir_all(layout.state_dir()).unwrap();
+        symlink(&decoy_dir, layout.state_dir()).unwrap();
+        let err = crate::atomic_fd::write_staged_then_renameat(
+            layout.data_dir(),
+            &data_fd,
+            "staging",
+            "state",
+            "live_state.swap.json",
+            "live_state.json",
+            &state_bytes,
+        )
+        .expect_err("symlinked state dir must be refused via openat O_NOFOLLOW");
+        assert!(err.contains("refusing symlinked"), "unexpected err: {err}");
+        assert!(!decoy_dir.join("live_state.json").exists());
+
+        // Restore real state dir and symlink target live_state.json -> /tmp.
+        fs::remove_file(layout.state_dir()).unwrap();
+        fs::create_dir_all(layout.state_dir()).unwrap();
+        let evil_target = std::path::PathBuf::from(format!(
+            "/tmp/fabrico11y-renameat-target-{}",
+            std::process::id()
+        ));
+        symlink(&evil_target, layout.live_state_json()).unwrap();
+        let err = store
+            .write_live_state_atomic(&state)
+            .expect_err("symlinked live_state.json must be refused before renameat");
+        assert!(err.contains("refusing"), "unexpected err: {err}");
+        assert!(!evil_target.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn custody_dirs_and_files_enforce_private_modes_under_permissive_umask() {
+        use std::os::unix::fs::PermissionsExt;
+
+        if std::env::var_os("FABRIC_STORE_UMASK_SUBPROCESS").is_none() {
+            let exe = std::env::current_exe().expect("test binary path");
+            let status = std::process::Command::new("sh")
+                .args([
+                    "-c",
+                    "umask 000 && exec \"$1\" --exact \"catalog::tests::custody_dirs_and_files_enforce_private_modes_under_permissive_umask\"",
+                    "sh",
+                    &exe.to_string_lossy(),
+                ])
+                .env("FABRIC_STORE_UMASK_SUBPROCESS", "1")
+                .status()
+                .expect("spawn umask 000 child");
+            assert!(status.success(), "umask 000 child test failed");
+            return;
+        }
+
+        let dir = non_tmp_dir();
+        let custody_root = dir.path().join("custody");
+        let layout = StorageLayout::new(&custody_root).unwrap();
+        let _lock = crate::olap::try_acquire_writer_lock(&layout).unwrap();
+        let store = CatalogStore::open(&custody_root).unwrap();
+        let snap = HostSnapshot {
+            timestamp_unix_ms: 1_700_000_004_000,
+            hostname: "workstation-umask".into(),
+            ..Default::default()
+        };
+        let drift = evaluate_five_pillars(&snap, &Default::default(), None);
+        let graph = CausalGraph::from_snapshot(&snap, &drift.findings);
+        store.commit_cycle(&snap, &drift, &graph).unwrap();
+
+        let mode_of = |p: &Path| fs::symlink_metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode_of(layout.data_dir()), 0o700);
+        assert_eq!(mode_of(&layout.state_dir()), 0o700);
+        assert_eq!(mode_of(&layout.staging_dir()), 0o700);
+        assert_eq!(mode_of(&layout.catalog_redb()), 0o600);
+        assert_eq!(mode_of(&layout.live_state_json()), 0o600);
+        assert_eq!(mode_of(&layout.state_dir().join("daemon.lock")), 0o600);
     }
 }

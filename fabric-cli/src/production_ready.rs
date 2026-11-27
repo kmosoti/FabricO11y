@@ -354,32 +354,40 @@ pub(super) async fn run(cli: &Cli, matches: &ArgMatches, args: &Args, format: Ou
             super::write_stdout_bytes(&bytes)
         }),
         OutputFormat::Table => {
-            println!("production-ready  {}", report.status.text());
+            use fabric_core::sanitize_terminal_text as esc;
+            println!("production-ready  {}", esc(report.status.text()));
             for (name, probe) in [
                 ("collector", &report.collector),
                 ("spindle", &report.spindle),
                 ("canonical", &report.canonical),
             ] {
-                println!("{name:<12}  {:<13}  {}", probe.status.text(), probe.reason);
+                println!(
+                    "{name:<12}  {:<13}  {}",
+                    esc(probe.status.text()),
+                    esc(probe.reason)
+                );
             }
             if let Some(origin) = &report.spindle_origin {
-                println!("origin       {origin}");
+                println!("origin       {}", esc(origin));
             }
             if let Some(authority) = &report.canonical_authority {
-                println!("authority    {authority}");
+                println!("authority    {}", esc(authority));
             }
             if let Some(authority) = &report.expected_authority {
-                println!("expected     {authority}");
+                println!("expected     {}", esc(authority));
             }
             if let Some(frontier) = report.canonical_frontier {
                 println!("frontier     {frontier}");
             }
-            println!("scope        {}", report.scope);
+            println!("scope        {}", esc(report.scope));
             Ok(())
         }
     };
     if let Err(error) = output {
-        eprintln!("fabric: output unavailable: {error}");
+        eprintln!(
+            "fabric: output unavailable: {}",
+            fabric_core::sanitize_terminal_text(&error)
+        );
         return 3;
     }
     report.exit_code()
