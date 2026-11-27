@@ -274,6 +274,7 @@ fn expired_pending_survives_reopen_and_refuses_fresh_reports() {
                 bytes: bytes.clone(),
             },
             1,
+            None,
         )
         .unwrap();
     drop(outbox);
@@ -434,10 +435,22 @@ fn application_lost_reply_replays_exact_frame_and_rejects_changed_identity() {
         client.status().unwrap().pending_report_id.as_deref(),
         Some(report.report_id.as_str())
     );
+    let pending = client.report_status(&report.report_id).unwrap().unwrap();
+    assert_eq!(pending.delivery_state, "outcome_unknown");
+    let timing = pending.application_timing.unwrap();
+    assert_eq!(timing.producer_completion, report.producer_completion);
+    assert_eq!(
+        timing.outbox_staged_at.clock.source,
+        "batch_outbox.stage_transaction"
+    );
     drop(client);
     let mut client = BatchClient::open(config, &path).unwrap();
     assert_eq!(client.status().unwrap().confirmed, 1);
+    let status = client.report_status(&report.report_id).unwrap().unwrap();
+    assert_eq!(status.delivery_state, "custody_confirmed");
+    assert_eq!(status.application_timing, Some(timing.clone()));
     let confirmed = client.record_application(report.clone()).unwrap();
+    assert_eq!(confirmed.application_timing, Some(timing));
     assert_eq!(confirmed.receipt.id, 77);
     assert_eq!(
         confirmed.original_artifact_digest.0.hex,
@@ -652,6 +665,7 @@ fn preexisting_terminal_frame_replays_and_corrupt_digest_fails_closed() {
                 bytes: FRAME.to_vec(),
             },
             1,
+            None,
         )
         .unwrap();
     drop(client);
@@ -682,6 +696,7 @@ fn preexisting_terminal_frame_replays_and_corrupt_digest_fails_closed() {
                 bytes: FRAME.to_vec(),
             },
             1,
+            None,
         )
         .unwrap();
     assert!(matches!(
@@ -692,4 +707,91 @@ fn preexisting_terminal_frame_replays_and_corrupt_digest_fails_closed() {
         corrupt.status().unwrap().pending_report_id.as_deref(),
         Some("bbbb0000-0000-0000-0000-000000000001")
     );
+}
+
+#[test]
+fn timing_stage_rollback_and_v1_migration_preserve_unknowns() {
+    let base = directory();
+    let path = base.path().join("v1-outbox");
+    let mut outbox = Outbox::open(&path, "batch-test", "local").unwrap();
+    outbox
+        .save_lease(&Lease {
+            origin: "origin".into(),
+            generation: "lease".into(),
+            expires: wall_time().unwrap() + 3600,
+            expired: false,
+            sequence: 0,
+        })
+        .unwrap();
+    let pending = |id| Pending {
+        report_id: report(id).report_id,
+        digest: [id as u8; 32],
+        bytes: vec![1],
+    };
+    let completion = application_report(1, "batch-test", "origin").producer_completion;
+    // The sequence guard fails after both inserts; the transaction must roll back both.
+    assert!(outbox.stage(&pending(1), 2, Some(&completion)).is_err());
+    assert!(outbox.find(&report(1).report_id).unwrap().is_none());
+    assert!(
+        outbox
+            .application_timing(&report(1).report_id)
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(outbox.lease().unwrap().unwrap().sequence, 0);
+    outbox.stage(&pending(1), 1, None).unwrap();
+    let receipt = Receipt {
+        id: 1,
+        identity: Identity {
+            producer: "batch-test".into(),
+            generation: "lease".into(),
+            sequence: 1,
+        },
+        duplicate: false,
+    };
+    outbox.confirm(&report(1).report_id, &receipt).unwrap();
+    outbox.stage(&pending(2), 2, None).unwrap();
+    drop(outbox);
+    // v1 is precisely the old schema, with both a confirmed and a pending row.
+    let db = rusqlite::Connection::open(path.join("outbox.sqlite")).unwrap();
+    db.execute_batch("DROP TABLE application_timing; PRAGMA user_version=1;")
+        .unwrap();
+    drop(db);
+    let outbox = Outbox::open(&path, "batch-test", "local").unwrap();
+    assert!(matches!(
+        outbox.find(&report(1).report_id).unwrap(),
+        Some(SavedReport::Confirmed(_, _))
+    ));
+    assert!(matches!(
+        outbox.find(&report(2).report_id).unwrap(),
+        Some(SavedReport::Pending(_))
+    ));
+    assert!(
+        outbox
+            .application_timing(&report(1).report_id)
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        outbox
+            .application_timing(&report(2).report_id)
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(outbox.lease().unwrap().unwrap().sequence, 2);
+    drop(outbox);
+    // A failed migration cannot mark an incompatible v1 database as migrated.
+    let db = rusqlite::Connection::open(path.join("outbox.sqlite")).unwrap();
+    db.execute_batch("PRAGMA user_version=1;").unwrap();
+    drop(db);
+    assert!(Outbox::open(&path, "batch-test", "local").is_err());
+    let db = rusqlite::Connection::open(path.join("outbox.sqlite")).unwrap();
+    let version: u32 = db
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, 1);
+    let count: u32 = db
+        .query_row("SELECT count(*) FROM reports", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(count, 2);
 }

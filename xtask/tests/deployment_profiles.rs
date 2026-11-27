@@ -549,6 +549,25 @@ fn application_adapter_replays_after_spindle_restart() {
     let unknown = batch_reply(&replies);
     assert_eq!(unknown["delivery_state"], "outcome_unknown", "{unknown}");
     assert_eq!(unknown["durably_staged"], true);
+    batch_send(
+        &mut adapter,
+        &json!({"command":"report_status", "report_id":report["report_id"]}),
+    );
+    let pending = batch_reply(&replies);
+    assert_eq!(
+        pending["report_status"]["delivery_state"],
+        "outcome_unknown"
+    );
+    let timing = pending["report_status"]["application_timing"].clone();
+    assert_eq!(timing["producer_completion"]["unix_ms"], 42);
+    assert_eq!(
+        timing["outbox_staged_at"]["clock"]["source"],
+        "batch_outbox.stage_transaction"
+    );
+    assert_eq!(
+        timing["outbox_staged_at"]["clock"]["clock_id"],
+        "system_time.unix_ms"
+    );
     adapter.kill_wait();
     fault.join().unwrap();
     assert_eq!(first.id, 1);
@@ -569,12 +588,23 @@ fn application_adapter_replays_after_spindle_restart() {
     let (mut adapter, replies) = open_batch_adapter(&bins, &source.config.socket, &outbox);
     batch_send(&mut adapter, &json!({"command":"status"}));
     assert_eq!(batch_reply(&replies)["status"]["confirmed"], 1);
+    batch_send(
+        &mut adapter,
+        &json!({"command":"report_status", "report_id":report["report_id"]}),
+    );
+    let status = batch_reply(&replies);
+    assert_eq!(
+        status["report_status"]["delivery_state"],
+        "custody_confirmed"
+    );
+    assert_eq!(status["report_status"]["application_timing"], timing);
     batch_send(&mut adapter, &report);
     let confirmed = batch_reply(&replies);
     assert_eq!(
         confirmed["delivery_state"], "custody_confirmed",
         "{confirmed}"
     );
+    assert_eq!(confirmed["application_timing"], timing);
     let replay: Receipt = serde_json::from_value(confirmed["receipt"].clone()).unwrap();
     assert_eq!(replay.id, first.id);
     assert_eq!(replay.identity, first.identity);

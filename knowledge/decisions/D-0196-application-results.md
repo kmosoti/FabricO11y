@@ -19,6 +19,13 @@ Applications needing a wider numeric domain require a new reviewed profile.
 Report and optional parent IDs are scoped to origin and producer. These are
 labels, not authenticated authority. A future adapter must bind them to its
 verified identity and authorize parent retrieval. The pure contract does not
-persist, deduplicate or deliver reports. The existing BatchClient only accepts
-terminal agent/tool observations; a future integration must define and test
-its v3 carrier, payload/frame limits, replay and receipt semantics.
+persist, deduplicate or deliver reports. The batch adapter validates these
+labels against its configured producer and leased origin and carries the
+bounded envelope in a v3 JSON log. Deduplication is confined to one outbox.
+
+The outbox records the producer's completion claim and a local wall-clock sample
+inside the same transaction that stages the frame and sequence. This observation
+precedes transaction commit and is not a measurement of fsync, Spindle custody,
+or visibility. Pending and confirmed rows retain it across replay; migrated v1
+rows have unknown timing. No original artifact bytes are retained. Parent
+authorization and receiver visibility remain separate contracts.

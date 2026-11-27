@@ -1,5 +1,6 @@
 //! One-owner storage for the authenticated lease, one pending frame, and receipts.
-use super::{BatchError, Receipt, observation};
+use super::{ApplicationTiming, BatchError, Receipt, observation};
+use fabric_evidence::evidence_manifest::{ClockProvenance, ProvenancedTime};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, params};
 use rustix::fs::{FlockOperation, OFlags, StatFs, flock, fstatfs};
 use std::{
@@ -7,11 +8,14 @@ use std::{
     io,
     os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt},
     path::{Component, Path, PathBuf},
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 const APPLICATION_ID: u32 = u32::from_be_bytes(*b"FBOX");
-const SCHEMA_VERSION: u32 = 1;
+const SCHEMA_VERSION: u32 = 2;
+const MAX_COMPLETION_BYTES: usize = 4096;
+const STAGE_CLOCK: &str = "system_time.unix_ms";
+const STAGE_SOURCE: &str = "batch_outbox.stage_transaction";
 const MAX_REPORTS: u64 = 4096;
 const MAX_DB_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_RECEIPT: usize = 4096;
@@ -38,6 +42,14 @@ const SCHEMA: &str = "
         CHECK((payload IS NULL) <> (receipt IS NULL))
     ) STRICT;
     CREATE UNIQUE INDEX one_pending ON reports((1)) WHERE payload IS NOT NULL;
+";
+
+const TIMING_SCHEMA: &str = "
+    CREATE TABLE application_timing(
+        report_id TEXT PRIMARY KEY REFERENCES reports(report_id),
+        producer_completion BLOB NOT NULL CHECK(length(producer_completion) BETWEEN 1 AND 4096),
+        staged_unix_ms INTEGER NOT NULL
+    ) STRICT;
 ";
 
 #[derive(Clone)]
@@ -107,13 +119,16 @@ impl Outbox {
                     row.get::<_, bool>(0)
                 })
                 .map_err(storage)?;
-        if !initialize && (application_id != APPLICATION_ID || version != SCHEMA_VERSION) {
+        if !initialize
+            && (application_id != APPLICATION_ID || !matches!(version, 1 | SCHEMA_VERSION))
+        {
             return Err(BatchError::Storage("unsupported outbox database".into()));
         }
         conn.execute_batch(
             "PRAGMA journal_mode=DELETE;
              PRAGMA synchronous=EXTRA;
              PRAGMA temp_store=MEMORY;
+             PRAGMA foreign_keys=ON;
              PRAGMA cache_size=-256;
              PRAGMA locking_mode=EXCLUSIVE;",
         )
@@ -144,6 +159,7 @@ impl Outbox {
         if initialize {
             let transaction = conn.transaction().map_err(storage)?;
             transaction.execute_batch(SCHEMA).map_err(storage)?;
+            transaction.execute_batch(TIMING_SCHEMA).map_err(storage)?;
             transaction
                 .execute(
                     "INSERT INTO batch_state(singleton,producer,resource) VALUES(1,?1,?2)",
@@ -169,6 +185,14 @@ impl Outbox {
             return Err(BatchError::Storage(
                 "outbox is bound to another producer or resource".into(),
             ));
+        }
+        if !initialize && version == 1 {
+            let transaction = conn.transaction().map_err(storage)?;
+            transaction.execute_batch(TIMING_SCHEMA).map_err(storage)?;
+            transaction
+                .pragma_update(None, "user_version", SCHEMA_VERSION)
+                .map_err(storage)?;
+            transaction.commit().map_err(storage)?;
         }
         owner.sync_all().map_err(storage)?;
         Ok(Self {
@@ -228,7 +252,12 @@ impl Outbox {
         Ok(())
     }
 
-    pub fn stage(&mut self, pending: &Pending, sequence: u64) -> Result<(), BatchError> {
+    pub fn stage(
+        &mut self,
+        pending: &Pending,
+        sequence: u64,
+        completion: Option<&ProvenancedTime>,
+    ) -> Result<(), BatchError> {
         let transaction = self.conn.transaction().map_err(storage)?;
         transaction
             .execute(
@@ -242,6 +271,26 @@ impl Outbox {
                     storage(error)
                 }
             })?;
+        if let Some(completion) = completion {
+            validate_completion(completion)?;
+            let encoded = serde_json::to_vec(completion).map_err(storage)?;
+            if encoded.len() > MAX_COMPLETION_BYTES {
+                return Err(BatchError::Storage(
+                    "completion timestamp exceeds bound".into(),
+                ));
+            }
+            let staged_unix_ms = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_err(storage)?
+                .as_millis()
+                .try_into()
+                .map_err(storage)?;
+            let staged_unix_ms: i64 = staged_unix_ms;
+            transaction.execute(
+                "INSERT INTO application_timing(report_id,producer_completion,staged_unix_ms) VALUES(?1,?2,?3)",
+                params![pending.report_id, encoded, staged_unix_ms],
+            ).map_err(|error| if error.sqlite_error_code() == Some(rusqlite::ErrorCode::DiskFull) { BatchError::Full } else { storage(error) })?;
+        }
         let updated = transaction.execute(
             "UPDATE batch_state SET sequence=?1 WHERE singleton=1 AND sequence=?1-1 AND expired=0",
             [sequence],
@@ -279,6 +328,38 @@ impl Outbox {
             )
             .optional()
             .map_err(storage)
+    }
+
+    pub fn application_timing(
+        &self,
+        report_id: &str,
+    ) -> Result<Option<ApplicationTiming>, BatchError> {
+        let row: Option<(Vec<u8>, i64)> = self.conn.query_row(
+            "SELECT producer_completion,staged_unix_ms FROM application_timing WHERE report_id=?1", [report_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        ).optional().map_err(storage)?;
+        row.map(|(encoded, unix_ms)| {
+            if encoded.len() > MAX_COMPLETION_BYTES {
+                return Err(BatchError::Storage(
+                    "completion timestamp exceeds bound".into(),
+                ));
+            }
+            let producer_completion: ProvenancedTime =
+                serde_json::from_slice(&encoded).map_err(storage)?;
+            validate_completion(&producer_completion)?;
+            Ok(ApplicationTiming {
+                producer_completion,
+                outbox_staged_at: ProvenancedTime {
+                    unix_ms,
+                    clock: ClockProvenance {
+                        clock_id: STAGE_CLOCK.into(),
+                        source: STAGE_SOURCE.into(),
+                        uncertainty_ms: None,
+                    },
+                },
+            })
+        })
+        .transpose()
     }
 
     pub fn pending(&self) -> Result<Option<Pending>, BatchError> {
@@ -319,6 +400,16 @@ impl Outbox {
             [], |row| read_receipt(row, 0),
         ).optional().map_err(storage)
     }
+}
+
+fn validate_completion(value: &ProvenancedTime) -> Result<(), BatchError> {
+    let valid = |s: &str, max| !s.is_empty() && s.len() <= max && !s.contains('\0');
+    if !valid(&value.clock.clock_id, 128) || !valid(&value.clock.source, 256) {
+        return Err(BatchError::Storage(
+            "invalid completion clock provenance".into(),
+        ));
+    }
+    Ok(())
 }
 
 fn require_one(updated: usize) -> Result<(), BatchError> {
