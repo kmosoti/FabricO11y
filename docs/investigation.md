@@ -15,6 +15,13 @@ fabric-query query <<'JSON'
 JSON
 ```
 
+For a receiver that supports operation-version negotiation, use
+`fabric-query query-versioned 1` with the same input and environment. The
+receiver checks version 1 against the request's actual operation after reader
+authentication and before query admission. The command makes one request and
+does not fall back to the legacy query when a receiver rejects it. The existing
+`query` command remains available for legacy receivers.
+
 Use `fabric-query plan` with the same input to inspect conservative selected
 segment and row counts. `fabric-query evidence ID` retrieves original canonical
 JSON for an authorized source. `fabric-query progress` reads canonical source

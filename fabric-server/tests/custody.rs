@@ -668,3 +668,47 @@ fn maximum_batch_retries_keep_exact_bytes_and_conflicts_do_not_advance() {
         other => panic!("bounded retry history unavailable: {other:?}"),
     }
 }
+
+#[test]
+fn versioned_query_authorizes_and_negotiates_before_query_work() {
+    let dir = tempfile::tempdir().unwrap();
+    let server = Receiver::new(dir.path(), &["alpha"]);
+    assert!(matches!(
+        server.call(
+            "alpha",
+            Request::Ingest {
+                origin: "alpha".into(),
+                records: vec![row(1, raw(1))]
+            }
+        ),
+        Response::Committed { .. }
+    ));
+    let q = query(vec!["alpha".into()]);
+    let Response::Query { response: legacy } =
+        server.call("reader", Request::Query { request: q.clone() })
+    else {
+        panic!("legacy query failed")
+    };
+    let Response::Query {
+        response: versioned,
+    } = server.call(
+        "reader",
+        Request::QueryWithOperationVersion {
+            request: q.clone(),
+            operation_version: 1,
+        },
+    )
+    else {
+        panic!("versioned query failed")
+    };
+    assert_eq!(legacy.rows, versioned.rows);
+    assert_eq!(legacy.coverage.scope, versioned.coverage.scope);
+    let mut invalid = q.clone();
+    invalid.scope = vec!["ungranted".into()];
+    assert!(
+        matches!(server.call("reader", Request::QueryWithOperationVersion { request: invalid, operation_version: 2 }), Response::Error { error } if error == "unsupported query operation contract")
+    );
+    assert!(
+        matches!(server.call("alpha", Request::QueryWithOperationVersion { request: q, operation_version: 2 }), Response::Error { error } if error == "read credential required")
+    );
+}

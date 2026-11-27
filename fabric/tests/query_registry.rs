@@ -74,3 +74,31 @@ fn actual_query_variants_bind_dtos_and_reject_operation_version_before_handler()
     }
     assert!(called.get());
 }
+
+#[test]
+fn versioned_canonical_wire_is_additive_and_u32_bounded() {
+    use fabric::canonical::Request;
+    let request = request(Operation::ListRuns);
+    let legacy = serde_json::to_value(Request::Query {
+        request: request.clone(),
+    })
+    .unwrap();
+    assert_eq!(legacy["command"], "query");
+    assert!(legacy.get("operation_version").is_none());
+    let versioned = serde_json::to_value(Request::QueryWithOperationVersion {
+        request,
+        operation_version: 1,
+    })
+    .unwrap();
+    assert_eq!(versioned["command"], "query_with_operation_version");
+    assert_eq!(versioned["operation_version"], 1);
+    for bad in [
+        serde_json::json!(-1),
+        serde_json::json!(4294967296u64),
+        serde_json::json!("1"),
+    ] {
+        let mut value = versioned.clone();
+        value["operation_version"] = bad;
+        assert!(serde_json::from_value::<Request>(value).is_err());
+    }
+}

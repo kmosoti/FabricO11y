@@ -125,6 +125,10 @@ pub enum Request {
     Query {
         request: query::QueryRequest,
     },
+    QueryWithOperationVersion {
+        request: query::QueryRequest,
+        operation_version: u32,
+    },
     Plan {
         request: query::QueryRequest,
     },
