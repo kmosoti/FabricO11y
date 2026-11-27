@@ -1,10 +1,3 @@
----
-id: D-0399
-date: 2026-11-27
-added_by: agent
-human_ratified: false
----
-
 # Fixed-barrier exact receipt batches
 
 A reader-authorized origin and authority, explicit caller source barrier and
