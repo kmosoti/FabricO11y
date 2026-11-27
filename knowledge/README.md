@@ -71,6 +71,7 @@ TOML-native records without changing that cohort or its count.
 | [D-0196 · Bounded application result identity](decisions/D-0196-application-results.md) | `agent` | `false` | Scoped result identity and separate source and canonical application digests |
 | [D-0193 · Research corpus revision identity](decisions/D-0193-corpus-revisions.md) | `agent` | `false` | Transport-free immutable revision and claim boundaries |
 | [D-0192 · Headless defaults and an optional frontend](decisions/D-0192-optional-frontend.md) | `agent` | `false` | Supersedes D-0002's product-wide UI prohibition and retains the D-0190 client boundary |
+| [D-0312 · Workflow-first frontend design direction](decisions/D-0312-frontend-design-direction.md) | `agent` | `false` | Proposed ledger direction and shared desktop/mobile evaluation tasks |
 | [D-0236 · Bounded run and attempt manifests](decisions/D-0236-bounded-run-attempt-manifests.md) | `agent` | `false` | Versioned Sans-I/O shared run and attempt context, typed digest roles, explicit disclosure and clock provenance, and pre-decode byte bounds |
 | [D-0250 · Bound lineage and attribute process identity](decisions/D-0250-lineage-attribution.md) | `agent` | `false` | Independent bounded lineage directions and process identity attribution |
 | [D-0251 · Bounded MCP status scheduling](decisions/D-0251-bounded-mcp-status.md) | `agent` | `false` | Queues short status calls with a shared queue and transport deadline, and reserves independent cancellation capacity |

@@ -180,6 +180,16 @@ semantic_directive = false
 historical_evidence = false
 
 [[files]]
+path = "docs/design.md"
+classification = "maintained-prose"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = false
+
+[[files]]
 path = "docs/direction.md"
 classification = "maintained-prose"
 presentation_metadata = "none-found"
@@ -971,6 +981,16 @@ historical_evidence = true
 
 [[files]]
 path = "knowledge/decisions/D-0354-alert-lifecycle.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "knowledge/decisions/D-0312-frontend-design-direction.md"
 classification = "knowledge-record"
 presentation_metadata = "relocated-to-knowledge/records.toml"
 machine_required_metadata = true
