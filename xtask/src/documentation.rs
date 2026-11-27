@@ -685,19 +685,19 @@ fn markdown_reference_uses(text: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut i = 0;
     while i < bytes.len() {
-        if bytes[i] == b'[' {
-            if let Some(end) = text[i + 1..].find(']') {
-                let after = i + 1 + end + 1;
-                if text.as_bytes().get(after) == Some(&b'[') {
-                    if let Some(close) = text[after + 1..].find(']') {
-                        let label = &text[after + 1..after + 1 + close];
-                        if !label.is_empty() {
-                            out.push(label.to_owned());
-                        }
-                        i = after + 2 + close;
-                        continue;
-                    }
+        if bytes[i] == b'['
+            && let Some(end) = text[i + 1..].find(']')
+        {
+            let after = i + 1 + end + 1;
+            if text.as_bytes().get(after) == Some(&b'[')
+                && let Some(close) = text[after + 1..].find(']')
+            {
+                let label = &text[after + 1..after + 1 + close];
+                if !label.is_empty() {
+                    out.push(label.to_owned());
                 }
+                i = after + 2 + close;
+                continue;
             }
         }
         i += 1;
