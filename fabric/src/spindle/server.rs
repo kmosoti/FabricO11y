@@ -69,6 +69,22 @@ struct Connection {
     keep_alive: bool,
     remote: Option<std::sync::mpsc::Receiver<Result<Vec<u8>, String>>>,
 }
+// Internally tagged unit variants otherwise accept extra object fields even
+// with serde's deny_unknown_fields. Preserve the closed command grammar at
+// both dispatch paths before any command can perform work.
+fn parse_request(value: serde_json::Value) -> Result<Request, String> {
+    if let Some(object) = value.as_object()
+        && matches!(
+            object.get("command").and_then(serde_json::Value::as_str),
+            Some("status" | "fabric_progress" | "stop")
+        )
+        && object.len() != 1
+    {
+        return Err("unexpected command field".into());
+    }
+    serde_json::from_value(value).map_err(err)
+}
+
 enum ConnectionProgress {
     Pending,
     Request(Vec<u8>),
@@ -641,7 +657,7 @@ impl Daemon {
         observation::check_json(bytes, observation::MAX_FRAME)?;
         let value: serde_json::Value = serde_json::from_slice(bytes).map_err(err)?;
         if value.get("command").is_some() {
-            let request = serde_json::from_value(value).map_err(err)?;
+            let request = parse_request(value)?;
             self.check_read_origin(&request)?;
             if let Request::Read { after, limit }
             | Request::ReadForOrigin { after, limit, .. }
@@ -675,7 +691,7 @@ impl Daemon {
             .and_then(|()| serde_json::from_slice::<serde_json::Value>(bytes).map_err(err));
         let mut keep_alive = false;
         let reply = match request {
-            Ok(v) if v.get("command").is_some() => match serde_json::from_value::<Request>(v) {
+            Ok(v) if v.get("command").is_some() => match parse_request(v) {
                 Ok(Request::Status) => Reply::Status {
                     status: self.health(),
                 },
@@ -1537,6 +1553,8 @@ mod connection_accounting_tests {
             r#"{"command":"status","uid":123456}"#,
             r#"{"command":"status","principal":"forged"}"#,
             r#"{"command":"status","effective_authority":"forged"}"#,
+            r#"{"command":"fabric_progress","principal":"forged"}"#,
+            r#"{"command":"stop","uid":123456}"#,
         ] {
             let mut client = UnixStream::connect(&config.socket).unwrap();
             client
@@ -1565,6 +1583,7 @@ mod connection_accounting_tests {
             assert_eq!(daemon.store.count().unwrap(), 0);
         }
         assert_eq!(daemon.health.ingestion, 0);
+        assert!(!daemon.stopping);
     }
 
     #[test]
