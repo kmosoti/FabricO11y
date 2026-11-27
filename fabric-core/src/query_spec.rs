@@ -1,5 +1,9 @@
 //! Sans-I/O query domain parsing and safe DataFusion SQL compilation.
 
+use crate::arrow_schemas::{
+    AGENTS_SCHEMA, FS_EVENTS_SCHEMA, LOGS_SCHEMA, METRICS_SCHEMA, TRACES_SCHEMA, UNITS_SCHEMA,
+};
+use arrow::datatypes::{DataType, Schema};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
@@ -14,6 +18,28 @@ pub enum QueryDomain {
     Units,
     Fs,
     Agents,
+}
+
+impl QueryDomain {
+    const ALL: [Self; 6] = [
+        Self::Metrics,
+        Self::Logs,
+        Self::Traces,
+        Self::Units,
+        Self::Fs,
+        Self::Agents,
+    ];
+
+    fn schema(self) -> &'static Schema {
+        match self {
+            Self::Metrics => METRICS_SCHEMA.as_ref(),
+            Self::Logs => LOGS_SCHEMA.as_ref(),
+            Self::Traces => TRACES_SCHEMA.as_ref(),
+            Self::Units => UNITS_SCHEMA.as_ref(),
+            Self::Fs => FS_EVENTS_SCHEMA.as_ref(),
+            Self::Agents => AGENTS_SCHEMA.as_ref(),
+        }
+    }
 }
 
 impl fmt::Display for QueryDomain {
@@ -125,7 +151,13 @@ pub fn build_unified_sql(
         predicates.push(format!("timestamp_ms >= {since_ms}"));
     }
     for raw in &spec.where_clauses {
-        predicates.push(parse_where_predicate(raw)?);
+        let predicate = Predicate::parse(raw)?;
+        let field = spec
+            .domain
+            .schema()
+            .field_with_name(&predicate.column.to_ascii_lowercase())
+            .map_err(|_| format!("unknown {} field '{}'", spec.domain, predicate.column))?;
+        predicates.push(predicate.to_sql(field.data_type())?);
     }
 
     let where_sql = if predicates.is_empty() {
@@ -187,73 +219,92 @@ fn quote_sql_str(val: &str) -> String {
     format!("'{}'", val.replace('\'', "''"))
 }
 
-fn is_numeric_column(col: &str) -> bool {
-    matches!(
-        col,
-        "timestamp_ms"
-            | "value"
-            | "duration_ms"
-            | "pid"
-            | "bytes_delta"
-            | "size_bytes"
-            | "rss_bytes"
-            | "memory_current_bytes"
-            | "memory_high_bytes"
-            | "memory_max_bytes"
-            | "pids_current"
-            | "restart_count"
-            | "used_bytes"
-            | "available_bytes"
-            | "used_pct"
-    )
+struct Predicate<'a> {
+    column: &'a str,
+    operator: &'static str,
+    value: &'a str,
 }
 
-/// Parses one `--where` predicate into validated SQL without emitting unquoted `NaN` or `inf`.
-pub fn parse_where_predicate(raw: &str) -> Result<String, String> {
-    let trimmed = raw.trim();
-    let best = [
-        ("!=", "!="),
-        (">=", ">="),
-        ("<=", "<="),
-        ("=", "="),
-        (">", ">"),
-        ("<", "<"),
-        ("~", "LIKE"),
-    ]
-    .into_iter()
-    .filter_map(|(op_str, sql_op)| {
-        trimmed
-            .find(op_str)
-            .map(|pos| (pos, std::cmp::Reverse(op_str.len()), op_str, sql_op))
-    })
-    .min_by_key(|&(pos, rev_len, _, _)| (pos, rev_len));
-
-    if let Some((pos, _, op_str, sql_op)) = best {
-        let col = trimmed[..pos].trim();
-        validate_ident(col)?;
-        let val = trimmed[pos + op_str.len()..].trim();
-        if sql_op == "LIKE" {
-            let escaped = val.replace('\'', "''");
-            return Ok(format!("CAST({col} AS VARCHAR) LIKE '%{escaped}%'"));
-        }
-        let allow_numeric = matches!(op_str, ">" | ">=" | "<" | "<=")
-            || (matches!(op_str, "=" | "!=") && is_numeric_column(col));
-        if allow_numeric {
-            if let Ok(int_val) = val.parse::<i64>() {
-                return Ok(format!("{col} {sql_op} {int_val}"));
-            }
-            if let Ok(num) = val.parse::<f64>()
-                && num.is_finite()
-            {
-                let normalized = if num == 0.0 { 0.0 } else { num };
-                return Ok(format!("{col} {sql_op} {normalized}"));
-            }
-        }
-        return Ok(format!("{col} {sql_op} {}", quote_sql_str(val)));
+impl<'a> Predicate<'a> {
+    fn parse(raw: &'a str) -> Result<Self, String> {
+        let trimmed = raw.trim();
+        let best = ["!=", ">=", "<=", "=", ">", "<", "~"]
+            .into_iter()
+            .filter_map(|operator| {
+                trimmed
+                    .find(operator)
+                    .map(|pos| (pos, std::cmp::Reverse(operator.len()), operator))
+            })
+            .min();
+        let Some((pos, _, operator)) = best else {
+            return Err(format!(
+                "invalid --where clause '{raw}' (expected col=val, col!=val, col>num, or col~substr)"
+            ));
+        };
+        let column = trimmed[..pos].trim();
+        validate_ident(column)?;
+        Ok(Self {
+            column,
+            operator,
+            value: trimmed[pos + operator.len()..].trim(),
+        })
     }
-    Err(format!(
-        "invalid --where clause '{raw}' (expected col=val, col!=val, col>num, or col~substr)"
-    ))
+
+    fn to_sql(&self, data_type: &DataType) -> Result<String, String> {
+        let Self {
+            column,
+            operator,
+            value,
+        } = *self;
+        if operator == "~" {
+            let pattern = quote_sql_str(&format!("%{value}%"));
+            return Ok(format!("CAST({column} AS VARCHAR) LIKE {pattern}"));
+        }
+        let literal = match data_type {
+            DataType::Utf8 => Some(quote_sql_str(value)),
+            DataType::Boolean if matches!(operator, "=" | "!=") => value
+                .to_ascii_lowercase()
+                .parse::<bool>()
+                .ok()
+                .map(|parsed| parsed.to_string()),
+            DataType::Boolean => {
+                return Err(format!(
+                    "operator '{operator}' is invalid for Boolean field '{column}'"
+                ));
+            }
+            DataType::Int64 => value.parse::<i64>().ok().map(|parsed| parsed.to_string()),
+            DataType::UInt32 => value.parse::<u32>().ok().map(|parsed| parsed.to_string()),
+            DataType::UInt64 => value.parse::<u64>().ok().map(|parsed| parsed.to_string()),
+            DataType::Float64 => value
+                .parse::<f64>()
+                .ok()
+                .filter(|parsed| parsed.is_finite())
+                .map(|parsed| {
+                    if parsed == 0.0 {
+                        "0".into()
+                    } else {
+                        parsed.to_string()
+                    }
+                }),
+            _ => return Err(format!("field '{column}' has unsupported type {data_type}")),
+        };
+        literal
+            .map(|literal| format!("{column} {operator} {literal}"))
+            .ok_or_else(|| format!("invalid {data_type} value '{value}' for field '{column}'"))
+    }
+}
+
+/// Compiles an isolated `--where` fragment. Use `build_unified_sql` to enforce a domain's schema.
+pub fn parse_where_predicate(raw: &str) -> Result<String, String> {
+    let predicate = Predicate::parse(raw)?;
+    let column = predicate.column.to_ascii_lowercase();
+    let data_type = QueryDomain::ALL
+        .into_iter()
+        .find_map(|domain| domain.schema().field_with_name(&column).ok())
+        .map_or(&DataType::Utf8, |field| field.data_type());
+    predicate
+        .to_sql(data_type)
+        .or_else(|_| predicate.to_sql(&DataType::Utf8))
 }
 
 /// Parses one `--agg` expression into validated SQL projection item.
