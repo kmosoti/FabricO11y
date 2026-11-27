@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "live": {
+    "repository": "kmosoti/FabricO11y",
+    "pr": 297,
+    "base": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "head": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "tree": "cccccccccccccccccccccccccccccccccccccccc"
+  },
+  "reviewed": {
+    "candidate": {
+      "repository": "kmosoti/FabricO11y",
+      "pr": 297,
+      "base": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "head": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "tree": "cccccccccccccccccccccccccccccccccccccccc"
+    },
+    "author": "implementation-agent",
+    "reviewer": "independent-reviewer",
+    "independent_context": "fresh-review-context",
+    "receipt": "review-record-reference",
+    "semantic_scope": "reviewed theorem and assumptions"
+  },
+  "base_ref": "develop",
+  "pr_open": true,
+  "conflict": false,
+  "preview": "dddddddddddddddddddddddddddddddddddddddd",
+  "preview_tree": "cccccccccccccccccccccccccccccccccccccccc",
+  "preview_parents": [
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  ],
+  "changed_paths": [
+    "proofs/Telemetry.lean"
+  ],
+  "actions": {
+    "workflow": ".github/workflows/development-checks.yml",
+    "event": "pull_request",
+    "run_id": 123,
+    "attempt": 1,
+    "repository": "kmosoti/FabricO11y",
+    "pr": 297,
+    "head": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "jobs": [
+      {
+        "name": "verify",
+        "conclusion": "success",
+        "checkout": "dddddddddddddddddddddddddddddddddddddddd",
+        "id": 1,
+        "run_id": 123,
+        "attempt": 1
+      },
+      {
+        "name": "native-acceptance",
+        "conclusion": "success",
+        "checkout": "dddddddddddddddddddddddddddddddddddddddd",
+        "id": 2,
+        "run_id": 123,
+        "attempt": 1
+      }
+    ]
+  },
+  "implementation_author": "implementation-agent",
+  "pr_draft": false,
+  "semantic_review_required": true
+}

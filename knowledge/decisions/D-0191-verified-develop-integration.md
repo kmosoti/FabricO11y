@@ -34,3 +34,12 @@ actual protected main SHA and the concrete artifacts. Version tags reference
 the qualification run and manifest that produced the published bytes.
 
 See the [release procedure](../../docs/release-promotion.md).
+
+## Integration evidence validator
+
+The trusted controller validates independently collected live PR, preview, job
+checkout and review facts with the versioned, read-only `xtask integration`
+predicate. Its file inventory is a conservative baseline, supplemented by
+semantic review of the full diff. Authenticity, independent context and
+serialized landing remain controller responsibilities; supplied facts alone
+do not prove them. See the [integration procedure](../../CONTRIBUTING.md#current-base-integration-evidence).
