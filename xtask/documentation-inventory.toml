@@ -130,6 +130,16 @@ semantic_directive = false
 historical_evidence = false
 
 [[files]]
+path = "docs/corpus-contract.md"
+classification = "maintained-prose"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = false
+
+[[files]]
 path = "docs/contracts/sdk.md"
 classification = "maintained-prose"
 presentation_metadata = "none-found"
@@ -461,6 +471,46 @@ historical_evidence = true
 
 [[files]]
 path = "knowledge/decisions/D-0192-optional-frontend.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "knowledge/decisions/D-0193-corpus-revisions.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "knowledge/decisions/D-0194-causal-contributions.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "knowledge/decisions/D-0195-operation-lifecycle.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "knowledge/decisions/D-0236-bounded-run-attempt-manifests.md"
 classification = "knowledge-record"
 presentation_metadata = "relocated-to-knowledge/records.toml"
 machine_required_metadata = true

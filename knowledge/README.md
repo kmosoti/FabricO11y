@@ -14,6 +14,16 @@ Every knowledge artifact distinguishes **who added it** from **whether a human e
 - `added_by`: `agent` | `human` | `mixed` — records whether the artifact was authored by an autonomous/assisted coding agent, a human contributor, or both.
 - `human_ratified`: `true` | `false` — `true` **only** when a human user has explicitly ratified the artifact's claim or decision. When `true`, record `ratified_by` and `ratified_on` (`YYYY-MM-DD`).
 
+### Adding or changing metadata
+
+Add one `[[records]]` entry in `records.toml` for each record, preserving the
+stable ID, exact provenance, ratification state, and relations. Keep absent
+fields absent; do not infer a title, status, or ratification. The `source_path`
+maps the ID to its Markdown body. A record whose ID was historically implicit
+in its filename retains that ID as its structured key. `migration.migrated_ids`
+is the immutable cohort copied from the recorded source commit; add later
+TOML-native records without changing that cohort or its count.
+
 ### Zero-friction velocity rule
 
 1. **No ratification gate for execution:** Agents create, link, update, and act on `knowledge/` artifacts immediately with `added_by: agent` and `human_ratified: false`.

@@ -45,6 +45,7 @@ struct Migration {
     source_commit: String,
     source_format: String,
     record_count: usize,
+    migrated_ids: Vec<String>,
 }
 
 pub fn check(root: &Path) -> Result<(), String> {
@@ -175,8 +176,16 @@ fn check_records(root: &Path) -> Result<(usize, bool), String> {
             .source_commit
             .bytes()
             .all(|b| b.is_ascii_hexdigit())
-        || records.migration.record_count != records.records.len()
-        || records.records.len() > 128
+        || records.migration.record_count != records.migration.migrated_ids.len()
+        || records.migration.migrated_ids.len() > 128
+        || records.records.len() > MAX_MARKDOWN_FILES
+        || records
+            .migration
+            .migrated_ids
+            .iter()
+            .collect::<BTreeSet<_>>()
+            .len()
+            != records.migration.migrated_ids.len()
     {
         return Err("invalid knowledge record migration declaration".into());
     }
@@ -250,47 +259,147 @@ fn check_records(root: &Path) -> Result<(usize, bool), String> {
         }
     }
 
-    // Compare the migrated metadata against its immutable Git history baseline
-    // when it is available. Shallow CI checkouts may not contain this older
-    // object, so they still enforce the versioned schema and graph invariants.
-    let baseline = format!("{}^{{commit}}", records.migration.source_commit);
+    for id in &records.migration.migrated_ids {
+        if !by_id.contains_key(id) {
+            return Err(format!(
+                "migrated knowledge ID is missing from records: {id}"
+            ));
+        }
+    }
+
+    let baseline_verified = compare_migrated_history(
+        root,
+        &records.migration.source_commit,
+        &records.migration.migrated_ids,
+        &by_id,
+    )?;
+    Ok((by_id.len(), baseline_verified))
+}
+
+fn id_matches_source(id: &str, source: &str) -> bool {
+    id_from_source(source).as_deref() == Some(id)
+}
+
+fn id_from_source(source: &str) -> Option<String> {
+    let stem = Path::new(source).file_stem()?.to_str()?;
+    let mut parts = stem.splitn(3, '-');
+    let prefix = parts.next()?;
+    let number = parts.next()?;
+    if !matches!(prefix, "D" | "O" | "R")
+        || number.len() != 4
+        || !number.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return None;
+    }
+    Some(format!("{prefix}-{number}"))
+}
+
+fn compare_migrated_history(
+    root: &Path,
+    source_commit: &str,
+    migrated_ids: &[String],
+    records: &BTreeMap<String, &Value>,
+) -> Result<bool, String> {
+    let baseline = format!("{source_commit}^{{commit}}");
     let baseline_available = Command::new("git")
         .args(["cat-file", "-e", &baseline])
         .current_dir(root)
+        .stderr(std::process::Stdio::null())
         .status()
         .map_err(|e| format!("git cat-file: {e}"))?
         .success();
     if !baseline_available {
         eprintln!(
-            "documentation: {} absent from this checkout; metadata history comparison skipped",
-            records.migration.source_commit
+            "documentation: {source_commit} absent from this checkout; metadata history comparison skipped"
         );
+        return Ok(false);
     }
-    for (id, record) in by_id.iter().filter(|_| baseline_available) {
-        let source = record["source_path"].as_str().unwrap();
-        let spec = format!("{}:{source}", records.migration.source_commit);
-        let output = Command::new("git")
+
+    let output = Command::new("git")
+        .args([
+            "ls-tree",
+            "-r",
+            "-z",
+            "--name-only",
+            source_commit,
+            "--",
+            "knowledge",
+        ])
+        .current_dir(root)
+        .output()
+        .map_err(|e| format!("git ls-tree {source_commit}: {e}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "cannot enumerate historical knowledge files at {source_commit}"
+        ));
+    }
+    if output.stdout.len() > MAX_METADATA_BYTES as usize {
+        return Err("historical knowledge path inventory exceeds 512 KiB".into());
+    }
+    let expected_ids: BTreeSet<_> = migrated_ids.iter().cloned().collect();
+    let mut found_ids = BTreeSet::new();
+    let mut found_paths = BTreeSet::new();
+    let mut historical_markdown = 0;
+    for bytes in output
+        .stdout
+        .split(|byte| *byte == 0)
+        .filter(|path| !path.is_empty())
+    {
+        let source = std::str::from_utf8(bytes)
+            .map_err(|e| format!("historical knowledge path is not UTF-8: {e}"))?;
+        if source == "knowledge/README.md" || !source.ends_with(".md") {
+            continue;
+        }
+        historical_markdown += 1;
+        if historical_markdown > 128 {
+            return Err("historical knowledge record count exceeds 128".into());
+        }
+        let spec = format!("{source_commit}:{source}");
+        let source_output = Command::new("git")
             .args(["show", &spec])
             .current_dir(root)
             .output()
             .map_err(|e| format!("git show {spec}: {e}"))?;
-        if !output.status.success() {
+        if !source_output.status.success() {
             return Err(format!("cannot read knowledge baseline {spec}"));
         }
-        if output.stdout.len() as u64 > MAX_MARKDOWN_BYTES {
+        if source_output.stdout.len() as u64 > MAX_MARKDOWN_BYTES {
             return Err(format!("historical Markdown exceeds 1 MiB: {source}"));
         }
-        let old = String::from_utf8(output.stdout).map_err(|e| format!("{spec}: {e}"))?;
-        let header = old
-            .strip_prefix("---\n")
-            .and_then(|tail| tail.find("\n---\n").map(|end| &tail[..end]))
-            .ok_or_else(|| format!("baseline has no YAML header: {source}"))?;
+        let old = String::from_utf8(source_output.stdout).map_err(|e| format!("{spec}: {e}"))?;
+        let Some(tail) = old.strip_prefix("---\n") else {
+            continue;
+        };
+        let header = tail
+            .find("\n---\n")
+            .map(|end| &tail[..end])
+            .ok_or_else(|| format!("baseline has unterminated YAML header: {source}"))?;
         let old_metadata = parse_legacy_header(header, source)?;
+        let id = old_metadata
+            .get("id")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+            .or_else(|| id_from_source(source))
+            .ok_or_else(|| format!("historical metadata has no stable ID: {source}"))?;
+        if !found_ids.insert(id.clone()) || !found_paths.insert(source.to_owned()) {
+            return Err(format!("duplicate historical knowledge identity: {id}"));
+        }
+        if !expected_ids.contains(&id) {
+            return Err(format!(
+                "historical record {id} missing from migrated cohort"
+            ));
+        }
+        let record = records
+            .get(&id)
+            .ok_or_else(|| format!("migrated record {id} missing from current sidecar"))?;
+        if record["source_path"].as_str() != Some(source) {
+            return Err(format!("historical source path changed for {id}: {source}"));
+        }
         if let Some(old_id) = old_metadata.get("id").and_then(Value::as_str) {
             if old_id != id {
                 return Err(format!("stable ID changed for {source}: {old_id} -> {id}"));
             }
-        } else if !id_matches_source(id, source) {
+        } else if !id_matches_source(&id, source) {
             return Err(format!("stable identity does not match {source}"));
         }
         let current_metadata: BTreeMap<_, _> = record
@@ -308,14 +417,14 @@ fn check_records(root: &Path) -> Result<(usize, bool), String> {
             return Err(format!("migrated metadata differs from history for {id}"));
         }
     }
-    Ok((by_id.len(), baseline_available))
-}
-
-fn id_matches_source(id: &str, source: &str) -> bool {
-    Path::new(source)
-        .file_stem()
-        .and_then(|name| name.to_str())
-        .is_some_and(|stem| stem.starts_with(id))
+    if found_ids != expected_ids {
+        let missing: Vec<_> = expected_ids.difference(&found_ids).cloned().collect();
+        let extra: Vec<_> = found_ids.difference(&expected_ids).cloned().collect();
+        return Err(format!(
+            "historical migration cohort mismatch; missing={missing:?}, extra={extra:?}"
+        ));
+    }
+    Ok(true)
 }
 
 fn parse_legacy_header(header: &str, source: &str) -> Result<BTreeMap<String, Value>, String> {
@@ -722,4 +831,88 @@ fn contains_unapproved_comment(text: &str) -> bool {
         remaining = &after[end + 3..];
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn git(root: &Path, arguments: &[&str]) -> String {
+        let output = Command::new("git")
+            .args(arguments)
+            .current_dir(root)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "git {arguments:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout).unwrap().trim().to_owned()
+    }
+
+    #[test]
+    fn fenced_examples_hide_comments_and_links_from_document_scanner() {
+        let (plain, headings) = markdown_without_fences(
+            "guide.md",
+            "# Guide\n\n```md\n<!-- metadata: example -->\n[missing](not-here.md)\n```\n",
+        )
+        .unwrap();
+        assert!(!contains_unapproved_comment(&plain));
+        assert!(markdown_targets(&plain).unwrap().is_empty());
+        assert!(headings.contains("guide"));
+        assert!(contains_unapproved_comment("<!-- metadata: outside -->"));
+        assert!(markdown_without_fences("broken.md", "```rust\nopen\n").is_err());
+    }
+
+    #[test]
+    fn history_comparison_accepts_a_toml_native_record_outside_migration_cohort() {
+        let directory = crate::evidence::non_tmp_tempdir().unwrap();
+        let root = directory.path();
+        let old_path = root.join("knowledge/decisions/D-0001-legacy.md");
+        let new_path = root.join("knowledge/decisions/D-0002-native.md");
+        fs::create_dir_all(old_path.parent().unwrap()).unwrap();
+        fs::write(
+            &old_path,
+            "---\nid: D-0001\nadded_by: agent\nhuman_ratified: false\n---\n\n# Legacy decision\n",
+        )
+        .unwrap();
+        git(root, &["init", "--quiet"]);
+        git(root, &["add", "knowledge/decisions/D-0001-legacy.md"]);
+        git(
+            root,
+            &[
+                "-c",
+                "user.name=Documentation Test",
+                "-c",
+                "user.email=documentation-test@example.invalid",
+                "commit",
+                "--quiet",
+                "-m",
+                "metadata baseline",
+            ],
+        );
+        let commit = git(root, &["rev-parse", "HEAD"]);
+        fs::write(&old_path, "# Legacy decision\n").unwrap();
+        fs::write(&new_path, "# Native decision\n").unwrap();
+        fs::write(
+            root.join(RECORDS),
+            format!(
+                "schema_version = 1\n\n[migration]\nsource_commit = \"{commit}\"\nsource_format = \"YAML front matter\"\nrecord_count = 1\nmigrated_ids = [\"D-0001\"]\n\n[[records]]\nid = \"D-0001\"\nsource_path = \"knowledge/decisions/D-0001-legacy.md\"\nadded_by = \"agent\"\nhuman_ratified = false\n\n[[records]]\nid = \"D-0002\"\nsource_path = \"knowledge/decisions/D-0002-native.md\"\nadded_by = \"agent\"\nhuman_ratified = false\n"
+            ),
+        )
+        .unwrap();
+
+        assert_eq!(check_records(root).unwrap(), (2, true));
+    }
+
+    #[test]
+    fn unavailable_history_baseline_is_reported_as_unverified() {
+        let directory = crate::evidence::non_tmp_tempdir().unwrap();
+        git(directory.path(), &["init", "--quiet"]);
+        assert!(
+            !compare_migrated_history(directory.path(), &"0".repeat(40), &[], &BTreeMap::new(),)
+                .unwrap()
+        );
+    }
 }
