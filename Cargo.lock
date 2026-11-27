@@ -1468,6 +1468,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "fabric-corpus"
+version = "0.1.1-alpha.2"
+dependencies = [
+ "sha2",
+]
+
+[[package]]
 name = "fabric-graph"
 version = "0.1.1-alpha.2"
 dependencies = [

@@ -3,6 +3,7 @@ members = [
     "admission-kernel",
     "fabric",
     "fabric-core",
+    "fabric-corpus",
     "fabric-graph",
     "fabric-store",
     "fabric-collect",
