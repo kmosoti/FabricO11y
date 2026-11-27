@@ -4,9 +4,19 @@ use std::{
     path::PathBuf,
     time::{Duration, Instant},
 };
+const USAGE: &str = "Usage: fabric-adapter SOCKET PRODUCER [--run-context JSON | --batch-outbox PATH]\nOptions: -h, --help";
+
 fn run() -> Result<(), String> {
     let mut args = env::args().skip(1);
-    let socket = PathBuf::from(args.next().ok_or("usage: fabric-adapter SOCKET PRODUCER")?);
+    let first = args.next().ok_or(USAGE)?;
+    if matches!(first.as_str(), "--help" | "-h") {
+        if args.next().is_some() {
+            return Err(USAGE.into());
+        }
+        println!("{USAGE}");
+        return Ok(());
+    }
+    let socket = PathBuf::from(first);
     let producer = args.next().ok_or("producer required")?;
     let config = fabric::sdk::Config::local(socket, producer)?;
     enum Mode {
@@ -25,12 +35,7 @@ fn run() -> Result<(), String> {
         Some("--batch-outbox") => Mode::Batch(PathBuf::from(
             args.next().ok_or("--batch-outbox requires a directory")?,
         )),
-        Some(_) => {
-            return Err(
-                "usage: fabric-adapter SOCKET PRODUCER [--run-context JSON | --batch-outbox PATH]"
-                    .into(),
-            );
-        }
+        Some(_) => return Err(USAGE.into()),
     };
     let mut reader = None;
     let mut protection = None;

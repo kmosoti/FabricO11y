@@ -5,6 +5,8 @@ use std::{
     path::Path,
     time::{Duration, Instant},
 };
+const USAGE: &str = "Usage: spindle serve CONFIG | status SOCKET | read SOCKET [AFTER] | export SOCKET | stop SOCKET\nOptions: -h, --help";
+
 fn request(socket: &str, request: &Request) -> Result<Reply, String> {
     transport::request(
         Path::new(socket),
@@ -55,14 +57,37 @@ fn export(socket: &str) -> Result<(), String> {
 }
 fn run() -> Result<(), String> {
     let args: Vec<String> = env::args().skip(1).collect();
-    match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice(){
-        ["serve",path]=>{let config = fabric::config::load::<Config>(Path::new(path))?;let mut daemon=Daemon::open(config)?;if daemon.enable_self_telemetry().is_err() {eprintln!("spindle: self-telemetry configuration unavailable");}fabric::spindle::notify_systemd_ready();daemon.run()},
-        ["status",socket]=>print_reply(request(socket,&Request::Status)?),
-        ["stop",socket]=>print_reply(request(socket,&Request::Stop)?),
-        ["read",socket]=>print_reply(request(socket,&Request::Read{after:0,limit:1})?),
-        ["read",socket,after]=>print_reply(request(socket,&Request::Read{after:after.parse().map_err(|_|"invalid after")?,limit:1})?),
-        ["export",socket]=>export(socket),
-        _=>Err("usage: spindle serve CONFIG | status SOCKET | read SOCKET [AFTER] | export SOCKET | stop SOCKET".into())
+    match args
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .as_slice()
+    {
+        ["--help"] | ["-h"] => {
+            println!("{USAGE}");
+            Ok(())
+        }
+        ["serve", path] => {
+            let config = fabric::config::load::<Config>(Path::new(path))?;
+            let mut daemon = Daemon::open(config)?;
+            if daemon.enable_self_telemetry().is_err() {
+                eprintln!("spindle: self-telemetry configuration unavailable");
+            }
+            fabric::spindle::notify_systemd_ready();
+            daemon.run()
+        }
+        ["status", socket] => print_reply(request(socket, &Request::Status)?),
+        ["stop", socket] => print_reply(request(socket, &Request::Stop)?),
+        ["read", socket] => print_reply(request(socket, &Request::Read { after: 0, limit: 1 })?),
+        ["read", socket, after] => print_reply(request(
+            socket,
+            &Request::Read {
+                after: after.parse().map_err(|_| "invalid after")?,
+                limit: 1,
+            },
+        )?),
+        ["export", socket] => export(socket),
+        _ => Err(USAGE.into()),
     }
 }
 fn main() {
