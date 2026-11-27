@@ -979,6 +979,528 @@ fn batch_adapter_replays_a_committed_report_and_projects_130_runs() {
     assert!(runs.is_empty(), "{runs:?}");
 }
 
+// These counters include the whole receiver process, including its background worker.
+fn receipt_bench_receiver(pid: u32) -> (u64, u64, u64) {
+    let stat = fs::read_to_string(format!("/proc/{pid}/stat")).unwrap();
+    let fields: Vec<_> = stat
+        .rsplit_once(") ")
+        .unwrap()
+        .1
+        .split_whitespace()
+        .collect();
+    let ticks = fields[11].parse::<u64>().unwrap() + fields[12].parse::<u64>().unwrap();
+    let io = fs::read_to_string(format!("/proc/{pid}/io")).unwrap();
+    let counter = |name: &str| {
+        io.lines()
+            .find_map(|line| line.strip_prefix(name))
+            .unwrap()
+            .trim()
+            .parse::<u64>()
+            .unwrap()
+    };
+    (ticks, counter("rchar:"), counter("read_bytes:"))
+}
+
+// POSIX_FADV_DONTNEED is verified with mincore; this targets projection segment
+// pages only, not SQLite, binaries or every page of the operating system.
+fn receipt_bench_evict(paths: &[PathBuf]) -> Value {
+    let script = r#"import ctypes,json,mmap,os,sys
+libc=ctypes.CDLL(None,use_errno=True); out=[]
+for path in sys.argv[1:]:
+ fd=os.open(path,os.O_RDONLY); size=os.fstat(fd).st_size
+ if not size: raise RuntimeError('empty segment')
+ rc=libc.posix_fadvise(fd,0,0,4)
+ if rc: raise OSError(rc,'posix_fadvise')
+ m=mmap.mmap(fd,size,access=mmap.ACCESS_COPY); pages=(size+mmap.PAGESIZE-1)//mmap.PAGESIZE
+ v=(ctypes.c_ubyte*pages)(); addr=ctypes.addressof(ctypes.c_char.from_buffer(m))
+ if libc.mincore(ctypes.c_void_p(addr),ctypes.c_size_t(size),v): raise OSError(ctypes.get_errno(),'mincore')
+ out.append({'file':os.path.basename(path),'pages':pages,'resident':sum(x&1 for x in v)}); m.close(); os.close(fd)
+print(json.dumps(out))"#;
+    let output = Command::new("python3")
+        .arg("-c")
+        .arg(script)
+        .args(paths)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "eviction: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(
+        result
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|x| x["resident"].as_u64().unwrap() == 0),
+        "segment cache eviction not confirmed: {result}"
+    );
+    result
+}
+fn receipt_bench_command(bins: &Path, root: &Path, args: &[&str]) -> (Value, u64, f64, u64) {
+    let timing = root.join("receipt-time.txt");
+    let output = Command::new("/usr/bin/time")
+        .args(["-f", "%U %S %M", "-o"])
+        .arg(&timing)
+        .arg(bins.join("fabric"))
+        .arg("--tmp-dir")
+        .arg(root)
+        .arg("--data-dir")
+        .arg(root.join("unused-local-state"))
+        .args(args)
+        .output()
+        .unwrap();
+    let output_bytes = output.stdout.len() as u64;
+    let report = parse_output(output, 0);
+    let timing = fs::read_to_string(timing).unwrap();
+    let fields: Vec<_> = timing.split_whitespace().collect();
+    (
+        report,
+        output_bytes,
+        fields[0].parse::<f64>().unwrap() + fields[1].parse::<f64>().unwrap(),
+        fields[2].parse().unwrap(),
+    )
+}
+fn compare_receipt_batches(
+    bins: &Path,
+    root: &Path,
+    endpoint: &str,
+    authority: &str,
+    origin: &str,
+    server: &OwnedChild,
+    receipts: &[Receipt],
+    stored: &[(u64, Vec<u8>)],
+) {
+    use fabric::canonical::{ProjectionReadyRequest, ProjectionStatus, ReceiptBatchStatus};
+    assert_eq!(receipts.len(), 182);
+    assert_eq!(stored.len(), 182);
+    let last = receipts.last().unwrap();
+    until("fixed projection barrier", Duration::from_secs(90), || {
+        let request = ProjectionReadyRequest {
+            authority: authority.into(),
+            origin: origin.into(),
+            source_id: last.id,
+            identity: last.identity.clone(),
+            timeout_ms: 1000,
+            wait: false,
+        };
+        match canonical::exchange(
+            endpoint,
+            READER,
+            &Request::ProjectionReady { request },
+            Instant::now() + Duration::from_secs(2),
+        ) {
+            Ok(Response::ProjectionReady { readiness })
+                if readiness.status == ProjectionStatus::Visible =>
+            {
+                Some(())
+            }
+            _ => None,
+        }
+    });
+    let receipt_path = root.join("receipts-182.json");
+    fs::write(&receipt_path, serde_json::to_vec(receipts).unwrap()).unwrap();
+    let inputs: Vec<_> = receipts
+        .iter()
+        .enumerate()
+        .map(|(i, receipt)| {
+            let path = root.join(format!("receipt-{i}.json"));
+            fs::write(&path, serde_json::to_vec(receipt).unwrap()).unwrap();
+            path
+        })
+        .collect();
+    let raw_paths: Vec<_> = stored
+        .iter()
+        .map(|(id, bytes)| {
+            let path = root.join(format!("raw-{id}"));
+            fs::write(&path, bytes).unwrap();
+            path
+        })
+        .collect();
+    let digest_output = Command::new("sha256sum").args(&raw_paths).output().unwrap();
+    assert!(digest_output.status.success());
+    let digests: Vec<_> = String::from_utf8(digest_output.stdout)
+        .unwrap()
+        .lines()
+        .map(|line| line.split_whitespace().next().unwrap().to_owned())
+        .collect();
+    assert_eq!(digests.len(), 182);
+    let reader = root.join("reader");
+    let receipt_file = receipt_path.to_str().unwrap();
+    let reader_file = reader.to_str().unwrap();
+    let batch_args = [
+        "receipt-batch-ready",
+        "--json",
+        "--authority",
+        authority,
+        "--origin",
+        origin,
+        "--barrier",
+        "182",
+        "--receipts",
+        receipt_file,
+        "--reader-credential-file",
+        reader_file,
+        "--server-endpoint",
+        endpoint,
+        "--timeout-ms",
+        "30000",
+    ];
+    let mut digest_args = batch_args.to_vec();
+    digest_args.push("--include-digest");
+    let (digest_report, _, _, _) = receipt_bench_command(bins, root, &digest_args);
+    for (i, outcome) in digest_report["data"]["outcomes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .enumerate()
+    {
+        assert_eq!(outcome["status"], "ready");
+        assert_eq!(outcome["canonical_sha256"], digests[i]);
+    }
+    let manifest: Value =
+        serde_json::from_slice(&fs::read(root.join("projection/manifest.json")).unwrap()).unwrap();
+    let segments: Vec<_> = manifest["manifest"]["segments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|x| x["origin"] == origin)
+        .cloned()
+        .collect();
+    let paths: Vec<_> = segments
+        .iter()
+        .map(|s| root.join("projection").join(s["file"].as_str().unwrap()))
+        .collect();
+    assert!(!paths.is_empty());
+    let single_rows: u64 = receipts
+        .iter()
+        .map(|receipt| {
+            let mut matched = segments.iter().filter(|s| {
+                s["min_source"].as_u64().unwrap() <= receipt.id
+                    && receipt.id <= s["max_source"].as_u64().unwrap()
+            });
+            let seg = matched.next().unwrap();
+            assert!(matched.next().is_none());
+            seg["rows"].as_u64().unwrap()
+        })
+        .sum();
+    let hz = String::from_utf8(
+        Command::new("getconf")
+            .arg("CLK_TCK")
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .unwrap()
+    .trim()
+    .parse::<u64>()
+    .unwrap();
+    let mut samples = Vec::new();
+    for temperature in ["segment_cold", "warm"] {
+        for pair in 0..3 {
+            let order = if pair % 2 == 0 {
+                ["single", "batch"]
+            } else {
+                ["batch", "single"]
+            };
+            for arm in order {
+                let eviction = if temperature == "segment_cold" {
+                    Some(receipt_bench_evict(&paths))
+                } else {
+                    None
+                };
+                let before = receipt_bench_receiver(server.0.id());
+                let start = Instant::now();
+                let mut output_bytes = 0u64;
+                let mut client_cpu = 0.0;
+                let mut max_client_rss_kib = 0u64;
+                let (requests, scanned_rows, segment_attempts) = if arm == "single" {
+                    for (receipt, path) in receipts.iter().zip(&inputs) {
+                        let args = [
+                            "projection-ready",
+                            "--json",
+                            "--target",
+                            "canonical",
+                            "--authority",
+                            authority,
+                            "--origin",
+                            origin,
+                            "--receipt",
+                            path.to_str().unwrap(),
+                            "--reader-credential-file",
+                            reader_file,
+                            "--server-endpoint",
+                            endpoint,
+                        ];
+                        let (report, bytes, cpu, rss) = receipt_bench_command(bins, root, &args);
+                        output_bytes += bytes;
+                        client_cpu += cpu;
+                        max_client_rss_kib = max_client_rss_kib.max(rss);
+                        assert_eq!(report["data"]["status"], "visible");
+                        assert_eq!(report["data"]["record_id"], receipt.id);
+                        assert_eq!(
+                            report["data"]["identity"],
+                            serde_json::to_value(&receipt.identity).unwrap()
+                        );
+                    }
+                    (182, single_rows, 182)
+                } else {
+                    let (report, bytes, cpu, rss) = receipt_bench_command(bins, root, &batch_args);
+                    output_bytes += bytes;
+                    client_cpu += cpu;
+                    max_client_rss_kib = max_client_rss_kib.max(rss);
+                    let outcomes = report["data"]["outcomes"].as_array().unwrap();
+                    assert_eq!(outcomes.len(), receipts.len());
+                    for (outcome, receipt) in outcomes.iter().zip(receipts) {
+                        assert_eq!(
+                            outcome["status"],
+                            serde_json::to_value(ReceiptBatchStatus::Ready).unwrap()
+                        );
+                        assert_eq!(outcome["item"]["source_id"], receipt.id.to_string());
+                        assert_eq!(
+                            outcome["item"]["identity"],
+                            serde_json::to_value(&receipt.identity).unwrap()
+                        );
+                    }
+                    (
+                        1,
+                        report["data"]["segment_rows_reserved"].as_u64().unwrap(),
+                        report["data"]["segment_attempts"].as_u64().unwrap(),
+                    )
+                };
+                let elapsed_ns = start.elapsed().as_nanos() as u64;
+                let after = receipt_bench_receiver(server.0.id());
+                samples.push(json!({"temperature":temperature,"pair":pair,"arm":arm,"eviction":eviction,"requests":requests,"client_invocations":requests,"elapsed_ns":elapsed_ns,"receiver_cpu_ticks":after.0-before.0,"receiver_clk_tck":hz,"receiver_read_chars":after.1-before.1,"receiver_storage_read_bytes":after.2-before.2,"client_cpu_seconds":client_cpu,"max_client_rss_kib":max_client_rss_kib,"stdout_bytes":output_bytes,"segment_rows":scanned_rows,"segment_attempts":segment_attempts}));
+            }
+        }
+    }
+    let result = json!({"source_barrier":182,"single_rows_are_manifest_derived":true,"cold_scope":"projection segment pages only; verified mincore after eviction","samples":samples});
+    if let Some(path) = std::env::var_os("FABRIC_TEST_199_METRICS") {
+        fs::write(path, serde_json::to_vec_pretty(&result).unwrap()).unwrap();
+    }
+    println!("receipt_batch_199_metrics={result}");
+}
+
+#[test]
+#[ignore = "requires exact release executables and fabrico11y.slice"]
+fn receipt_batch_readback_182_compared_to_single() {
+    assert!(
+        fs::read_to_string("/proc/self/cgroup")
+            .unwrap()
+            .contains("/fabrico11y.slice/"),
+        "run this test in fabrico11y.slice"
+    );
+    let bins =
+        PathBuf::from(std::env::var_os("FABRIC_TEST_BIN_DIR").expect("release binary directory"));
+    assert!(bins.is_absolute());
+    let sandbox = xtask::evidence::non_tmp_tempdir().unwrap();
+    let root = sandbox.path();
+    let mut source = Node::open(&bins, root, NODE[0].0, NODE[0].1);
+    let spare = Node::open(&bins, root, NODE[1].0, NODE[1].1);
+    let telemetry = Node::open(&bins, root, NODE[2].0, NODE[2].1);
+    let endpoint = TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .to_string();
+    let reader = root.join("reader");
+    private_file(&reader, READER);
+    let (mut server, authority) = receiver(
+        &bins,
+        root,
+        &endpoint,
+        [&source, &spare, &telemetry],
+        &reader,
+    );
+    source.forward(&bins, &endpoint, &authority, None);
+    server.kill_wait();
+
+    let proxy_path = root.join("receipt-proxy.sock");
+    let proxy = UnixListener::bind(&proxy_path).unwrap();
+    proxy.set_nonblocking(true).unwrap();
+    let real_socket = source.config.socket.clone();
+    let (observed, committed) = mpsc::sync_channel(1);
+    let fault = thread::spawn(move || {
+        loop {
+            let mut adapter =
+                until(
+                    "batch proxy connection",
+                    Duration::from_secs(10),
+                    || match proxy.accept() {
+                        Ok((socket, _)) => Some(socket),
+                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => None,
+                        Err(e) => panic!("proxy accept: {e}"),
+                    },
+                );
+            let mut spindle = UnixStream::connect(&real_socket).unwrap();
+            for socket in [&adapter, &spindle] {
+                socket
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                socket
+                    .set_write_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+            }
+            let request = read_spindle_frame(&mut adapter);
+            write_spindle_frame(&mut spindle, &request);
+            let response = read_spindle_frame(&mut spindle);
+            if let Reply::Receipt { receipt } = serde_json::from_slice(&response).unwrap() {
+                assert!(!receipt.duplicate);
+                observed.send(receipt).unwrap();
+                break;
+            }
+            write_spindle_frame(&mut adapter, &response);
+        }
+    });
+    let outbox = root.join("outbox");
+    let (mut adapter, lost_stdout) = open_batch_adapter(&bins, &proxy_path, &outbox);
+    let first_request = batch_record(1);
+    batch_send(&mut adapter, &first_request);
+    let first_receipt = committed.recv_timeout(Duration::from_secs(15)).unwrap();
+    let unknown = batch_reply(&lost_stdout);
+    assert_eq!(unknown["delivery_state"], "outcome_unknown", "{unknown}");
+    adapter.kill_wait();
+    fault.join().unwrap();
+    assert_eq!(first_receipt.id, 1);
+    assert_eq!(source.health().canonical_through, 0);
+
+    // The first adapter owns one lease; fill the remaining slots without records.
+    for index in 0..127 {
+        let reply = spindle::transport::request(
+            &source.config.socket,
+            &spindle::Request::LeaseForOrigin {
+                producer: format!("capacity-{index}"),
+                expected_origin: source.origin.clone(),
+            },
+            Instant::now() + Duration::from_secs(5),
+        )
+        .unwrap();
+        assert!(matches!(reply, Reply::Lease { .. }), "{reply:?}");
+    }
+    let health = source.health();
+    let capacity = health.generation_capacity.unwrap();
+    assert_eq!((capacity.used, capacity.limit), (128, 128));
+    let wrong_origin = spindle::transport::request(
+        &source.config.socket,
+        &spindle::Request::LeaseForOrigin {
+            producer: "different-tenant".into(),
+            expected_origin: "different-origin".into(),
+        },
+        Instant::now() + Duration::from_secs(5),
+    )
+    .unwrap();
+    assert!(
+        matches!(wrong_origin, Reply::Error { ref error } if error == spindle::ORIGIN_MISMATCH)
+    );
+    assert_eq!(health.highest_record_id, 1);
+    let (mut refused_adapter, refused_responses) =
+        open_batch_adapter(&bins, &source.config.socket, &root.join("refused-outbox"));
+    batch_send(&mut refused_adapter, &batch_record(999));
+    let refused = batch_reply(&refused_responses);
+    assert_eq!(refused["code"], "generation_capacity", "{refused}");
+    assert_eq!(refused["delivery_state"], "refused_before_acceptance");
+    batch_send(&mut refused_adapter, &json!({"command":"status"}));
+    assert!(batch_reply(&refused_responses)["status"]["pending_report_id"].is_null());
+    assert_eq!(source.health().highest_record_id, 1);
+    refused_adapter.kill_wait();
+
+    let (mut adapter, responses) = open_batch_adapter(&bins, &source.config.socket, &outbox);
+    batch_send(&mut adapter, &json!({ "command": "status" }));
+    let status = batch_reply(&responses);
+    assert_eq!(status["status"]["confirmed"], 1, "{status}");
+    batch_send(&mut adapter, &first_request);
+    let repeated = batch_reply(&responses);
+    assert_eq!(repeated["delivery_state"], "custody_confirmed");
+    assert_eq!(repeated["projection"], "unchecked");
+    let replayed: Receipt = serde_json::from_value(repeated["receipt"].clone()).unwrap();
+    assert_eq!(replayed.id, first_receipt.id);
+    assert_eq!(replayed.identity, first_receipt.identity);
+    receipt_state(
+        &bins,
+        root,
+        &root.join("batch-local"),
+        &source,
+        &replayed,
+        (3, "pending"),
+    );
+    let mut conflict = first_request;
+    conflict["data"]["duration_ns"] = json!(1_000);
+    batch_send(&mut adapter, &conflict);
+    let conflicting = batch_reply(&responses);
+    assert!(conflicting.get("error").is_some(), "{conflicting}");
+
+    let mut receipts = vec![replayed.clone()];
+    let mut runs = BTreeSet::from([batch_record(1)["context"]["run_id"]
+        .as_str()
+        .unwrap()
+        .to_owned()]);
+    for sequence in 2..=182 {
+        let report = batch_record(sequence);
+        runs.insert(report["context"]["run_id"].as_str().unwrap().to_owned());
+        batch_send(&mut adapter, &report);
+        let reply = batch_reply(&responses);
+        let receipt: Receipt = serde_json::from_value(reply["receipt"].clone())
+            .unwrap_or_else(|error| panic!("report {sequence}: {reply}: {error}"));
+        assert_eq!(receipt.id, sequence);
+        assert_eq!(
+            receipt.identity.generation,
+            first_receipt.identity.generation
+        );
+        assert_eq!(receipt.identity.sequence, sequence);
+        receipts.push(receipt);
+    }
+    adapter.0.stdin.take();
+    let drained = batch_reply(&responses);
+    assert_eq!(drained["eof_receipt"]["id"], 182, "{drained}");
+    let exit = until("batch adapter exit", Duration::from_secs(5), || {
+        adapter.0.try_wait().unwrap()
+    });
+    assert!(exit.success(), "{exit}");
+    assert_eq!(source.health().canonical_through, 0);
+    let mut stored = Vec::new();
+    read_lane(&source, 182, &mut stored).unwrap();
+
+    let (_server, resumed_authority) = receiver(
+        &bins,
+        root,
+        &endpoint,
+        [&source, &spare, &telemetry],
+        &reader,
+    );
+    assert_eq!(authority, resumed_authority);
+    until(
+        "batch canonical acknowledgement",
+        Duration::from_secs(45),
+        || (source.health().canonical_through == 182).then_some(()),
+    );
+    let rows = canonical_rows(
+        &endpoint,
+        &authority,
+        BTreeMap::from([(source.origin.clone(), 182)]),
+    );
+    assert_eq!(rows.len(), 182);
+    for row in rows {
+        let source_id = row["source_id"].as_str().unwrap().parse::<usize>().unwrap();
+        let raw = row["raw"].as_str().unwrap().as_bytes();
+        assert_eq!(raw, stored[source_id - 1].1);
+        let observation = observation::decode_versioned(raw).unwrap();
+        let run_id = &observation.context().unwrap().run_id;
+        assert!(runs.remove(run_id), "unexpected or repeated run {run_id}");
+    }
+    assert!(runs.is_empty(), "{runs:?}");
+    compare_receipt_batches(
+        &bins,
+        root,
+        &endpoint,
+        &authority,
+        &source.origin,
+        &_server,
+        &receipts,
+        &stored,
+    );
+}
+
 #[test]
 #[ignore = "requires exact release executables and fabrico11y.slice"]
 fn local_and_canonical_deployment_profiles() {
