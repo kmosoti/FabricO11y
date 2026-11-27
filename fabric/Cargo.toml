@@ -30,3 +30,15 @@ features = ["net", "process", "fs", "event"]
 
 [dependencies.sha2]
 version = "0.10"
+
+[[bench]]
+name = "query_dispatch_static"
+harness = false
+
+[[bench]]
+name = "query_dispatch_enum"
+harness = false
+
+[[bench]]
+name = "query_dispatch_dyn"
+harness = false
