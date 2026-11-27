@@ -176,6 +176,10 @@ pub enum Reply {
         generation: String,
         expires_unix_s: u64,
     },
+    GenerationCapacity {
+        used: u64,
+        limit: u64,
+    },
     FabricProgress {
         authority: Option<String>,
         origin: String,
@@ -185,6 +189,12 @@ pub enum Reply {
         error: String,
     },
 }
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GenerationCapacity {
+    pub used: u64,
+    pub limit: u64,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Health {
     pub origin: String,
@@ -195,6 +205,9 @@ pub struct Health {
     pub refusals: u64,
     pub errors: u64,
     pub retries: u64,
+    /// Retained generation metadata; expiry alone does not free a slot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generation_capacity: Option<GenerationCapacity>,
     pub records: u64,
     pub highest_record_id: u64,
     pub custody_bytes: u64,

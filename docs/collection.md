@@ -319,6 +319,21 @@ for the same report UUID. Use `status` to inspect pending delivery and
 read the persisted Spindle `origin` that scopes the receipt. Use `flush`
 to retry within a caller-supplied deadline.
 
+A record response with `delivery_state: "custody_confirmed"` includes a
+local receipt; `projection: "unchecked"` does not assert query visibility.
+Use `fabric projection-ready` with that receipt to check projection. A
+`generation_capacity` error with `delivery_state: "refused_before_acceptance"`
+means the new report was not staged or submitted. Its aggregate `capacity`
+contains the retained generation count and limit. Reuse an existing valid
+batch outbox for sequential reports. An `outcome_unknown` response means a
+staged report may already have reached custody; preserve its outbox and
+retry the exact report rather than creating a new identity.
+
+Authorized local `spindle status SOCKET` includes `generation_capacity` when the
+count is available. It reveals no generation or producer identities. Expiry
+alone does not guarantee a free slot: a generation with outstanding custody
+also needs confirmed forwarding before its metadata can be retired.
+
 The outbox can report that it is full, locked, or waiting for custody. Preserve
 an unresolved outbox after lease expiry. Automatic replay uses the original
 lease and stops at expiry. Inspect custody using the original origin and

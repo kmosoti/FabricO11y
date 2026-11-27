@@ -533,6 +533,7 @@ impl Daemon {
         self.health.origin = self.store.origin().to_owned();
         self.health.canonical_through = self.store.forwarded().unwrap_or(0);
         self.health.reclaimed_through = self.store.reclaimed().unwrap_or(0);
+        self.health.generation_capacity = self.store.generation_capacity().ok();
         self.health.records = self.store.count().unwrap_or(0);
         self.health.highest_record_id = self.store.highest_record_id().unwrap_or(0);
         self.health.custody_bytes = self.store.disk_bytes().unwrap_or(0);
@@ -587,6 +588,15 @@ impl Daemon {
                 generation,
                 expires_unix_s,
             },
+            Err(error) if error == "active generation limit" => {
+                match self.store.generation_capacity() {
+                    Ok(capacity) => Reply::GenerationCapacity {
+                        used: capacity.used,
+                        limit: capacity.limit,
+                    },
+                    Err(error) => Reply::Error { error },
+                }
+            }
             Err(error) => Reply::Error { error },
         }
     }

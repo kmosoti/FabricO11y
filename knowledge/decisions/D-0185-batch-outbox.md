@@ -24,3 +24,10 @@ Early retirement would change Spindle's replay and authorization boundary.
 The client outbox keeps the current generation limit and server contract.
 The client quota and retained receipt history are independent of accepted
 Spindle custody and canonical projection.
+
+A capacity response from an origin-qualified lease request is a definite
+refusal before the new report is staged. A lost submission response remains
+unknown and requires exact replay. The same-user Spindle status endpoint
+reports aggregate retained generation usage without identifying producers.
+That count includes expired entries awaiting confirmed handoff; an expiry
+alone does not predict when a slot becomes available.

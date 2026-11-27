@@ -1,7 +1,7 @@
 //! Durable terminal reporting for sequential runs sharing an authenticated lease.
 mod outbox;
 
-use super::{Config, request_lease, validate_context_config};
+use super::{Config, LeaseError, request_lease, validate_context_config};
 use crate::{
     observation::{self, Data, Identity, ObservationV3},
     run::{RunContext, validate_id},
@@ -58,6 +58,7 @@ pub enum BatchError {
     Invalid(String),
     Conflict,
     Full,
+    GenerationCapacity { used: u64, limit: u64 },
     Expired,
     OriginMismatch,
     MismatchedReceipt,
@@ -70,6 +71,7 @@ impl BatchError {
             Self::Invalid(_) => "invalid",
             Self::Conflict => "conflict",
             Self::Full => "full",
+            Self::GenerationCapacity { .. } => "generation_capacity",
             Self::Expired => "expired",
             Self::OriginMismatch => "origin_mismatch",
             Self::MismatchedReceipt => "mismatched_receipt",
@@ -88,6 +90,10 @@ impl fmt::Display for BatchError {
                 formatter.write_str("report_id already belongs to a different request")
             }
             Self::Full => formatter.write_str("outbox has a pending report or reached its limit"),
+            Self::GenerationCapacity { used, limit } => write!(
+                formatter,
+                "Spindle generation capacity exhausted ({used}/{limit}); report not submitted"
+            ),
             Self::Expired => formatter.write_str("generation expired; unresolved report retained"),
             Self::OriginMismatch => formatter.write_str("Spindle origin changed"),
             Self::MismatchedReceipt => formatter.write_str("mismatched custody receipt identity"),
@@ -243,12 +249,12 @@ impl BatchClient {
             return Err(BatchError::Unavailable("invalid Spindle origin".into()));
         }
         let (generation, expires) =
-            request_lease(&self.config, Some(&origin), deadline).map_err(|error| {
-                if error == ORIGIN_MISMATCH {
-                    BatchError::OriginMismatch
-                } else {
-                    BatchError::Unavailable(error)
+            request_lease(&self.config, Some(&origin), deadline).map_err(|error| match error {
+                LeaseError::Capacity { used, limit } => {
+                    BatchError::GenerationCapacity { used, limit }
                 }
+                LeaseError::Other(error) if error == ORIGIN_MISMATCH => BatchError::OriginMismatch,
+                LeaseError::Other(error) => BatchError::Unavailable(error),
             })?;
         if generation.is_empty() || generation.len() > 128 || generation.contains('\0') {
             return Err(BatchError::Unavailable("invalid Spindle generation".into()));
@@ -355,17 +361,56 @@ pub fn batch_adapter_reply(client: &mut BatchClient, bytes: &[u8]) -> serde_json
         Ok(Command::Record(report)) => {
             let report_id = report.report_id.clone();
             match client.record(report) {
-                Ok(receipt) => serde_json::json!({"report_id":report_id,"receipt":receipt}),
+                Ok(receipt) => {
+                    serde_json::json!({"report_id":report_id,"delivery_state":"custody_confirmed","projection":"unchecked","receipt":receipt})
+                }
                 Err(error) => {
-                    serde_json::json!({"report_id":report_id,"error":error.to_string(),"code":error.code()})
+                    let state = if matches!(error, BatchError::GenerationCapacity { .. }) {
+                        Some("refused_before_acceptance")
+                    } else if matches!(
+                        error,
+                        BatchError::Unavailable(_)
+                            | BatchError::MismatchedReceipt
+                            | BatchError::Expired
+                            | BatchError::Storage(_)
+                    ) && client
+                        .status()
+                        .ok()
+                        .and_then(|s| s.pending_report_id)
+                        .as_deref()
+                        == Some(report_id.as_str())
+                    {
+                        Some("outcome_unknown")
+                    } else {
+                        None
+                    };
+                    let mut result = serde_json::json!({"report_id":report_id,"error":error.to_string(),"code":error.code(),"delivery_state":state});
+                    if let BatchError::GenerationCapacity { used, limit } = error {
+                        result["capacity"] = serde_json::json!({"used":used,"limit":limit});
+                    }
+                    result
                 }
             }
         }
         Ok(Command::Flush { timeout_ms }) => {
             let deadline = Instant::now() + Duration::from_millis(timeout_ms.min(30000));
             match client.flush_local(deadline) {
-                Ok(receipt) => serde_json::json!({"receipt":receipt}),
-                Err(error) => error_reply(error),
+                Ok(Some(receipt)) => {
+                    serde_json::json!({"delivery_state":"custody_confirmed","projection":"unchecked","receipt":receipt})
+                }
+                Ok(None) => serde_json::json!({"receipt":null}),
+                Err(error) => {
+                    let pending = client
+                        .status()
+                        .ok()
+                        .and_then(|s| s.pending_report_id)
+                        .is_some();
+                    let mut result = error_reply(error);
+                    if pending {
+                        result["delivery_state"] = "outcome_unknown".into();
+                    }
+                    result
+                }
             }
         }
         Ok(Command::Status) => match client.status() {
