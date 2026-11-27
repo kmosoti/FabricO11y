@@ -132,7 +132,11 @@ distinct boundary. Comparisons require the same roster, unit, aggregation and
 references, preserve missingness and exactness, and report observed numeric
 differences only. This in-memory contract does not establish custody, cutoff
 time ordering, corpus membership or statistical significance. Adapters must
-bound input and reject duplicate keys before constructing sets and maps.
+bound input and reject duplicate keys before constructing sets and maps. A
+separate `fabric.snapshot.v1` application payload carries at most 16 ordered
+case references and must also fit the application-result 4 KiB and shape
+limits. Parent and case digests are claims until authenticated readback; the
+pure codec checks same-source cutoff ordinals without comparing clocks.
 
 ### Application result envelope
 
