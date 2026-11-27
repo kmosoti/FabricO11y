@@ -11,7 +11,7 @@ flowchart TD
     subgraph SansIO["Sans-I/O Core & Formal Verification"]
         CP["fabric-corpus (research revision contracts)"]
         AK["admission-kernel (Verus / Charon / Aeneas)"]
-        FC["fabric-core (Models, PathPolicy, Gorilla HotMetricRing, UnifiedQuerySpec, DDSketch, EWMA-MAD, Five Pillars, Arrow)"]
+        FC["fabric-core (Models, PathPolicy, Gorilla HotMetricRing, UnifiedQuerySpec, run/attempt evidence manifests, DDSketch, EWMA-MAD, Five Pillars, Arrow)"]
         FG["fabric-graph (CausalGraph, BFS lineage, ranked blame)"]
         FC --> AK
         FG --> FC
@@ -343,3 +343,23 @@ flowchart LR
 The telemetry Spindle runs with self-telemetry export disabled. Services suppress
 per-record telemetry for activity on this lane and report queue and delivery
 diagnostics locally.
+
+## Bounded run and attempt evidence manifests
+
+`fabric-core::evidence_manifest` defines a versioned Sans-I/O JSON contract for
+immutable run context, attempt-specific overrides, and observation references.
+An envelope contains one shared run manifest, bounded attempt manifests that
+reference it by ID and digest, and observations that reference an attempt by ID
+and digest. Observations carry record digests and time provenance rather than
+copying run context. Digest roles are distinct Rust types for artifact content,
+run manifests, attempt manifests, canonical records, and physical files. Hashes
+are declared claims: this contract checks SHA-256 syntax and representation
+basis but does not compute or independently verify them.
+
+The decoder rejects wire bodies above 64 KiB before JSON parsing. Nested
+artifacts, attempts, observations, identifiers, text, and times have explicit
+limits. Fields use explicit `available`, `unavailable`, `redacted`, `unknown`,
+and `inapplicable` states. Each supplied source, observed, custody, or verified
+time carries a clock ID and source; timestamps from different clocks have no
+global order guarantee. This contract does not activate collection, storage,
+telemetry migration, or custody verification.

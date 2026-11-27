@@ -3,6 +3,7 @@
 
 pub mod anomaly;
 pub mod arrow_schemas;
+pub mod evidence_manifest;
 pub mod guide;
 pub mod model;
 pub mod paths;
@@ -22,6 +23,13 @@ pub use arrow_schemas::{
     encode_batches_to_ipc_stream, fs_churn_to_record_batch, fs_events_to_record_batch,
     graph_edges_to_record_batch, logs_to_record_batch, metrics_to_record_batch,
     snapshot_to_record_batch, traces_to_record_batch, units_to_record_batch,
+};
+pub use evidence_manifest::{
+    ArtifactContentDigest, ArtifactKind, ArtifactReference, AttemptManifest, AttemptManifestDigest,
+    AttemptOverride, CanonicalRecordDigest, ClockProvenance, DigestAlgorithm, DigestClaim,
+    DigestRepresentation, Disclosure, ImmutableReference, MANIFEST_SCHEMA_VERSION,
+    MAX_MANIFEST_WIRE_BYTES, ManifestEnvelope, ManifestError, ObservationReference,
+    PhysicalFileDigest, ProvenancedTime, RunManifest, RunManifestDigest,
 };
 pub use model::{
     AgentSessionRecord, BlameEntry, BlameReport, BlameResource, CgroupSample, CliEnvelope,
