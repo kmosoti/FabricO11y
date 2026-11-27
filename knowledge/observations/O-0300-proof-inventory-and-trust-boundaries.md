@@ -1,10 +1,3 @@
----
-id: O-0300
-date: 2026-11-27
-added_by: agent
-human_ratified: false
----
-
 # Existing proof inventory and trust boundaries
 
 This inventory records the proof and checker boundary at the `develop` source
@@ -80,6 +73,20 @@ before/after observations. It also prints tool binary digests but accepts tools
 by their reported version or source revision, not by comparison to a pinned
 binary digest. The installer separately verifies release archive hashes and
 checks its managed Aeneas build identity against its local stamp.
+
+## Prospective current-base source comparison
+
+On prospective develop `21eef26cee1d79eb6b30bb7dfa9ff8dbb7d411bd`
+(tree `d1568cee5dc4de4ff5236e0d90ed662f3231320e`), a read-only SHA-256
+comparison found 16 of the 17 historical source entries above still match
+their `7de9e1918802f51ca108b1e9fd54005236982390` baseline. The sole
+difference is `Cargo.lock`: its historical baseline SHA-256 is
+`80981a1dcf51ec4b171bfd843089822660c1e9db1a71f203fe590b57cdbe4c78`,
+while its current SHA-256 is
+`89b530a8db566e76784c4607091e364abc17fe9af6da5a022eb1622a05cfdaa1`.
+This source audit does not run or revalidate any checker; the proof results
+above remain bound to their recorded baseline/candidate commits, not this
+prospective source revision.
 
 ## Suite inventory
 

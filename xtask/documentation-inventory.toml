@@ -600,6 +600,16 @@ semantic_directive = false
 historical_evidence = true
 
 [[files]]
+path = "knowledge/observations/O-0300-proof-inventory-and-trust-boundaries.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
 path = "knowledge/research/R-0001-converged-rust-storage-and-five-pillars.md"
 classification = "knowledge-record"
 presentation_metadata = "relocated-to-knowledge/records.toml"
