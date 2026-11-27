@@ -79,6 +79,13 @@ change query permissions or execute instructions. MCP tools declare read-only
 annotations; source authorization is enforced by Fabric, independently of those
 annotations.
 
+The stdio adapter serializes `capabilities` and `progress` in a status lane with
+space for 16 requests, including the running exchange. Each request has a
+five-second deadline covering queue and transport time. When the lane is full,
+the adapter returns an error immediately. Cancellation uses a separate single
+slot from status and analytical work. `query`, `plan` and `evidence` share one
+fail-fast slot because they can hold a receiver lease or wait on storage.
+
 Projection state directories must be owned by the current user, private, and
 ordinary directories rather than symlinks. Opening an existing public directory
 fails without changing its permissions. Manifest, lock and retained segment paths
