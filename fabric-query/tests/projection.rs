@@ -546,3 +546,51 @@ fn origin_quota_caps_noisy_origin_and_preserves_fair_share_for_peers() {
         .expect("quiet peer origin must remain unblocked by noisy-origin quota exhaustion");
     assert_eq!(progress.frontiers.get("quiet-origin"), Some(&1));
 }
+
+#[test]
+fn grouped_receipt_proofs_match_single_and_scan_each_segment_once() {
+    let (_dir, p) = loaded();
+    let rows: Vec<_> = records().into_iter().filter(|r| r.origin == "a").collect();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let cancel = AtomicBool::new(false);
+    let (answers, scans, _, _) = p.proves_projected_rows(&rows, &cancel, deadline);
+    assert_eq!(answers.len(), rows.len());
+    for (answer, row) in answers.into_iter().zip(&rows) {
+        assert_eq!(
+            answer.unwrap(),
+            p.proves_projected_row(row, &cancel, deadline).unwrap()
+        );
+    }
+    assert_eq!(scans, 1);
+}
+
+#[test]
+fn grouped_receipt_corruption_isolated_to_one_segment() {
+    let dir = private_tempdir();
+    let mut p = Projection::open(dir.path(), 32 * 1024 * 1024).unwrap();
+    let rows: Vec<_> = records()
+        .into_iter()
+        .filter(|r| r.origin == "a")
+        .take(2)
+        .collect();
+    assert_eq!(rows.len(), 2);
+    p.apply(&rows[..1]).unwrap();
+    p.apply(&rows[1..]).unwrap();
+    let manifest: Value =
+        serde_json::from_slice(&std::fs::read(dir.path().join("manifest.json")).unwrap()).unwrap();
+    let file = manifest["manifest"]["segments"].as_array().unwrap()[0]["file"]
+        .as_str()
+        .unwrap();
+    let path = dir.path().join(file);
+    let mut bytes = std::fs::read(&path).unwrap();
+    bytes[8] ^= 1;
+    std::fs::write(path, bytes).unwrap();
+    let (answers, scans, _, _) = p.proves_projected_rows(
+        &rows,
+        &AtomicBool::new(false),
+        std::time::Instant::now() + std::time::Duration::from_secs(10),
+    );
+    assert_eq!(scans, 2);
+    assert!(answers[0].is_err());
+    assert_eq!(answers[1], Ok(true));
+}

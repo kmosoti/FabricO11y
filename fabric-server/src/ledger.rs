@@ -976,6 +976,62 @@ impl Reader {
     ) -> Result<Option<CanonicalRow>, String> {
         self.access().lookup(origin, identity)
     }
+    /// One bounded SQLite query; failures/byte exhaustion are per requested source.
+    pub(crate) fn batch_read(
+        &self,
+        origin: &str,
+        ids: &[u64],
+        deadline: std::time::Instant,
+    ) -> Result<BTreeMap<u64, Result<Option<CanonicalRow>, ()>>, String> {
+        use rusqlite::types::Value;
+        if self.engine.is_some() || ids.len() > 256 {
+            return Err("unsupported batch read".into());
+        }
+        let mut result: BTreeMap<u64, Result<Option<CanonicalRow>, ()>> =
+            ids.iter().map(|id| (*id, Err(()))).collect();
+        if result.is_empty() {
+            return Ok(result);
+        }
+        let placeholders = vec!["?"; result.len()].join(",");
+        let sql = format!(
+            "SELECT {COLUMNS} FROM records WHERE published=1 AND origin=? AND source_id IN ({placeholders}) ORDER BY source_id"
+        );
+        let mut values = vec![Value::Text(origin.to_owned())];
+        values.extend(result.keys().map(|id| Value::Integer(*id as i64)));
+        let mut stmt = self.conn.prepare(&sql).map_err(err)?;
+        let mut query = stmt
+            .query(rusqlite::params_from_iter(values))
+            .map_err(err)?;
+        let mut bytes = 0usize;
+        let mut complete = true;
+        let mut seen = std::collections::BTreeSet::new();
+        while let Some(row) = query.next().map_err(err)? {
+            if std::time::Instant::now() >= deadline {
+                complete = false;
+                break;
+            }
+            let id: u64 = row.get(2).map_err(err)?;
+            seen.insert(id);
+            let len: usize = row.get(4).map_err(err)?;
+            if len > observation::MAX_FRAME || bytes.saturating_add(len) > 4 * 1024 * 1024 {
+                continue;
+            }
+            bytes += len;
+            let value = Ledger::row(row).map_err(err)?;
+            let hash: String = row.get(5).map_err(err)?;
+            if value.raw.len() == len && digest(value.raw.as_bytes()) == hash {
+                result.insert(id, Ok(Some(value)));
+            }
+        }
+        if complete {
+            for (id, value) in &mut result {
+                if !seen.contains(id) {
+                    *value = Ok(None);
+                }
+            }
+        }
+        Ok(result)
+    }
     pub fn evidence(&self, id: u64) -> Result<Option<CanonicalRow>, String> {
         self.access().evidence(id)
     }

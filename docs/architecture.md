@@ -378,6 +378,20 @@ The canonical probe reuses the bounded analytical worker. It confirms the full
 projected row from the committed Parquet segment within the request budget. Native
 engine mode reports unavailable when it has no independent Parquet witness.
 
+`receipt-batch-ready` takes one authorized origin, authority, explicit source
+barrier and at most 256 receipt identities. The receiver captures custody once
+and holds the projection mutex over one manifest read and its bounded segment
+inspection; these are independently observed frontiers, not a cross-request
+snapshot or a promise of historical retention. It checks custody identity and
+the complete projected row for each requested item. One request spends at most
+4 MiB of canonical row bytes and reserves at most 64 MiB and 32,768 rows of
+projection segments; guarded Parquet limits also apply. Segment evidence is
+verified once per touched segment. Deadline, count and byte exhaustion leave
+individual outcomes unavailable. Deadline checks occur around I/O and decoding;
+one guarded Parquet decoder call is not preemptible mid-call. Rows beyond the
+caller's barrier are not looked up. The lock is held for this inspection; this can delay
+projection work for other origins. Native engine mode remains unavailable.
+
 ## Versioned service configuration
 
 The shared loader reads bounded regular files. Explicit service launch paths

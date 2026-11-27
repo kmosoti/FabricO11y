@@ -289,15 +289,20 @@ fn inspect_local(
 }
 
 fn canonical_connection(args: &Args) -> Result<fabric::query::Client, &'static str> {
+    canonical_connection_for(
+        args.server_endpoint.clone(),
+        args.reader_credential_file.clone(),
+    )
+}
+pub(super) fn canonical_connection_for(
+    endpoint_arg: Option<String>,
+    credential_arg: Option<PathBuf>,
+) -> Result<fabric::query::Client, &'static str> {
     let config_dir = super::fabrico11y_config_dir();
-    let mut endpoint = super::non_empty_str(
-        args.server_endpoint
-            .clone()
-            .or_else(|| std::env::var("FABRIC_SERVER_ENDPOINT").ok()),
-    );
+    let mut endpoint =
+        super::non_empty_str(endpoint_arg.or_else(|| std::env::var("FABRIC_SERVER_ENDPOINT").ok()));
     let mut credential = super::non_empty_path(
-        args.reader_credential_file
-            .clone()
+        credential_arg
             .or_else(|| std::env::var_os("FABRIC_READER_CREDENTIAL_FILE").map(PathBuf::from)),
     );
     if let Some(dir) = config_dir {

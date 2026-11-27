@@ -418,6 +418,160 @@ impl Projection {
         Ok(matched)
     }
 
+    /// Prove each requested canonical row against a single locked manifest.
+    /// Each segment is hashed and decoded once; limits apply to the entire call.
+    pub fn proves_projected_rows(
+        &self,
+        rows: &[CanonicalRow],
+        cancel: &AtomicBool,
+        deadline: Instant,
+    ) -> (Vec<Result<bool>>, u64, u64, u64) {
+        let mut results = vec![Err("projection evidence unavailable".to_string()); rows.len()];
+        if rows.len() > 256 || self.poisoned {
+            return (results, 0, 0, 0);
+        }
+        let mut groups: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+        for (i, row) in rows.iter().enumerate() {
+            let mut matches = self.manifest.segments.iter().enumerate().filter(|(_, s)| {
+                s.origin == row.origin
+                    && s.min_source <= row.source_id
+                    && row.source_id <= s.max_source
+            });
+            match (matches.next(), matches.next()) {
+                (None, _) => results[i] = Ok(false),
+                (Some((segment, _)), None) => groups.entry(segment).or_default().push(i),
+                _ => {}
+            }
+        }
+        let mut used_bytes = 0u64;
+        let mut used_rows = 0u64;
+        let mut scans = 0u64;
+        for (segment, indexes) in groups {
+            let s = &self.manifest.segments[segment];
+            if cancel.load(Ordering::Acquire)
+                || Instant::now() >= deadline
+                || s.bytes == 0
+                || s.bytes > MAX_RECEIPT_SEGMENT_BYTES
+                || s.rows as usize > MAX_APPLY_ROWS
+                || used_bytes.saturating_add(s.bytes) > 64 * 1024 * 1024
+                || used_rows.saturating_add(u64::from(s.rows)) > 32768
+            {
+                continue;
+            }
+            used_bytes += s.bytes;
+            used_rows += u64::from(s.rows);
+            scans += 1;
+            let group = self.prove_receipt_segment(s, rows, &indexes, cancel, deadline);
+            if let Ok(group) = group {
+                for (index, value) in indexes.into_iter().zip(group) {
+                    results[index] = value;
+                }
+            }
+        }
+        (results, scans, used_bytes, used_rows)
+    }
+    fn prove_receipt_segment(
+        &self,
+        segment: &Segment,
+        rows: &[CanonicalRow],
+        indexes: &[usize],
+        cancel: &AtomicBool,
+        deadline: Instant,
+    ) -> Result<Vec<Result<bool>>> {
+        let check = || -> Result<()> {
+            if cancel.load(Ordering::Acquire) || Instant::now() >= deadline {
+                Err("receipt projection inspection interrupted".into())
+            } else {
+                Ok(())
+            }
+        };
+        check()?;
+        use rustix::fs::{Mode, OFlags};
+        let handle = rustix::fs::open(
+            &self.dir.join(&segment.file),
+            OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
+            Mode::empty(),
+        )
+        .map_err(err)?;
+        let mut file = File::from(handle);
+        use std::os::unix::fs::MetadataExt;
+        let metadata = file.metadata().map_err(err)?;
+        if !metadata.is_file()
+            || metadata.uid() != rustix::process::geteuid().as_raw()
+            || metadata.len() != segment.bytes
+        {
+            return Err("receipt projection segment metadata mismatch".into());
+        }
+        // Capture each bounded segment once; decoding uses the same immutable bytes.
+        let mut captured = Vec::with_capacity(segment.bytes as usize);
+        let mut buffer = [0; 64 * 1024];
+        while captured.len() < segment.bytes as usize {
+            check()?;
+            let remaining = segment.bytes as usize - captured.len();
+            let take = remaining.min(buffer.len());
+            let count = file.read(&mut buffer[..take]).map_err(err)?;
+            if count == 0 {
+                return Err("receipt projection segment truncated".into());
+            }
+            captured.extend_from_slice(&buffer[..count]);
+        }
+        if hex(&Sha256::digest(&captured)) != segment.digest {
+            return Err("receipt projection segment digest mismatch".into());
+        }
+        check()?;
+        let expected: Vec<_> = indexes
+            .iter()
+            .map(|i| TypedRow::decode(&rows[*i]).and_then(|r| to_batch(&[r])))
+            .collect();
+        let mut matched = vec![false; indexes.len()];
+        let mut bad = vec![false; indexes.len()];
+        let mut total_rows = 0usize;
+        let reader = fabric_store::parquet_guard::open_verified_parquet_batch_reader_from_bytes(
+            bytes::Bytes::from(captured),
+            Some(&schema()),
+            128,
+        )?;
+        for batch in reader {
+            check()?;
+            let batch = batch.map_err(err)?;
+            total_rows += batch.num_rows();
+            if total_rows > segment.rows as usize {
+                return Err("receipt projection segment row count mismatch".into());
+            }
+            let ids = batch
+                .column_by_name("source_id")
+                .and_then(|c| c.as_any().downcast_ref::<UInt64Array>())
+                .ok_or("invalid projected source ID column")?;
+            for (row_index, id) in ids.iter().enumerate() {
+                for (j, index) in indexes.iter().enumerate() {
+                    if id == Some(rows[*index].source_id) {
+                        if matched[j]
+                            || expected[j]
+                                .as_ref()
+                                .map_or(true, |expected| batch.slice(row_index, 1) != *expected)
+                        {
+                            bad[j] = true;
+                        }
+                        matched[j] = true;
+                    }
+                }
+            }
+        }
+        check()?;
+        if total_rows != segment.rows as usize {
+            return Err("receipt projection segment row count mismatch".into());
+        }
+        Ok((0..indexes.len())
+            .map(|i| {
+                if bad[i] || expected[i].is_err() {
+                    Err("receipt projection row mismatch".into())
+                } else {
+                    Ok(matched[i])
+                }
+            })
+            .collect())
+    }
+
     pub fn apply(&mut self, rows: &[CanonicalRow]) -> Result<ProjectionProgress> {
         if self.poisoned {
             return Err("projection publication uncertain; reopen required".into());

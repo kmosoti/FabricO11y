@@ -189,6 +189,86 @@ pub struct SegmentTicket {
     pub mac: String,
 }
 
+/// One origin-scoped exact receipt in a fixed-barrier batch.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReceiptBatchItem {
+    #[serde(with = "query::decimal")]
+    pub source_id: u64,
+    pub identity: observation::Identity,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReceiptBatchRequest {
+    pub authority: String,
+    pub origin: String,
+    #[serde(with = "query::decimal")]
+    pub source_barrier: u64,
+    pub timeout_ms: u32,
+    pub include_digest: bool,
+    pub items: Vec<ReceiptBatchItem>,
+}
+impl ReceiptBatchRequest {
+    pub fn validate(&self) -> Result<(), String> {
+        let valid = |s: &str| !s.is_empty() && s.len() <= 128 && !s.contains('\0');
+        if !valid(&self.authority)
+            || !valid(&self.origin)
+            || self.source_barrier == 0
+            || self.source_barrier > i64::MAX as u64
+            || self.items.is_empty()
+            || self.items.len() > 256
+            || !(1..=MAX_PROJECTION_READY_TIMEOUT_MS).contains(&self.timeout_ms)
+        {
+            return Err("invalid receipt batch".into());
+        }
+        for item in &self.items {
+            if item.source_id == 0
+                || item.source_id > i64::MAX as u64
+                || item.identity.sequence == 0
+                || !valid(&item.identity.producer)
+                || !valid(&item.identity.generation)
+            {
+                return Err("invalid receipt batch item".into());
+            }
+        }
+        Ok(())
+    }
+}
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ReceiptBatchStatus {
+    Ready,
+    Pending,
+    Missing,
+    Mismatch,
+    Unavailable,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReceiptBatchOutcome {
+    pub item: ReceiptBatchItem,
+    pub status: ReceiptBatchStatus,
+    pub reason: ProjectionReason,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub canonical_sha256: Option<String>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReceiptBatchReadiness {
+    pub authority: String,
+    pub origin: String,
+    #[serde(with = "query::decimal")]
+    pub source_barrier: u64,
+    #[serde(with = "query::optional_decimal")]
+    pub custody_frontier: Option<u64>,
+    #[serde(with = "query::optional_decimal")]
+    pub projection_frontier: Option<u64>,
+    pub outcomes: Vec<ReceiptBatchOutcome>,
+    pub segment_attempts: u64,
+    pub segment_bytes_reserved: u64,
+    pub segment_rows_reserved: u64,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "command", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Request {
@@ -228,6 +308,9 @@ pub enum Request {
         ticket: SegmentTicket,
         offset: u64,
         length: u32,
+    },
+    ReceiptBatchReady {
+        request: ReceiptBatchRequest,
     },
     Capabilities,
     Query {
@@ -283,6 +366,9 @@ pub enum Response {
     SegmentChunk {
         offset: u64,
         bytes: Vec<u8>,
+    },
+    ReceiptBatchReady {
+        readiness: ReceiptBatchReadiness,
     },
     Capabilities {
         authority: String,

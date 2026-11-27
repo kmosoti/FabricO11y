@@ -788,6 +788,168 @@ fn receipt_readiness(
     report
 }
 
+fn receipt_batch_readiness(
+    request: &canonical::ReceiptBatchRequest,
+    reads: &ReadState,
+    projection: &Mutex<Projection>,
+    projection_error: &Mutex<Option<String>>,
+    query_lease: &mut Option<QueryGuard>,
+) -> canonical::ReceiptBatchReadiness {
+    use canonical::{
+        ReceiptBatchOutcome as Outcome, ReceiptBatchReadiness as Report,
+        ReceiptBatchStatus as Status,
+    };
+    let deadline = Instant::now() + Duration::from_millis(request.timeout_ms.into());
+    let mut report = Report {
+        authority: request.authority.clone(),
+        origin: request.origin.clone(),
+        source_barrier: request.source_barrier,
+        custody_frontier: None,
+        projection_frontier: None,
+        outcomes: request
+            .items
+            .iter()
+            .cloned()
+            .map(|item| Outcome {
+                item,
+                status: Status::Unavailable,
+                reason: ProjectionReason::CustodyEvidenceUnavailable,
+                canonical_sha256: None,
+            })
+            .collect(),
+        segment_attempts: 0,
+        segment_bytes_reserved: 0,
+        segment_rows_reserved: 0,
+    };
+    if request.authority != reads.authority {
+        for outcome in &mut report.outcomes {
+            outcome.reason = ProjectionReason::AuthorityMismatch;
+        }
+        return report;
+    }
+    let Ok(frontiers) = reads.frontiers.try_read() else {
+        return report;
+    };
+    let custody = frontiers.get(&request.origin).copied().unwrap_or(0);
+    report.custody_frontier = Some(custody);
+    drop(frontiers);
+    if reads.engine.is_some() {
+        for outcome in &mut report.outcomes {
+            outcome.reason = ProjectionReason::BackendUnsupported;
+        }
+        return report;
+    }
+    for outcome in &mut report.outcomes {
+        if outcome.item.source_id > request.source_barrier {
+            outcome.reason = ProjectionReason::RecordUnavailable;
+        } else if outcome.item.source_id > custody {
+            outcome.status = Status::Missing;
+            outcome.reason = ProjectionReason::RecordUnavailable;
+        }
+    }
+    let Ok(cancel) = reserve(reads, "receipt-batch-ready", query_lease) else {
+        return report;
+    };
+    let ids: Vec<u64> = request
+        .items
+        .iter()
+        .filter(|item| item.source_id <= request.source_barrier && item.source_id <= custody)
+        .map(|item| item.source_id)
+        .collect();
+    let rows = match reads.reader.try_lock() {
+        Ok(reader) => reader.batch_read(&request.origin, &ids, deadline),
+        Err(_) => return report,
+    };
+    let Ok(rows) = rows else {
+        return report;
+    };
+    let mut verified = Vec::new();
+    for (index, outcome) in report.outcomes.iter_mut().enumerate() {
+        let id = outcome.item.source_id;
+        if id > request.source_barrier || id > custody {
+            continue;
+        }
+        let Some(row) = rows.get(&id) else {
+            continue;
+        };
+        let row = match row {
+            Ok(Some(row)) => row,
+            Ok(None) => {
+                outcome.status = Status::Missing;
+                outcome.reason = ProjectionReason::RecordUnavailable;
+                continue;
+            }
+            Err(()) => continue,
+        };
+        let Ok(observation) = observation::decode_versioned(row.raw.as_bytes()) else {
+            continue;
+        };
+        if row.origin != request.origin
+            || row.source_id != id
+            || observation.identity() != &outcome.item.identity
+        {
+            outcome.status = Status::Mismatch;
+            outcome.reason = ProjectionReason::IdentityMismatch;
+            continue;
+        }
+        outcome.reason = ProjectionReason::ProjectionEvidenceUnavailable;
+        verified.push((index, row.clone()));
+    }
+    let Ok(projected) = projection.try_lock() else {
+        return report;
+    };
+    let Ok(frontier) = projected.source_frontier(&request.origin) else {
+        return report;
+    };
+    report.projection_frontier = Some(frontier);
+    let mut candidates = Vec::new();
+    let mut indexes = Vec::new();
+    for (index, row) in verified {
+        let outcome = &mut report.outcomes[index];
+        if !matches!(projection_error.try_lock(),Ok(error) if error.is_none())
+            || Instant::now() >= deadline
+        {
+            continue;
+        }
+        if outcome.item.source_id > frontier {
+            outcome.status = Status::Pending;
+            outcome.reason = ProjectionReason::AwaitingProjection;
+            continue;
+        }
+        indexes.push(index);
+        candidates.push(row);
+    }
+    let (results, segments, bytes, rows_scanned) =
+        projected.proves_projected_rows(&candidates, &cancel, deadline);
+    report.segment_attempts = segments;
+    report.segment_bytes_reserved = bytes;
+    report.segment_rows_reserved = rows_scanned;
+    for ((index, row), result) in indexes.into_iter().zip(candidates).zip(results) {
+        let outcome = &mut report.outcomes[index];
+        match result {
+            Ok(true) => {
+                outcome.status = Status::Ready;
+                outcome.reason = ProjectionReason::CommittedRow;
+                if request.include_digest {
+                    outcome.canonical_sha256 = Some(
+                        Sha256::digest(row.raw.as_bytes())
+                            .iter()
+                            .map(|b| format!("{b:02x}"))
+                            .collect(),
+                    );
+                }
+            }
+            Ok(false) => {
+                outcome.reason = ProjectionReason::ProjectedRowUnavailable;
+            }
+            Err(_) => {
+                outcome.reason = ProjectionReason::ProjectionEvidenceUnavailable;
+            }
+        }
+    }
+    report
+}
+
 fn respond(
     request: Result<(handshake::AuthenticatedGrant, Request), String>,
     ledger: &Arc<Mutex<Ledger>>,
@@ -975,6 +1137,15 @@ fn handle(
                 authority: reads.authority.clone(),
                 frontiers,
             })
+        }
+        Request::ReceiptBatchReady { request } => {
+            if !reader || !allows(&request.origin) {
+                return Err("unauthorized origin".into());
+            }
+            request.validate()?;
+            let readiness =
+                receipt_batch_readiness(&request, reads, projection, projection_error, query_lease);
+            Ok(Response::ReceiptBatchReady { readiness })
         }
         Request::ProjectionReady { request } => {
             if !reader {
@@ -1802,6 +1973,101 @@ mod receipt_tests {
             ),
             Ok(Response::ExactReceiptFound { row: None, .. })
         ));
+    }
+
+    #[test]
+    fn receipt_batch_keeps_independent_scoped_outcomes() {
+        use canonical::{ReceiptBatchItem, ReceiptBatchRequest, ReceiptBatchStatus as Status};
+        let (_root, server) = fixture();
+        let raw = |sequence: u64| {
+            serde_json::json!({"version":2,"registry":"fabrico11y/2","identity":{"producer":"alpha","generation":"sample","sequence":sequence},"timestamp_ns":0,"resource":"service","data":{"kind":"log","level":"info","message":"sample"}}).to_string()
+        };
+        let entries: Vec<_> = (1..=2)
+            .map(|id| ForwardRecord {
+                source_id: id,
+                raw: raw(id),
+            })
+            .collect();
+        assert!(matches!(
+            call(
+                &server,
+                "alpha",
+                Request::Ingest {
+                    origin: "alpha".into(),
+                    records: entries
+                }
+            ),
+            Ok(Response::Committed { through: 2, .. })
+        ));
+        let rows = server.ledger.lock().unwrap().replay(0, 2, 8192).unwrap();
+        server.projection.lock().unwrap().apply(&rows[..1]).unwrap();
+        let item = |id| ReceiptBatchItem {
+            source_id: id,
+            identity: observation::decode_versioned(raw(id).as_bytes())
+                .unwrap()
+                .identity()
+                .clone(),
+        };
+        let mut mismatch = item(1);
+        mismatch.identity.producer = "other".into();
+        let request = ReceiptBatchRequest {
+            authority: server.reads.authority.clone(),
+            origin: "alpha".into(),
+            source_barrier: 3,
+            timeout_ms: 1000,
+            include_digest: true,
+            items: vec![item(1), item(2), mismatch, item(3), item(4), item(1)],
+        };
+        assert!(
+            call(
+                &server,
+                "alpha",
+                Request::ReceiptBatchReady {
+                    request: request.clone()
+                }
+            )
+            .is_err()
+        );
+        let mut denied = request.clone();
+        denied.origin = "unknown".into();
+        assert!(
+            call(
+                &server,
+                "reader",
+                Request::ReceiptBatchReady { request: denied }
+            )
+            .is_err()
+        );
+        let Response::ReceiptBatchReady { readiness } =
+            call(&server, "reader", Request::ReceiptBatchReady { request }).unwrap()
+        else {
+            panic!("missing batch")
+        };
+        let statuses: Vec<_> = readiness.outcomes.iter().map(|x| x.status).collect();
+        assert_eq!(
+            statuses,
+            vec![
+                Status::Ready,
+                Status::Pending,
+                Status::Mismatch,
+                Status::Missing,
+                Status::Unavailable,
+                Status::Ready
+            ]
+        );
+        assert_eq!(readiness.segment_attempts, 1);
+        assert_eq!(
+            readiness.outcomes[0]
+                .canonical_sha256
+                .as_ref()
+                .unwrap()
+                .len(),
+            64
+        );
+        assert_eq!(
+            readiness.outcomes[0].canonical_sha256,
+            readiness.outcomes[5].canonical_sha256
+        );
     }
 
     #[test]
