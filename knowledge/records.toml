@@ -330,6 +330,15 @@ added_by = "agent"
 human_ratified = false
 
 [[records]]
+id = "D-0399"
+source_path = "knowledge/decisions/D-0399-bounded-receipt-batch.md"
+title = "Fixed-barrier exact receipt batches"
+type = "decision"
+date = 2026-11-27
+added_by = "agent"
+human_ratified = false
+
+[[records]]
 id = "D-0197"
 source_path = "knowledge/decisions/D-0197-typed-operation-contracts.md"
 title = "Typed operation contracts"
