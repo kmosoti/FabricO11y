@@ -9,7 +9,7 @@ use std::{
     sync::{Arc, Barrier},
     time::{Duration, Instant},
 };
-use xtask::collection_lab::{config, daemon, rss_bytes};
+use xtask::collection_lab::{RESOURCE_WORKLOADS, config, daemon, rss_bytes};
 fn main() {
     let args: Vec<_> = std::env::args().collect();
     if args.get(1).map(String::as_str) == Some("serve") {
@@ -29,11 +29,11 @@ fn main() {
     assert!(binary.is_absolute() && binary.is_file());
     let mut reports = Vec::new();
     // Fixed coverage cases, not performance-selection holdouts.
-    for (slots, width, producers, case) in [
-        (1, 1024, 1, "short-record"),
-        (8, 4096, 4, "full-width"),
-        (17, 2048, 3, "sequence-width"),
-    ] {
+    for workload in RESOURCE_WORKLOADS {
+        let slots = workload.slots;
+        let width = workload.record_capacity_bytes;
+        let producers = workload.producers;
+        let case = workload.case;
         let root = xtask::evidence::non_tmp_tempdir().unwrap();
         let mut cfg = config(root.path());
         cfg.client_timeout_ms = 1000;

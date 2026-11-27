@@ -204,15 +204,17 @@ fn declaration_matches_existing_resource_and_workload_inputs() {
     );
 
     assert_eq!(b.baseline.fixture, "xtask/src/bin/collection-resources.rs");
+    let full_width = xtask::collection_lab::RESOURCE_WORKLOADS
+        .iter()
+        .find(|workload| workload.case == "full-width")
+        .expect("collection-resources defines the full-width workload");
+    assert_eq!(b.workload.case, full_width.case);
+    assert_eq!(b.workload.slots, full_width.slots);
     assert_eq!(
-        (
-            b.workload.case.as_str(),
-            b.workload.slots,
-            b.workload.record_capacity_bytes,
-            b.workload.producers
-        ),
-        ("full-width", 8, 4096, 4),
+        b.workload.record_capacity_bytes,
+        full_width.record_capacity_bytes
     );
+    assert_eq!(b.workload.producers, full_width.producers);
     for commit in [&b.baseline.source_commit, &b.baseline.rustc_commit] {
         assert_eq!(commit.len(), 40);
         assert!(commit.bytes().all(|byte| byte.is_ascii_hexdigit()));
@@ -229,9 +231,46 @@ fn declaration_matches_existing_resource_and_workload_inputs() {
         ),
         ("x86_64", "linux", 2)
     );
-    assert_eq!(b.baseline.required_run_identity.len(), 6);
-    assert_eq!(b.machine.match_fields.len(), 8);
-    assert_eq!(b.workload.report.len(), 11);
+    assert_eq!(
+        b.baseline.required_run_identity,
+        [
+            "candidate-acceptance-receipt",
+            "cargo-lock-digest",
+            "executable-digest",
+            "fixture-digest",
+            "resource-profile-digest",
+            "machine-profile-digest",
+        ]
+    );
+    assert_eq!(
+        b.machine.match_fields,
+        [
+            "cpu-model",
+            "cpu-topology",
+            "memory-capacity",
+            "kernel-release",
+            "filesystem-and-mount",
+            "power-policy",
+            "logical-cpu-affinity",
+            "cache-state",
+        ]
+    );
+    assert_eq!(
+        b.workload.report,
+        [
+            "peak-rss-by-process-bytes",
+            "cgroup-memory-peak-bytes",
+            "cgroup-file-cache-bytes",
+            "peak-fds-by-process",
+            "cpu-time-ns",
+            "wakeups",
+            "bytes-written",
+            "scratch-peak-bytes",
+            "observer-overhead",
+            "failed-and-refused-work",
+            "variance",
+        ]
+    );
     assert_eq!(r.coverage.not_qualified.len(), 9);
 }
 
