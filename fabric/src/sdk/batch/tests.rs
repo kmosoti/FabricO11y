@@ -331,3 +331,365 @@ fn outbox_excludes_concurrent_owners_and_rejects_unsafe_paths() {
     fs::set_permissions(&path, fs::Permissions::from_mode(0o750)).unwrap();
     assert!(Outbox::open(&path, "producer", "local").is_err());
 }
+
+fn application_report(id: u64, producer: &str, origin: &str) -> ApplicationReport {
+    ApplicationReport {
+        report_id: format!("bbbb0000-0000-0000-0000-{id:012x}"),
+        context: RunContext {
+            run_id: format!("aaaa0000-0000-0000-0000-{id:012x}"),
+        },
+        scope: ReportScope::new(origin.into(), producer.into()).unwrap(),
+        parent_report_id: None,
+        schema: "example.result.v1".into(),
+        producer_completion: ProvenancedTime {
+            unix_ms: 42,
+            clock: fabric_evidence::evidence_manifest::ClockProvenance {
+                clock_id: "producer-clock".into(),
+                source: "worker".into(),
+                uncertainty_ms: None,
+            },
+        },
+        artifact_json: "{\"label\":\"caf\\u00e9\"}\n".into(),
+        timestamp_ns: 123,
+    }
+}
+
+#[test]
+fn application_lost_reply_replays_exact_frame_and_rejects_changed_identity() {
+    let base = directory();
+    let socket = base.path().join("server.sock");
+    let path = base.path().join("outbox");
+    let listener = UnixListener::bind(&socket).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let peer = thread::spawn(move || {
+        let (stream, request) = recv(&listener);
+        assert!(matches!(
+            serde_json::from_slice(&request).unwrap(),
+            Request::FabricProgress
+        ));
+        send(
+            stream,
+            &Reply::FabricProgress {
+                authority: None,
+                origin: "origin".into(),
+                through: 0,
+            },
+        );
+        let (stream, request) = recv(&listener);
+        assert!(
+            matches!(serde_json::from_slice(&request).unwrap(), Request::LeaseForOrigin { expected_origin, .. } if expected_origin == "origin")
+        );
+        send(
+            stream,
+            &Reply::Lease {
+                generation: "lease".into(),
+                expires_unix_s: wall_time().unwrap() + 3600,
+            },
+        );
+        let (stream, original) = recv(&listener);
+        assert!(
+            !original
+                .windows(b"caf\\u00e9".len())
+                .any(|w| w == b"caf\\u00e9")
+        );
+        let decoded = observation::decode_versioned(&original).unwrap();
+        let identity = decoded.identity().clone();
+        let Data::JsonLog { fields } = decoded.data() else {
+            panic!("expected application carrier");
+        };
+        assert_eq!(fields.len(), 1);
+        let envelope = serde_json::to_vec(&fields[APPLICATION_MARKER]).unwrap();
+        let result = ApplicationResult::decode_bounded(&envelope).unwrap();
+        result
+            .verify_original_artifact(b"{\"label\":\"caf\\u00e9\"}\n")
+            .unwrap();
+        assert_eq!(
+            result.canonical_payload().unwrap(),
+            "{\"label\":\"café\"}".as_bytes()
+        );
+        drop(stream); // committed by the simulated receiver, but reply is withheld
+        let (stream, replay) = recv(&listener);
+        assert_eq!(original, replay);
+        send(
+            stream,
+            &Reply::Receipt {
+                receipt: Receipt {
+                    id: 77,
+                    identity,
+                    duplicate: true,
+                },
+            },
+        );
+    });
+    let mut config = Config::local(socket, "batch-test".into()).unwrap();
+    config.delivery_timeout = Duration::from_secs(5);
+    let mut client = BatchClient::open(config.clone(), &path).unwrap();
+    let report = application_report(1, "batch-test", "origin");
+    let mut request = serde_json::to_value(&report).unwrap();
+    request["command"] = "record_application".into();
+    let response = batch_adapter_reply(&mut client, &serde_json::to_vec(&request).unwrap());
+    assert_eq!(response["delivery_state"], "outcome_unknown", "{response}");
+    assert_eq!(response["durably_staged"], true);
+    assert_eq!(
+        client.status().unwrap().pending_report_id.as_deref(),
+        Some(report.report_id.as_str())
+    );
+    drop(client);
+    let mut client = BatchClient::open(config, &path).unwrap();
+    assert_eq!(client.status().unwrap().confirmed, 1);
+    let confirmed = client.record_application(report.clone()).unwrap();
+    assert_eq!(confirmed.receipt.id, 77);
+    assert_eq!(
+        confirmed.original_artifact_digest.0.hex,
+        "426d8f9948cd8aa9aede8235c65e8f5fd79eb048055e962afbea5c2b5ca1b64d"
+    );
+    assert_eq!(
+        confirmed.application_payload_digest.0.hex,
+        "2d7fba14f0a7cffed454bc268d791c0f32d11f62946998a323087ccf5df29075"
+    );
+    let mut changed = report.clone();
+    changed.artifact_json = "{\"label\":\"café\"}".into();
+    assert!(matches!(
+        client.record_application(changed),
+        Err(BatchError::Conflict)
+    ));
+    let mut terminal = self::report(1);
+    terminal.report_id = report.report_id;
+    assert_eq!(client.record(terminal), Err(BatchError::Conflict));
+    peer.join().unwrap();
+}
+
+#[test]
+fn application_scope_mismatch_refuses_before_lease() {
+    let base = directory();
+    let socket = base.path().join("server.sock");
+    let listener = UnixListener::bind(&socket).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let peer = thread::spawn(move || {
+        let (stream, request) = recv(&listener);
+        assert!(matches!(
+            serde_json::from_slice(&request).unwrap(),
+            Request::FabricProgress
+        ));
+        send(
+            stream,
+            &Reply::FabricProgress {
+                authority: None,
+                origin: "actual".into(),
+                through: 0,
+            },
+        );
+    });
+    let config = Config::local(socket, "batch-test".into()).unwrap();
+    let mut client = BatchClient::open(config, &base.path().join("outbox")).unwrap();
+    assert!(matches!(
+        client.record_application(application_report(1, "other", "actual")),
+        Err(BatchError::Invalid(_))
+    ));
+    assert!(matches!(
+        client.record_application(application_report(1, "batch-test", "wrong")),
+        Err(BatchError::OriginMismatch)
+    ));
+    assert_eq!(client.status().unwrap().pending_report_id, None);
+    peer.join().unwrap();
+}
+
+#[test]
+fn application_capacity_refuses_before_staging() {
+    let base = directory();
+    let path = base.path().join("outbox");
+    let config = Config::local(base.path().join("absent.sock"), "batch-test".into()).unwrap();
+    // Close the exclusive owner before seeding this disposable store.
+    drop(BatchClient::open(config.clone(), &path).unwrap());
+    let mut conn = rusqlite::Connection::open(path.join("outbox.sqlite")).unwrap();
+    let tx = conn.transaction().unwrap();
+    {
+        let mut insert = tx.prepare("INSERT INTO reports(ordinal,report_id,digest,receipt) VALUES(?1,?2,zeroblob(32),x'7b7d')").unwrap();
+        for i in 1..=4096 {
+            insert
+                .execute(rusqlite::params![i, format!("{i:036}")])
+                .unwrap();
+        }
+    }
+    tx.commit().unwrap();
+    drop(conn);
+    let mut client = BatchClient::open(config, &path).unwrap();
+    assert!(matches!(
+        client.record_application(application_report(1, "batch-test", "origin")),
+        Err(BatchError::Full)
+    ));
+    assert_eq!(client.status().unwrap().pending_report_id, None);
+}
+
+#[test]
+fn application_frame_budget_is_checked_before_staging() {
+    let base = directory();
+    let socket = base.path().join("server.sock");
+    let listener = UnixListener::bind(&socket).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let peer = thread::spawn(move || {
+        let (stream, _) = recv(&listener);
+        send(
+            stream,
+            &Reply::FabricProgress {
+                authority: None,
+                origin: "origin".into(),
+                through: 0,
+            },
+        );
+        let (stream, _) = recv(&listener);
+        send(
+            stream,
+            &Reply::Lease {
+                generation: "lease".into(),
+                expires_unix_s: wall_time().unwrap() + 3600,
+            },
+        );
+    });
+    let mut config = Config::local(socket, "batch-test".into()).unwrap();
+    config.max_record = 256;
+    let mut client = BatchClient::open(config, &base.path().join("outbox")).unwrap();
+    assert!(matches!(
+        client.record_application(application_report(1, "batch-test", "origin")),
+        Err(BatchError::Invalid(_))
+    ));
+    assert_eq!(client.status().unwrap().pending_report_id, None);
+    peer.join().unwrap();
+}
+
+#[test]
+fn application_generation_limit_is_a_pre_stage_refusal() {
+    let base = directory();
+    let socket = base.path().join("server.sock");
+    let listener = UnixListener::bind(&socket).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let peer = thread::spawn(move || {
+        let (stream, _) = recv(&listener);
+        send(
+            stream,
+            &Reply::FabricProgress {
+                authority: None,
+                origin: "origin".into(),
+                through: 0,
+            },
+        );
+        let (stream, _) = recv(&listener);
+        send(
+            stream,
+            &Reply::GenerationCapacity {
+                used: 128,
+                limit: 128,
+            },
+        );
+    });
+    let config = Config::local(socket, "batch-test".into()).unwrap();
+    let mut client = BatchClient::open(config, &base.path().join("outbox")).unwrap();
+    let mut input = serde_json::to_value(application_report(1, "batch-test", "origin")).unwrap();
+    input["command"] = "record_application".into();
+    let reply = batch_adapter_reply(&mut client, &serde_json::to_vec(&input).unwrap());
+    assert_eq!(reply["code"], "generation_capacity", "{reply}");
+    assert_eq!(reply["delivery_state"], "refused_before_acceptance");
+    assert_eq!(reply["durably_staged"], false);
+    assert_eq!(client.status().unwrap().pending_report_id, None);
+    peer.join().unwrap();
+}
+
+#[test]
+fn preexisting_terminal_frame_replays_and_corrupt_digest_fails_closed() {
+    // Literal field ordering is from the pre-application BatchReport/ObservationV3
+    // serializers. The identity hash is independently computed with Python hashlib.
+    const REQUEST: &[u8] = br#"{"report_id":"bbbb0000-0000-0000-0000-000000000001","context":{"run_id":"aaaa0000-0000-0000-0000-000000000001"},"data":{"kind":"agent_run","agent":"fixture","run_id":"aaaa0000-0000-0000-0000-000000000001","duration_ns":3,"status":"ok"},"timestamp_ns":10}"#;
+    const FRAME: &[u8] = br#"{"version":3,"registry":"fabrico11y/3","context":{"run_id":"aaaa0000-0000-0000-0000-000000000001"},"identity":{"producer":"batch-test","generation":"old-generation","sequence":1},"timestamp_ns":10,"resource":"local","data":{"kind":"agent_run","agent":"fixture","run_id":"aaaa0000-0000-0000-0000-000000000001","duration_ns":3,"status":"ok"}}"#;
+    const DIGEST: [u8; 32] = [
+        0x9d, 0x62, 0xb6, 0xdd, 0x7f, 0xf3, 0x03, 0x8d, 0x71, 0xad, 0x46, 0xaa, 0x49, 0x2a, 0x58,
+        0x6d, 0xb8, 0x33, 0x02, 0x00, 0x5f, 0x5a, 0xe4, 0x14, 0x7c, 0xdd, 0x10, 0x1e, 0xb6, 0xb7,
+        0x74, 0xff,
+    ];
+    assert_eq!(serde_json::to_vec(&report(1)).unwrap(), REQUEST);
+    assert_eq!(report(1).digest().unwrap(), DIGEST);
+    let base = directory();
+    let socket = base.path().join("legacy.sock");
+    let listener = UnixListener::bind(&socket).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let peer = thread::spawn(move || {
+        let (stream, frame) = recv(&listener);
+        assert_eq!(frame, FRAME);
+        let identity = observation::decode_versioned(FRAME)
+            .unwrap()
+            .identity()
+            .clone();
+        send(
+            stream,
+            &Reply::Receipt {
+                receipt: Receipt {
+                    id: 19,
+                    identity,
+                    duplicate: true,
+                },
+            },
+        );
+    });
+    let mut config = Config::local(socket, "batch-test".into()).unwrap();
+    config.delivery_timeout = Duration::from_secs(5);
+    let path = base.path().join("old-outbox");
+    let mut client = BatchClient::open(config.clone(), &path).unwrap();
+    client
+        .outbox
+        .save_lease(&Lease {
+            origin: "origin".into(),
+            generation: "old-generation".into(),
+            expires: wall_time().unwrap() + 3600,
+            expired: false,
+            sequence: 0,
+        })
+        .unwrap();
+    client
+        .outbox
+        .stage(
+            &Pending {
+                report_id: report(1).report_id,
+                digest: DIGEST,
+                bytes: FRAME.to_vec(),
+            },
+            1,
+        )
+        .unwrap();
+    drop(client);
+    let mut client = BatchClient::open(config, &path).unwrap();
+    assert_eq!(client.status().unwrap().confirmed, 1);
+    assert_eq!(client.record(report(1)).unwrap().id, 19);
+    peer.join().unwrap();
+
+    let path = base.path().join("corrupt-outbox");
+    let config = Config::local(base.path().join("absent.sock"), "batch-test".into()).unwrap();
+    let mut corrupt = BatchClient::open(config, &path).unwrap();
+    corrupt
+        .outbox
+        .save_lease(&Lease {
+            origin: "origin".into(),
+            generation: "old-generation".into(),
+            expires: wall_time().unwrap() + 3600,
+            expired: false,
+            sequence: 0,
+        })
+        .unwrap();
+    corrupt
+        .outbox
+        .stage(
+            &Pending {
+                report_id: report(1).report_id,
+                digest: [0; 32],
+                bytes: FRAME.to_vec(),
+            },
+            1,
+        )
+        .unwrap();
+    assert!(matches!(
+        corrupt.flush_local(Instant::now() + Duration::from_secs(1)),
+        Err(BatchError::Storage(_))
+    ));
+    assert_eq!(
+        corrupt.status().unwrap().pending_report_id.as_deref(),
+        Some("bbbb0000-0000-0000-0000-000000000001")
+    );
+}

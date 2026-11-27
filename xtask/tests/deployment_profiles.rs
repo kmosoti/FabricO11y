@@ -489,6 +489,138 @@ fn write_spindle_frame(socket: &mut UnixStream, bytes: &[u8]) {
 
 #[test]
 #[ignore = "requires exact release executables and fabrico11y.slice"]
+fn application_adapter_replays_after_spindle_restart() {
+    assert!(
+        fs::read_to_string("/proc/self/cgroup")
+            .unwrap()
+            .contains("/fabrico11y.slice/")
+    );
+    let bins =
+        PathBuf::from(std::env::var_os("FABRIC_TEST_BIN_DIR").expect("release binary directory"));
+    let sandbox = xtask::evidence::non_tmp_tempdir().unwrap();
+    let root = sandbox.path();
+    let mut source = Node::open(&bins, root, NODE[0].0, NODE[0].1);
+    let proxy_path = root.join("application-proxy.sock");
+    let proxy = UnixListener::bind(&proxy_path).unwrap();
+    proxy.set_nonblocking(true).unwrap();
+    let real_socket = source.config.socket.clone();
+    let (sent, received) = mpsc::sync_channel(1);
+    let fault = thread::spawn(move || {
+        loop {
+            let mut adapter = until("application proxy", Duration::from_secs(10), || match proxy
+                .accept()
+            {
+                Ok((socket, _)) => Some(socket),
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => None,
+                Err(e) => panic!("proxy accept: {e}"),
+            });
+            let mut spindle = UnixStream::connect(&real_socket).unwrap();
+            for socket in [&adapter, &spindle] {
+                socket
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                socket
+                    .set_write_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+            }
+            let request = read_spindle_frame(&mut adapter);
+            write_spindle_frame(&mut spindle, &request);
+            let response = read_spindle_frame(&mut spindle);
+            if let Reply::Receipt { receipt } = serde_json::from_slice(&response).unwrap() {
+                sent.send(receipt).unwrap();
+                break; // receipt was committed, but no response reaches the adapter
+            }
+            write_spindle_frame(&mut adapter, &response);
+        }
+    });
+    let original = "{\"label\":\"caf\\u00e9\"}\n";
+    let report = json!({
+        "command":"record_application", "report_id":"00000000-0000-4001-8000-000000000001",
+        "context":{"run_id":"00000000-0000-4000-8000-000000000001"},
+        "scope":{"origin":source.origin, "producer":"batch-fixture"},
+        "parent_report_id":null, "schema":"example.result.v1",
+        "producer_completion":{"unix_ms":42,"clock":{"clock_id":"producer","source":"fixture","uncertainty_ms":null}},
+        "artifact_json":original, "timestamp_ns":123
+    });
+    let outbox = root.join("application-outbox");
+    let (mut adapter, replies) = open_batch_adapter(&bins, &proxy_path, &outbox);
+    batch_send(&mut adapter, &report);
+    let first = received.recv_timeout(Duration::from_secs(15)).unwrap();
+    let unknown = batch_reply(&replies);
+    assert_eq!(unknown["delivery_state"], "outcome_unknown", "{unknown}");
+    assert_eq!(unknown["durably_staged"], true);
+    adapter.kill_wait();
+    fault.join().unwrap();
+    assert_eq!(first.id, 1);
+    assert!(matches!(
+        spindle::transport::request(
+            &source.config.socket,
+            &spindle::Request::Stop,
+            Instant::now() + Duration::from_secs(3)
+        )
+        .unwrap(),
+        Reply::Stopped
+    ));
+    until("Spindle stop", Duration::from_secs(5), || {
+        source.child.0.try_wait().unwrap()
+    });
+    source.child = spawn_spindle(&bins, &source.config, None);
+    assert_eq!(source.health().origin, source.origin);
+    let (mut adapter, replies) = open_batch_adapter(&bins, &source.config.socket, &outbox);
+    batch_send(&mut adapter, &json!({"command":"status"}));
+    assert_eq!(batch_reply(&replies)["status"]["confirmed"], 1);
+    batch_send(&mut adapter, &report);
+    let confirmed = batch_reply(&replies);
+    assert_eq!(
+        confirmed["delivery_state"], "custody_confirmed",
+        "{confirmed}"
+    );
+    let replay: Receipt = serde_json::from_value(confirmed["receipt"].clone()).unwrap();
+    assert_eq!(replay.id, first.id);
+    assert_eq!(replay.identity, first.identity);
+    assert_eq!(
+        confirmed["original_artifact_digest"]["hex"],
+        "426d8f9948cd8aa9aede8235c65e8f5fd79eb048055e962afbea5c2b5ca1b64d"
+    );
+    let mut changed = report.clone();
+    changed["artifact_json"] = "{\"label\":\"café\"}".into();
+    batch_send(&mut adapter, &changed);
+    assert_eq!(batch_reply(&replies)["code"], "conflict");
+    let mut rows = Vec::new();
+    read_lane(&source, 1, &mut rows).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert!(
+        !rows[0]
+            .1
+            .windows(b"caf\\u00e9".len())
+            .any(|w| w == b"caf\\u00e9")
+    );
+    let record = observation::decode_versioned(&rows[0].1).unwrap();
+    let Data::JsonLog { fields } = record.data() else {
+        panic!("expected application result");
+    };
+    let encoded = serde_json::to_vec(&fields["fabrico11y.application_result.v1"]).unwrap();
+    let result = fabric_core::ApplicationResult::decode_bounded(&encoded).unwrap();
+    result
+        .verify_original_artifact(original.as_bytes())
+        .unwrap();
+    assert_eq!(
+        result.application_payload_digest().0.hex,
+        "2d7fba14f0a7cffed454bc268d791c0f32d11f62946998a323087ccf5df29075"
+    );
+    receipt_state(
+        &bins,
+        root,
+        &root.join("application-local"),
+        &source,
+        &replay,
+        (3, "pending"),
+    );
+    adapter.kill_wait();
+}
+
+#[test]
+#[ignore = "requires exact release executables and fabrico11y.slice"]
 fn batch_adapter_replays_a_committed_report_and_projects_130_runs() {
     assert!(
         fs::read_to_string("/proc/self/cgroup")

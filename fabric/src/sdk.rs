@@ -16,7 +16,10 @@ use std::{
 pub use fabric_evidence::{ApplicationResult, ApplicationResultError, ReportScope};
 
 mod batch;
-pub use batch::{BatchClient, BatchError, BatchReport, BatchStatus, batch_adapter_reply};
+pub use batch::{
+    ApplicationReceipt, ApplicationReport, BatchClient, BatchError, BatchReport, BatchStatus,
+    batch_adapter_reply,
+};
 
 #[derive(Clone, Debug)]
 pub struct Config {
