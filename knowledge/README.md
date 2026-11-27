@@ -53,6 +53,7 @@ TOML-native records without changing that cohort or its count.
 | [D-0198 · Operation dispatch profiles](decisions/D-0198-dispatch-profiles.md) | `agent` | `false` | Scoped dependency profiles and matched dispatch measurement |
 | [D-0197 · Typed operation contracts](decisions/D-0197-typed-operation-contracts.md) | `agent` | `false` | Versioned typed registry and payload-free outcome categories |
 | [D-0195 · Runtime-neutral operation lifecycles](decisions/D-0195-operation-lifecycle.md) | `agent` | `false` | Bounded lifecycle transitions and adapter-established trust context |
+| [D-0196 · Bounded application result identity](decisions/D-0196-application-results.md) | `agent` | `false` | Scoped result identity and separate source and canonical application digests |
 | [D-0193 · Research corpus revision identity](decisions/D-0193-corpus-revisions.md) | `agent` | `false` | Transport-free immutable revision and claim boundaries |
 | [D-0192 · Headless defaults and an optional frontend](decisions/D-0192-optional-frontend.md) | `agent` | `false` | Supersedes D-0002's product-wide UI prohibition and retains the D-0190 client boundary |
 | [D-0236 · Bounded run and attempt manifests](decisions/D-0236-bounded-run-attempt-manifests.md) | `agent` | `false` | Versioned Sans-I/O shared run and attempt context, typed digest roles, explicit disclosure and clock provenance, and pre-decode byte bounds |

@@ -13,7 +13,7 @@ flowchart TD
         CC["fabric-colloquium (bounded causal contribution projection)"]
         OPS["fabric-ops (bounded operation lifecycles)"]
         AK["admission-kernel (Verus / Charon / Aeneas)"]
-        FC["fabric-core (Models, PathPolicy, Gorilla HotMetricRing, UnifiedQuerySpec, run/attempt evidence manifests, DDSketch, EWMA-MAD, Five Pillars, Arrow)"]
+        FC["fabric-core (Models, PathPolicy, Gorilla HotMetricRing, UnifiedQuerySpec, run/attempt and application result contracts, DDSketch, EWMA-MAD, Five Pillars, Arrow)"]
         FG["fabric-graph (CausalGraph, BFS lineage, ranked blame)"]
         FC --> AK
         FG --> FC
@@ -109,6 +109,37 @@ flowchart LR
     Context --> Session["Typed lifecycle transition"]
     Session --> Batch["Bounded effect batch"]
     Batch --> Adapter
+```
+
+### Application result envelope
+
+`fabric-core` defines a bounded application-result envelope without changing
+v2 or v3 custody. It carries a report UUID scoped by producer and origin,
+an optional same-scope parent UUID, a versioned schema, producer completion
+clock provenance, and distinct SHA-256 claims for original artifact bytes and
+canonical application payload bytes. Scope is a label until an adapter qualifies
+it; parent lookup and authorization are separate responsibilities. Source-byte
+verification also canonicalizes the artifact and checks it against the payload.
+
+The current `fabric.application-json.v1` profile accepts a JSON object up to
+4 KiB, with at most 1,024 values, 64 members per container, 256-byte keys and
+depth 8. It rejects duplicate decoded keys, floating point, exponent notation,
+negative zero, and integers outside i64/u64. It sorts UTF-8 keys and emits
+compact UTF-8 JSON without Unicode normalization; it is not JCS. The envelope
+is limited to 16 KiB. A future adapter may use a nested object in v3 `JsonLog`,
+but must enforce the actual frame and admission limits before staging. The
+current `BatchClient` supports terminal agent/tool records only. No envelope
+or application digest is a custody receipt or digest of the enclosing frame.
+
+```mermaid
+flowchart LR
+    Source["Original application JSON"] --> Canon["Bounded canonical payload"]
+    Source --> SourceHash["Original artifact digest"]
+    Canon --> AppHash["Application payload digest"]
+    Canon --> Envelope["Scoped result envelope"]
+    SourceHash --> Envelope
+    AppHash --> Envelope
+    Envelope -. "Future adapter" .-> Custody["v3 custody frame and receipt"]
 ```
 
 ### Headless Consumer Client (`fabric-client`)
