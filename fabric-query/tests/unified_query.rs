@@ -258,20 +258,22 @@ async fn unified_predicates_use_the_selected_domains_field_types() {
 
     // Adjacent values around f64's precision limit and the UInt64 maximum must
     // remain distinguishable for equality and ordering in DataFusion.
-    let mut boundary_snapshot = HostSnapshot::default();
-    boundary_snapshot.units = [
-        ("below", 9_007_199_254_740_992),
-        ("above", 9_007_199_254_740_993),
-        ("max-1", u64::MAX - 1),
-        ("max", u64::MAX),
-    ]
-    .into_iter()
-    .map(|(name, cpu_usage_usec)| UnitRecord {
-        name: name.into(),
-        cpu_usage_usec,
+    let boundary_snapshot = HostSnapshot {
+        units: [
+            ("below", 9_007_199_254_740_992),
+            ("above", 9_007_199_254_740_993),
+            ("max-1", u64::MAX - 1),
+            ("max", u64::MAX),
+        ]
+        .into_iter()
+        .map(|(name, cpu_usage_usec)| UnitRecord {
+            name: name.into(),
+            cpu_usage_usec,
+            ..Default::default()
+        })
+        .collect(),
         ..Default::default()
-    })
-    .collect();
+    };
     for (predicate, expected) in [
         ("cpu_usage_usec=9007199254740993", vec!["above"]),
         (
