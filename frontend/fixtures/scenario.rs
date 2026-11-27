@@ -10,7 +10,7 @@ pub fn run() -> String {
     let mut state = State::default();
     let start = state
         .transition(Event::Start {
-            request: request.clone(),
+            request: Box::new(request.clone()),
             expected_authority: "auth-1".into(),
         })
         .unwrap();
@@ -52,7 +52,7 @@ pub fn run() -> String {
     let saved = json!({"phase":state.phase(),"rows":state.rows(),"selected":state.selected(),"coverages":state.coverages(),"next_cursor":state.next_cursor()});
     state
         .transition(Event::Start {
-            request: request.clone(),
+            request: Box::new(request.clone()),
             expected_authority: "auth-1".into(),
         })
         .unwrap();
@@ -74,7 +74,7 @@ pub fn run() -> String {
     assert_eq!(state.phase(), Phase::Cancelled);
     state
         .transition(Event::Start {
-            request: request.clone(),
+            request: Box::new(request.clone()),
             expected_authority: "auth-1".into(),
         })
         .unwrap();
@@ -92,7 +92,7 @@ pub fn run() -> String {
     let after_disconnect = state.phase();
     let reconnect = state
         .transition(Event::Start {
-            request,
+            request: Box::new(request),
             expected_authority: "auth-1".into(),
         })
         .unwrap();

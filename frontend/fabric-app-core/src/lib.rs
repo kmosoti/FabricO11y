@@ -34,7 +34,7 @@ pub enum Error {
 #[derive(Clone, Debug)]
 pub enum Event {
     Start {
-        request: QueryRequest,
+        request: Box<QueryRequest>,
         expected_authority: String,
     },
     Next,
@@ -71,7 +71,7 @@ impl Transition {
 pub enum Effect {
     Request {
         generation: u32,
-        request: QueryRequest,
+        request: Box<QueryRequest>,
     },
     Cancel {
         generation: u32,
@@ -152,16 +152,17 @@ impl State {
             Change::Loading,
             Some(Effect::Request {
                 generation,
-                request,
+                request: Box::new(request),
             }),
         ))
     }
     fn step(&mut self, event: Event) -> Result<Transition, Error> {
         match event {
             Event::Start {
-                mut request,
+                request,
                 expected_authority,
             } => {
+                let mut request = *request;
                 if self.pending.is_some() {
                     return Err(Error::InvalidSequence);
                 }
@@ -354,7 +355,7 @@ mod tests {
         assert_eq!(
             state
                 .transition(Event::Start {
-                    request,
+                    request: Box::new(request),
                     expected_authority: "auth-1".into()
                 })
                 .unwrap_err(),

@@ -11,7 +11,7 @@ fn start() -> State {
     let mut state = State::default();
     state
         .transition(Event::Start {
-            request: request(),
+            request: Box::new(request()),
             expected_authority: "auth-1".into(),
         })
         .unwrap();
@@ -168,7 +168,7 @@ fn invalid_authority_and_duplicate_scope_do_not_start() {
     unchanged(
         &mut state,
         Event::Start {
-            request: request(),
+            request: Box::new(request()),
             expected_authority: "other".into(),
         },
         Error::InvalidRequest,
@@ -178,7 +178,7 @@ fn invalid_authority_and_duplicate_scope_do_not_start() {
     unchanged(
         &mut state,
         Event::Start {
-            request: duplicate,
+            request: Box::new(duplicate),
             expected_authority: "auth-1".into(),
         },
         Error::InvalidRequest,
