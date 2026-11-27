@@ -355,7 +355,21 @@ The policy file must be a private owned regular file. It contains version 1,
 `policy_id`, `max_input_bytes`, `max_work`, and `rules` with a field `name` and
 `scalar_type` (`null`, `boolean`, `integer`, or `text`). Only explicitly listed
 top-level scalar fields are captured; unknown fields, nested objects and arrays
-are omitted. The operator controls the policy file and expected origin.
+are omitted under version 1. The operator controls the policy file and expected
+origin.
+
+Version 2 uses `rules: []` and a `paths` array. Each path is a nonempty array
+of literal object keys, at most eight segments deep and 8,192 key bytes across
+the policy. Its action is `scalar` with
+a `scalar_type`, `redact`, or `scalar_array` with a homogeneous `scalar_type`
+and `max_items` from 1 to 32. A redacted field becomes the fixed string
+`[REDACTED]`; no value-derived marker is emitted. Arrays are captured in full
+only when every item matches and the declared bound holds, so their length is
+disclosed when captured. Unknown siblings remain omitted. Duplicate or
+prefix-conflicting paths and wildcard keys are rejected. Version 2 policies
+have a separate bounded transformation work budget of at most 8,388,608 units;
+input remains limited to 4 KiB. Version 1 policies and their digests are
+unchanged.
 
 Protected `record_application` transforms the artifact before any digest or
 outbox stage. The returned `capture` includes the policy identity, digest,

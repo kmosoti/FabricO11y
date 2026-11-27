@@ -1016,21 +1016,58 @@ fn authenticated_exact_readback_rejects_mismatches_and_preserves_first_time() {
 
 #[test]
 fn protected_outbox_holds_policy_changes_and_replays_sanitized_frame() {
-    use fabric_evidence::capture_policy::{CapturePolicy, FieldRule, ScalarType};
+    protected_outbox_case(false);
+}
+#[test]
+fn protected_nested_paths_hold_policy_changes_and_replay_sanitized_frame() {
+    protected_outbox_case(true);
+}
+fn protected_outbox_case(nested: bool) {
+    use fabric_evidence::capture_policy::{
+        CaptureAction, CapturePolicy, FieldRule, PathRule, ScalarType,
+    };
     use std::{net::TcpListener, sync::mpsc};
     let base = directory();
     let socket = base.path().join("spindle.sock");
     let outbox = base.path().join("protected");
-    let policy = CapturePolicy::new(
-        "trusted".into(),
-        4096,
-        65536,
-        vec![FieldRule {
-            name: "allowed".into(),
-            scalar_type: ScalarType::Text,
-        }],
-    )
-    .unwrap();
+    let policy = if nested {
+        CapturePolicy::new_paths(
+            "trusted".into(),
+            4096,
+            1_000_000,
+            vec![
+                PathRule {
+                    path: vec!["env".into(), "REGION".into()],
+                    action: CaptureAction::Scalar {
+                        scalar_type: ScalarType::Text,
+                    },
+                },
+                PathRule {
+                    path: vec!["env".into(), "TOKEN".into()],
+                    action: CaptureAction::Redact,
+                },
+                PathRule {
+                    path: vec!["samples".into()],
+                    action: CaptureAction::ScalarArray {
+                        scalar_type: ScalarType::Integer,
+                        max_items: 3,
+                    },
+                },
+            ],
+        )
+        .unwrap()
+    } else {
+        CapturePolicy::new(
+            "trusted".into(),
+            4096,
+            65536,
+            vec![FieldRule {
+                name: "allowed".into(),
+                scalar_type: ScalarType::Text,
+            }],
+        )
+        .unwrap()
+    };
     let path = base.path().join("policy");
     fs::write(&path, policy.canonical_bytes()).unwrap();
     fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
@@ -1086,7 +1123,9 @@ fn protected_outbox_holds_policy_changes_and_replays_sanitized_frame() {
     let mut client =
         BatchClient::open_protected(config.clone(), &outbox, &path, "origin".into()).unwrap();
     let mut report = application_report(1, "batch-test", "origin");
-    report.artifact_json = "{\"allowed\":\"public\",\"FORBIDDEN-NAME\":\"FORBIDDEN-VALUE\"}".into();
+    report.artifact_json = if nested {
+        r#"{"env":{"REGION":"public","TOKEN":"FORBIDDEN-TOKEN","FORBIDDEN-NAME":"FORBIDDEN-VALUE"},"samples":[1,2]}"#
+    } else { r#"{"allowed":"public","FORBIDDEN-NAME":"FORBIDDEN-VALUE"}"# }.into();
     assert!(matches!(
         client.record_application(report.clone()),
         Err(BatchError::Unavailable(_))
@@ -1103,12 +1142,27 @@ fn protected_outbox_holds_policy_changes_and_replays_sanitized_frame() {
         panic!("expected protected carrier")
     };
     let (envelope, result) = decode_protected(&fields[PROTECTED_MARKER]).unwrap();
-    assert_eq!(
-        result.canonical_payload().unwrap(),
+    let expected: &[u8] = if nested {
+        br#"{"env":{"REGION":"public","TOKEN":"[REDACTED]"},"samples":[1,2]}"#
+    } else {
         br#"{"allowed":"public"}"#
-    );
+    };
+    assert_eq!(result.canonical_payload().unwrap(), expected);
     assert_eq!(envelope.capture.policy_digest, policy.digest());
-    assert_eq!(envelope.capture.omissions, vec![Omission::PolicyExcluded]);
+    assert_eq!(
+        envelope.capture.omissions,
+        if nested {
+            vec![Omission::PolicyExcluded, Omission::Redacted]
+        } else {
+            vec![Omission::PolicyExcluded]
+        }
+    );
+    if nested {
+        assert_eq!(envelope.capture.policy_version, 2);
+        let mut invalid = envelope.clone();
+        invalid.capture.policy_version = 1;
+        assert!(decode_protected(&serde_json::to_value(invalid).unwrap()).is_err());
+    }
     drop(client);
     for name in ["outbox.sqlite", "outbox.sqlite-journal"] {
         let p = outbox.join(name);
@@ -1118,7 +1172,11 @@ fn protected_outbox_holds_policy_changes_and_replays_sanitized_frame() {
         }
     }
     assert!(BatchClient::open(config.clone(), &outbox).is_err());
-    let wrong = CapturePolicy::new("different".into(), 4096, 65536, vec![]).unwrap();
+    let wrong = if nested {
+        CapturePolicy::new_paths("trusted".into(), 4096, 1_000_000, vec![]).unwrap()
+    } else {
+        CapturePolicy::new("different".into(), 4096, 65536, vec![]).unwrap()
+    };
     let wrong_path = base.path().join("wrong");
     fs::write(&wrong_path, wrong.canonical_bytes()).unwrap();
     fs::set_permissions(&wrong_path, fs::Permissions::from_mode(0o600)).unwrap();
@@ -1154,7 +1212,7 @@ fn protected_outbox_holds_policy_changes_and_replays_sanitized_frame() {
         BatchClient::open_protected(config.clone(), &outbox, &path, "origin".into()).unwrap();
     peer.join().unwrap();
     let mut equivalent = report;
-    equivalent.artifact_json = "{\"allowed\":\"public\",\"OTHER-SECRET\":\"DIFFERENT\"}".into();
+    equivalent.artifact_json = if nested { r#"{"env":{"REGION":"public","TOKEN":"DIFFERENT","OTHER-SECRET":"DIFFERENT"},"samples":[1,2]}"# } else { r#"{"allowed":"public","OTHER-SECRET":"DIFFERENT"}"# }.into();
     let confirmed = client.record_application(equivalent).unwrap();
     assert_eq!(confirmed.receipt.id, 44);
     assert_eq!(confirmed.capture.unwrap().policy_digest, policy.digest());
