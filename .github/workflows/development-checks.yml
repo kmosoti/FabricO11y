@@ -172,6 +172,13 @@ jobs:
           persist-credentials: false
       - name: Trust the checked-out workspace for job Git commands
         run: *trust-ci-workspace
+      - name: Fetch bounded knowledge metadata baseline
+        run: |
+          set -eu
+          baseline=64ef1d3e573bf8d05361eea2a1010e99585dc223
+          grep -Fqx "source_commit = \"$baseline\"" knowledge/records.toml
+          git fetch --no-tags --depth=1 origin "$baseline"
+          git cat-file -e "$baseline^{commit}"
       - name: Check installed workspace tools and source pins
         env:
           CI_IMAGE_FLAVOR: common
