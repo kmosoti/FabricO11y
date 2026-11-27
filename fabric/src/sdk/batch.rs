@@ -180,7 +180,7 @@ fn decode_protected(
         .map_err(|_| BatchError::Invalid("invalid protected envelope".into()))?;
     let c = &envelope.capture;
     if envelope.version != 2
-        || c.policy_version != 1
+        || !matches!(c.policy_version, 1 | 2)
         || c.policy_source != "owner_policy_file"
         || c.policy_digest.0.representation
             != fabric_evidence::evidence_manifest::DigestRepresentation::ExactBytes
@@ -192,7 +192,8 @@ fn decode_protected(
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
         || c.policy_digest.0.validate().is_err()
         || c.captured_digest.0.validate().is_err()
-        || c.omissions.len() > 3
+        || c.omissions.len() > if c.policy_version == 1 { 3 } else { 4 }
+        || (c.policy_version == 1 && c.omissions.contains(&Omission::Redacted))
         || c.omissions.windows(2).any(|p| p[0] >= p[1])
     {
         return Err(BatchError::Invalid("invalid capture provenance".into()));

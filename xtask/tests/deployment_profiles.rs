@@ -2173,6 +2173,16 @@ fn open_protected_reader(
 #[test]
 #[ignore = "requires exact release executables and fabrico11y.slice"]
 fn protected_application_real_custody_and_policy_hold() {
+    protected_capture_fixture(false);
+}
+
+#[test]
+#[ignore = "requires exact release executables and fabrico11y.slice"]
+fn protected_nested_paths_real_custody_and_policy_hold() {
+    protected_capture_fixture(true);
+}
+
+fn protected_capture_fixture(nested: bool) {
     assert!(
         fs::read_to_string("/proc/self/cgroup")
             .unwrap()
@@ -2193,7 +2203,11 @@ fn protected_application_real_custody_and_policy_hold() {
     private_file(&reader, READER);
     let (_server, authority) = receiver(&bins, root, &endpoint, [&source, &beta, &lane], &reader);
     source.forward(&bins, &endpoint, &authority, None);
-    let policy_text = r#"{"version":1,"policy_id":"fixture","max_input_bytes":4096,"max_work":65536,"rules":[{"name":"allowed","scalar_type":"text"}]}"#;
+    let policy_text = if nested {
+        r#"{"version":2,"policy_id":"fixture","max_input_bytes":4096,"max_work":1000000,"rules":[],"paths":[{"path":["env","REGION"],"action":{"kind":"scalar","scalar_type":"text"}},{"path":["env","TOKEN"],"action":{"kind":"redact"}},{"path":["samples"],"action":{"kind":"scalar_array","scalar_type":"integer","max_items":3}}]}"#
+    } else {
+        r#"{"version":1,"policy_id":"fixture","max_input_bytes":4096,"max_work":65536,"rules":[{"name":"allowed","scalar_type":"text"}]}"#
+    };
     let policy = root.join("policy");
     private_file(&policy, policy_text);
     let wrong = root.join("wrong-policy");
@@ -2243,7 +2257,11 @@ fn protected_application_real_custody_and_policy_hold() {
         &source.origin,
         (&endpoint, &authority, &reader),
     );
-    let raw = r#"{"allowed":"visible","FORBIDDEN-NAME":"FORBIDDEN-VALUE"}"#;
+    let raw = if nested {
+        r#"{"env":{"REGION":"visible","TOKEN":"FORBIDDEN-TOKEN","FORBIDDEN-NAME":"FORBIDDEN-VALUE"},"samples":[1,2]}"#
+    } else {
+        r#"{"allowed":"visible","FORBIDDEN-NAME":"FORBIDDEN-VALUE"}"#
+    };
     let report = json!({"command":"record_application","report_id":"00000000-0000-4001-8000-000000000001","context":{"run_id":"00000000-0000-4000-8000-000000000001"},"scope":{"origin":source.origin,"producer":"batch-fixture"},"parent_report_id":null,"schema":"example.result.v1","producer_completion":{"unix_ms":42,"clock":{"clock_id":"producer","source":"fixture","uncertainty_ms":null}},"artifact_json":raw,"timestamp_ns":123});
     batch_send(&mut adapter, &report);
     let first = received.recv_timeout(Duration::from_secs(15)).unwrap();
@@ -2251,7 +2269,12 @@ fn protected_application_real_custody_and_policy_hold() {
     assert_eq!(unknown["delivery_state"], "outcome_unknown", "{unknown}");
     let forbidden_hash = independent_sha256(raw.as_bytes());
     let clean = |bytes: &[u8]| {
-        for sentinel in ["FORBIDDEN-NAME", "FORBIDDEN-VALUE", forbidden_hash.as_str()] {
+        for sentinel in [
+            "FORBIDDEN-NAME",
+            "FORBIDDEN-VALUE",
+            "FORBIDDEN-TOKEN",
+            forbidden_hash.as_str(),
+        ] {
             assert!(
                 !bytes
                     .windows(sentinel.len())
@@ -2323,7 +2346,12 @@ fn protected_application_real_custody_and_policy_hold() {
     let receipt: Receipt = serde_json::from_value(confirmed["receipt"].clone()).unwrap();
     assert_eq!(receipt.id, first.id);
     assert_eq!(receipt.identity, first.identity);
-    let expected_capture = independent_sha256(br#"{"allowed":"visible"}"#);
+    let captured: &[u8] = if nested {
+        br#"{"env":{"REGION":"visible","TOKEN":"[REDACTED]"},"samples":[1,2]}"#
+    } else {
+        br#"{"allowed":"visible"}"#
+    };
+    let expected_capture = independent_sha256(captured);
     let expected_policy = independent_sha256(policy_text.as_bytes());
     assert_eq!(
         confirmed["capture"]["captured_digest"]["hex"],
@@ -2336,7 +2364,11 @@ fn protected_application_real_custody_and_policy_hold() {
     assert_eq!(confirmed["capture"]["policy_source"], "owner_policy_file");
     assert_eq!(
         confirmed["capture"]["omissions"],
-        json!(["policy_excluded"])
+        if nested {
+            json!(["policy_excluded", "redacted"])
+        } else {
+            json!(["policy_excluded"])
+        }
     );
     until(
         "protected canonical handoff",
