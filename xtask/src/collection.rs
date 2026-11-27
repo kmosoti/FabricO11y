@@ -582,6 +582,7 @@ fn build_stack_configs(
             origin: origin.to_owned(),
             credential_file: node_token_path.to_path_buf(),
         }],
+        decision_writers: Vec::new(),
         node_quota_bytes: Default::default(),
         engine_endpoint: None,
         engine_auth_token_file: None,
