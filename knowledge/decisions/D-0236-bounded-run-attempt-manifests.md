@@ -15,17 +15,38 @@ explicit input, evaluator, toolchain, or capture-policy overrides. Observations
 point to an attempt by immutable ID and digest and carry their own record
 identity, digest roles, and independently clock-qualified times.
 
-The compact JSON envelope is limited to 64 KiB before decoding; nested lists,
-identifiers, text, and clock provenance are bounded and validated. Disclosure
-states remain explicit. SHA-256 declarations include a representation basis and
-are checked for role, syntax, and references here; hash production and
-independent verification belong to later custody/verifier work.
+The compact JSON envelope is limited to 64 KiB before decoding and uses a
+64 KiB capped JSON writer on encode. Nested lists, identifiers, text, and clock
+provenance are bounded. Disclosure states remain explicit. Run and attempt
+digests use the closed typed `fabric.manifest.canonical-json.v1` payload and
+exclude their own `digest` member; validation recomputes and compares those
+hashes. Exact artifact, original-record, canonical-record, and physical-file
+bytes have separate SHA-256 wrappers and exact-byte verification methods.
+
+The profile intentionally does not canonicalize arbitrary JSON values. Generic
+maps can hide duplicate-key ambiguity when parsed, and float spelling requires
+additional cross-codec rules. The existing v3 production wire codec serializes
+typed `ObservationV3` with `serde_json::to_vec`; Spindle custody retains the
+submitted raw payload bytes. This contract leaves those payload bytes unchanged
+and verifies canonical-record claims over exactly those bytes. Its separate
+manifest profile uses a closed integer-and-string-only type schema and has a
+Python-generated known-answer byte/digest vector. An exact-byte fixture
+`{"label":"caf\u00e9"}\n` hashes to
+`426d8f9948cd8aa9aede8235c65e8f5fd79eb048055e962afbea5c2b5ca1b64d`, while
+`{"label":"café"}` hashes to
+`2d7fba14f0a7cffed454bc268d791c0f32d11f62946998a323087ccf5df29075`.
+Consequently, a source file's trailing newline and Unicode escape spelling stay
+part of its original-artifact digest, independently of record and stored-file
+bytes.
 
 ## Rationale and limits
 
 Shared run references avoid copying reproducibility context into every record,
-while typed digest wrappers keep artifact bytes, manifest bytes, canonical
-records, and physical files distinct in Rust APIs. This DTO alone does not
+while typed digest wrappers keep shared artifact content, source artifact bytes,
+manifest bytes, canonical records, and physical files distinct in Rust APIs.
+Input/output overrides permit at most 32 unique input locators and one each of
+evaluator, toolchain, and capture-policy. Fixed run fields must carry their
+matching artifact kind. This DTO alone does not
 collect, persist, transmit, or verify manifests. Its size choices are initial
 wire limits for small provenance records, not measured throughput claims.
 
