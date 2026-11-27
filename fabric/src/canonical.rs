@@ -235,7 +235,7 @@ pub enum Response {
         row: Option<CanonicalRow>,
     },
     PlanAccepted {
-        result: String,
+        decision: String,
     },
     ExactReceiptFound {
         authority: String,

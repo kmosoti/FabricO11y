@@ -873,7 +873,7 @@ fn handle(
                 .as_deref()
                 .ok_or("decision writer credential required")?;
             let result = canonical_state(ledger, reads)?.accept_plan(writer, &body)?;
-            Ok(Response::PlanAccepted { result })
+            Ok(Response::PlanAccepted { decision: result })
         }
         Request::Ingest { origin, records } => {
             if node.as_deref() != Some(&origin) {

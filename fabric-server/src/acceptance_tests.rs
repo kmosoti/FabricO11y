@@ -125,7 +125,7 @@ fn accept(address: &str, credential: &str, body: &str) -> Response {
 }
 fn result(response: Response) -> String {
     match response {
-        Response::PlanAccepted { result } => result,
+        Response::PlanAccepted { decision } => decision,
         other => panic!("expected accepted: {other:?}"),
     }
 }
