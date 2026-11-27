@@ -1067,13 +1067,12 @@ fn receipt_bench_command(bins: &Path, root: &Path, args: &[&str]) -> (Value, u64
 fn compare_receipt_batches(
     bins: &Path,
     root: &Path,
-    endpoint: &str,
-    authority: &str,
-    origin: &str,
+    scope: (&str, &str, &str),
     server: &OwnedChild,
     receipts: &[Receipt],
     stored: &[(u64, Vec<u8>)],
 ) {
+    let (endpoint, authority, origin) = scope;
     use fabric::canonical::{ProjectionReadyRequest, ProjectionStatus, ReceiptBatchStatus};
     assert_eq!(receipts.len(), 182);
     assert_eq!(stored.len(), 182);
@@ -1597,9 +1596,7 @@ fn receipt_batch_readback_182_compared_to_single() {
     compare_receipt_batches(
         &bins,
         root,
-        &endpoint,
-        &authority,
-        &source.origin,
+        (&endpoint, &authority, &source.origin),
         &_server,
         &receipts,
         &stored,
