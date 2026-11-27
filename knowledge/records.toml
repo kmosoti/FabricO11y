@@ -391,3 +391,12 @@ type = "decision"
 date = 2026-11-27
 added_by = "agent"
 human_ratified = false
+
+[[records]]
+id = "D-0202"
+source_path = "knowledge/decisions/D-0202-portable-corpus.md"
+title = "Portable corpus views"
+type = "decision"
+date = 2026-11-27
+added_by = "agent"
+human_ratified = false
