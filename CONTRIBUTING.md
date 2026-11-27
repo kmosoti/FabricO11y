@@ -109,6 +109,17 @@ Follow the product constraints in [the direction document](docs/direction.md) an
 [architecture specification](docs/architecture.md).
 Keep changes focused, preserve existing behavior and Sans-I/O boundaries (`admission-kernel`, `fabric-core`, `fabric-graph`), make errors and resource limits explicit, and keep optional frontend dependencies out of headless builds. When adding or updating a knowledge record, keep its content in Markdown and its provenance, ratification state, and relations in [`knowledge/records.toml`](knowledge/records.toml).
 
+### Optional frontend changes
+
+Follow [D-0192](knowledge/decisions/D-0192-optional-frontend.md) for the
+separately locked optional frontend workspace and package profiles. Keep root
+`--workspace` checks and default packages headless. A frontend candidate must
+record its exact source, Rust pin, locks, features and targets, inspect both
+headless and frontend dependency closures, and run the same real shared-reducer
+and typed-operation fixture on native and wasm. Qualify packaged behavior and
+backend authorization on the claimed platforms. A policy change or a passing
+mock does not qualify an application or artifact profile.
+
 ## Verification
 
 Run fast checks during iteration and medium checks before submitting changes:
