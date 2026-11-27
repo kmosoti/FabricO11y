@@ -84,6 +84,13 @@ rows, which consumers decode as the documented row type for the operation.
 
 The independent [`fabric-corpus` contract](corpus-contract.md) defines research revision identities and attributed claims without a collector, transport, or storage dependency.
 
+Canonical plan acceptance uses a separately provisioned decision-writer grant.
+The local SQLite transaction checks its persisted scope owner, recovers an
+identical committed command before checking the head, and commits the decision,
+head and exact result together. Proposal identity is checked against the local
+committed canonical record, independently of later analytical projection.
+Stored decisions do not authorize external execution.
+
 The independent `fabric-colloquium` crate projects bounded contribution and
 proposal state without I/O or runtime dependencies. Its distinct actor,
 principal and team IDs are attribution claims, not authenticated authority.

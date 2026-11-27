@@ -1,6 +1,8 @@
 //! Bounded authoritative receiver and isolated analytical projection worker.
 use admission_kernel::telemetry::{elastic_can_admit, elastic_lease_return};
 
+#[cfg(test)]
+mod acceptance_tests;
 pub mod engine;
 mod handshake;
 mod handshake_io;
@@ -44,6 +46,16 @@ pub struct NodeGrant {
     pub origin: String,
     pub credential_file: PathBuf,
 }
+/// One operator-provisioned, immutable plan scope owner.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DecisionWriterGrant {
+    pub writer: String,
+    pub scope: String,
+    pub origin: String,
+    pub producer: String,
+    pub credential_file: PathBuf,
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
@@ -54,6 +66,8 @@ pub struct Config {
     pub projection_quota_bytes: u64,
     pub reader_credential_file: PathBuf,
     pub nodes: Vec<NodeGrant>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub decision_writers: Vec<DecisionWriterGrant>,
     /// Optional retained payload limits for dedicated telemetry origins.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub node_quota_bytes: BTreeMap<String, u64>,
@@ -106,6 +120,7 @@ fn matches(a: &str, b: &str) -> bool {
 struct Auth {
     reader: String,
     nodes: BTreeMap<String, String>,
+    writers: BTreeMap<String, String>,
 }
 struct QuerySlot {
     active: bool,
@@ -169,6 +184,38 @@ impl Server {
             }
             nodes.insert(node.origin.clone(), token);
         }
+        let mut writers = BTreeMap::new();
+        let mut scopes = std::collections::BTreeSet::new();
+        let valid = |s: &str| {
+            !s.is_empty()
+                && s.len() <= 128
+                && s.bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b':'))
+        };
+        if config.decision_writers.len() > 16 {
+            return Err("too many decision writers".into());
+        }
+        for grant in &config.decision_writers {
+            if !valid(&grant.writer)
+                || !valid(&grant.scope)
+                || !valid(&grant.producer)
+                || !nodes.contains_key(&grant.origin)
+                || writers.contains_key(&grant.writer)
+                || !scopes.insert(grant.scope.clone())
+            {
+                return Err("invalid decision writer grant".into());
+            }
+            let token = secret(&grant.credential_file)?;
+            if matches(&reader, &token)
+                || nodes
+                    .values()
+                    .chain(writers.values())
+                    .any(|s| matches(s, &token))
+            {
+                return Err("credentials must have disjoint grants".into());
+            }
+            writers.insert(grant.writer.clone(), token);
+        }
         if config
             .node_quota_bytes
             .keys()
@@ -220,6 +267,10 @@ impl Server {
             engine_auth_token.as_deref(),
             config.allow_unauthenticated_loopback_engine,
         )?));
+        ledger
+            .lock()
+            .map_err(|_| "canonical lock")?
+            .provision_plan_scopes(&config.decision_writers)?;
         ledger::private_dir(&config.projection)?;
         let projection_usable = config.projection_quota_bytes.saturating_sub(64 * 1024);
         let default_projection_origin_quota =
@@ -241,7 +292,11 @@ impl Server {
             return Err("projection ahead of canonical history; rebuild required".into());
         }
         let projection = Arc::new(Mutex::new(projection_state));
-        let auth = Auth { reader, nodes };
+        let auth = Auth {
+            reader,
+            nodes,
+            writers,
+        };
         let telemetry = ServerTelemetry::from_env(&auth).unwrap_or_else(|error| {
             eprintln!("fabric-server: self-telemetry disabled: {error}");
             None
@@ -379,6 +434,7 @@ impl Server {
         let handshake_auth = Arc::new(handshake::HandshakeAuth {
             reader: self.auth.reader.clone(),
             nodes: self.auth.nodes.clone(),
+            writers: self.auth.writers.clone(),
         });
         let preauth_limit = (connection_limit * 4).clamp(16, 128);
         let preauth =
@@ -430,7 +486,12 @@ impl Server {
                             )?;
                             let req: Request =
                                 serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
-                            Ok((session.peer.reader, session.peer.node, req))
+                            Ok((
+                                session.peer.reader,
+                                session.peer.node,
+                                session.peer.writer,
+                                req,
+                            ))
                         });
                         respond(
                             request,
@@ -724,7 +785,7 @@ fn receipt_readiness(
 }
 
 fn respond(
-    request: Result<(bool, Option<String>, Request), String>,
+    request: Result<(bool, Option<String>, Option<String>, Request), String>,
     ledger: &Arc<Mutex<Ledger>>,
     projection: &Arc<Mutex<Projection>>,
     auth: &Auth,
@@ -735,10 +796,11 @@ fn respond(
     // The query lease covers execution, encoding, the write attempt and response cleanup.
     let mut query_lease = None;
     let response = request
-        .and_then(|(reader, node, req)| {
+        .and_then(|(reader, node, writer, req)| {
             handle(
                 reader,
                 node,
+                writer,
                 req,
                 ledger,
                 projection,
@@ -767,6 +829,7 @@ fn respond(
 fn handle(
     reader: bool,
     node: Option<String>,
+    writer: Option<String>,
     request: Request,
     ledger: &Arc<Mutex<Ledger>>,
     projection: &Arc<Mutex<Projection>>,
@@ -775,8 +838,11 @@ fn handle(
     reads: &ReadState,
     query_lease: &mut Option<QueryGuard>,
 ) -> Result<Response, String> {
-    if !reader && node.is_none() {
+    if !reader && node.is_none() && writer.is_none() {
         return Err("unauthorized".into());
+    }
+    if writer.is_some() && !matches!(&request, Request::AcceptPlan { .. }) {
+        return Err("decision writer cannot read or ingest".into());
     }
     // Normalize the additive command only after authentication and reader
     // authorization, and before telemetry, preparation or analytical admission.
@@ -802,6 +868,13 @@ fn handle(
         .as_ref()
         .and_then(|telemetry| telemetry.measure(&request, node.as_deref(), reader, auth));
     match request {
+        Request::AcceptPlan { body } => {
+            let writer = writer
+                .as_deref()
+                .ok_or("decision writer credential required")?;
+            let result = canonical_state(ledger, reads)?.accept_plan(writer, &body)?;
+            Ok(Response::PlanAccepted { result })
+        }
         Request::Ingest { origin, records } => {
             if node.as_deref() != Some(&origin) {
                 return Err("unauthorized origin".into());
@@ -1191,6 +1264,7 @@ mod receipt_tests {
                     credential_file: credential(origin),
                 })
                 .collect(),
+            decision_writers: vec![],
             node_quota_bytes: Default::default(),
             engine_endpoint: None,
             engine_auth_token_file: None,
@@ -1210,6 +1284,7 @@ mod receipt_tests {
         handle(
             reader,
             node,
+            None,
             request,
             &server.ledger,
             &server.projection,
@@ -1253,6 +1328,7 @@ mod receipt_tests {
         let result = handle(
             true,
             None,
+            None,
             Request::QueryWithOperationVersion {
                 request,
                 operation_version: 2,
@@ -1287,7 +1363,7 @@ mod receipt_tests {
         };
         let mut wrote = false;
         respond(
-            Ok((true, None, request)),
+            Ok((true, None, None, request)),
             &server.ledger,
             &server.projection,
             &server.auth,

@@ -136,6 +136,44 @@ pub struct ProjectionReadiness {
     pub projection_frontier: Option<u64>,
 }
 
+/// Dedicated proposal carrier in a v3 JSON log, encoded as a JSON string.
+pub const PROPOSAL_MARKER: &str = "fabrico11y.colloquium.proposal.v1";
+pub const MAX_ACCEPT_BODY: usize = 128 * 1024;
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(transparent)]
+pub struct PlanScope(pub String);
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlanProposal {
+    pub version: u8,
+    pub scope: PlanScope,
+    pub proposal_id: String,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AcceptPlan {
+    pub version: u8,
+    pub authority: String,
+    pub command_id: String,
+    pub scope: PlanScope,
+    pub expected_head: Option<i64>,
+    pub origin: String,
+    pub source_id: u64,
+    pub proposal_raw: String,
+}
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct PlanDecision {
+    pub version: u8,
+    pub authority: String,
+    pub scope: PlanScope,
+    pub command_id: String,
+    pub writer: String,
+    pub previous_head: Option<i64>,
+    pub head: i64,
+    pub proposal_id: String,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "command", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Request {
@@ -154,6 +192,9 @@ pub enum Request {
         identity: observation::Identity,
     },
     Progress,
+    AcceptPlan {
+        body: String,
+    },
     ExactReceiptLookup {
         request: ExactReceiptRequest,
     },
@@ -192,6 +233,9 @@ pub enum Response {
     },
     Found {
         row: Option<CanonicalRow>,
+    },
+    PlanAccepted {
+        result: String,
     },
     ExactReceiptFound {
         authority: String,

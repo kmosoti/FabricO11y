@@ -212,3 +212,40 @@ frontier. Exit 0 requires a matching committed Parquet row. Exit 3 indicates
 canonical custody with a projection still behind. Exit 4 indicates unavailable
 evidence, including an unknown authority or origin, a receipt the receiver
 cannot resolve, or a native engine backend without a separate Parquet witness.
+
+## Conditional plan acceptance
+
+A receiver may configure `decision_writers` entries with `writer`, `scope`,
+`origin`, `producer`, and a private `credential_file`. Each scope has one
+statically provisioned owner and allowed canonical origin/producer. Writer
+credentials are distinct from reader and node credentials; neither of those
+roles can accept a plan. Scope bindings persist in the canonical database and
+startup rejects an incompatible reconfiguration. Removing a grant revokes
+access but does not erase its binding or decisions. Provisioning policy changes
+and ownership transfer need a separate protocol.
+
+A version 1 `accept_plan` request carries a bounded JSON `body` string with the
+pinned canonical authority, stable `command_id`, typed `scope`, optional
+`expected_head`, `origin`, `source_id`, and exact `proposal_raw` v3 observation.
+The proposal must be a canonical serialized v3 JSON log containing only the
+`fabrico11y.colloquium.proposal.v1` field: its value is a JSON string with
+`version: 1`, the same scope, and a lowercase 64-digit hexadecimal
+`proposal_id`. The receiver checks the exact bytes against the identity, size
+and SHA-256 held in its local committed canonical record, even when later
+projection is pending. A proposal label or claimed identity does not grant
+authority.
+
+After authentication, the receiver checks the persisted owner and then an
+existing command result before testing the current head. Identical request-body
+bytes recover the original serialized decision; changing any byte under the
+same scope, writer and command ID conflicts. A new request checks its expected
+head and commits the decision, new head and saved result in one SQLite
+transaction. Only a committed decision is acceptance; a lost response is
+unknown until retried. Keep the exact body and ID in durable client storage
+before sending. This command does not itself provide a durable relay.
+
+At most 64 scopes and 4,096 decisions are retained. Reaching the limit refuses
+new acceptance while existing results remain retryable; there is no automatic
+eviction or epoch/floor protocol. Acceptance is a research decision, not
+authorization for external execution, and its receipt does not assert
+analytical projection visibility.

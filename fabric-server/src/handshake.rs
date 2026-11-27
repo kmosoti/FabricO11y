@@ -21,11 +21,14 @@ pub(crate) const HANDSHAKE_TIMEOUT: Duration = Duration::from_millis(250);
 pub(crate) struct HandshakeAuth {
     pub reader: String,
     pub nodes: BTreeMap<String, String>,
+    pub writers: BTreeMap<String, String>,
 }
 
 impl HandshakeAuth {
     pub(crate) fn credentials(&self) -> impl Iterator<Item = &str> {
-        std::iter::once(self.reader.as_str()).chain(self.nodes.values().map(String::as_str))
+        std::iter::once(self.reader.as_str())
+            .chain(self.nodes.values().map(String::as_str))
+            .chain(self.writers.values().map(String::as_str))
     }
 
     pub(crate) fn verify_proof(
@@ -38,6 +41,7 @@ impl HandshakeAuth {
             return Some(VerifiedPeer {
                 reader: true,
                 node: None,
+                writer: None,
                 secret: self.reader.clone(),
             });
         }
@@ -46,6 +50,17 @@ impl HandshakeAuth {
                 return Some(VerifiedPeer {
                     reader: false,
                     node: Some(origin.clone()),
+                    writer: None,
+                    secret: secret.clone(),
+                });
+            }
+        }
+        for (writer, secret) in &self.writers {
+            if verify_client_proof(secret, client_nonce, server_nonce, proof) {
+                return Some(VerifiedPeer {
+                    reader: false,
+                    node: None,
+                    writer: Some(writer.clone()),
                     secret: secret.clone(),
                 });
             }
@@ -57,6 +72,7 @@ impl HandshakeAuth {
 pub(crate) struct VerifiedPeer {
     pub reader: bool,
     pub node: Option<String>,
+    pub writer: Option<String>,
     pub secret: String,
 }
 

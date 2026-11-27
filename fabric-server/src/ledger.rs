@@ -446,6 +446,204 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
         }
         Ok(())
     }
+    /// Install an immutable, operator-provisioned scope/owner binding.
+    pub(crate) fn provision_plan_scopes(
+        &mut self,
+        grants: &[crate::DecisionWriterGrant],
+    ) -> Result<(), String> {
+        let tx = self.conn.transaction().map_err(err)?;
+        tx.execute_batch("CREATE TABLE IF NOT EXISTS plan_schema(version INTEGER NOT NULL CHECK(version=1));
+            CREATE TABLE IF NOT EXISTS plan_scope(scope TEXT PRIMARY KEY, owner TEXT NOT NULL, origin TEXT NOT NULL, producer TEXT NOT NULL, head INTEGER);
+            CREATE TABLE IF NOT EXISTS plan_decision(id INTEGER PRIMARY KEY, scope TEXT NOT NULL, writer TEXT NOT NULL, command_id TEXT NOT NULL, request_hash TEXT NOT NULL, previous_head INTEGER, proposal_id TEXT NOT NULL, result TEXT NOT NULL, UNIQUE(scope,writer,command_id));").map_err(err)?;
+        let versions: Vec<i64> = {
+            let mut q = tx.prepare("SELECT version FROM plan_schema").map_err(err)?;
+            q.query_map([], |r| r.get(0))
+                .map_err(err)?
+                .collect::<Result<_, _>>()
+                .map_err(err)?
+        };
+        if versions.is_empty() {
+            tx.execute("INSERT INTO plan_schema VALUES(1)", [])
+                .map_err(err)?;
+        } else if versions != [1] {
+            return Err("unsupported plan schema".into());
+        }
+        for grant in grants {
+            let exists: bool = tx
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM plan_scope WHERE scope=?1)",
+                    [&grant.scope],
+                    |r| r.get(0),
+                )
+                .map_err(err)?;
+            let count: u64 = tx
+                .query_row("SELECT count(*) FROM plan_scope", [], |r| r.get(0))
+                .map_err(err)?;
+            if !exists && count >= 64 {
+                return Err("plan scope capacity exhausted".into());
+            }
+            tx.execute("INSERT OR IGNORE INTO plan_scope(scope,owner,origin,producer,head) VALUES(?1,?2,?3,?4,NULL)", params![grant.scope,grant.writer,grant.origin,grant.producer]).map_err(err)?;
+            let matches: bool = tx
+                .query_row(
+                    "SELECT owner=?2 AND origin=?3 AND producer=?4 FROM plan_scope WHERE scope=?1",
+                    params![grant.scope, grant.writer, grant.origin, grant.producer],
+                    |r| r.get(0),
+                )
+                .map_err(err)?;
+            if !matches {
+                return Err("plan scope policy mismatch".into());
+            }
+        }
+        tx.commit().map_err(err)
+    }
+
+    /// Authenticate outside this method; policy, replay, CAS and result commit together.
+    pub(crate) fn accept_plan(&mut self, writer: &str, body: &str) -> Result<String, String> {
+        use fabric::{
+            canonical::{self, AcceptPlan, PlanDecision, PlanProposal},
+            observation::{Data, StoredObservation},
+        };
+        let valid = |s: &str| {
+            !s.is_empty()
+                && s.len() <= 128
+                && s.bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b':'))
+        };
+        observation::check_json_depth(
+            body.as_bytes(),
+            canonical::MAX_ACCEPT_BODY,
+            observation::MAX_DEPTH + 2,
+        )?;
+        let command: AcceptPlan = serde_json::from_str(body).map_err(err)?;
+        if command.version != 1
+            || command.authority != self.authority
+            || !valid(&command.scope.0)
+            || !valid(&command.command_id)
+            || !valid(&command.origin)
+            || command.source_id == 0
+            || command.source_id > i64::MAX as u64
+            || command.expected_head.is_some_and(|h| h <= 0)
+            || command.proposal_raw.len() > observation::MAX_FRAME
+        {
+            return Err("invalid acceptance command".into());
+        }
+        let mut hash = Sha256::new();
+        hash.update(b"FabricO11y accept plan body v1\0");
+        hash.update(body.as_bytes());
+        let request_hash: String = hash.finalize().iter().map(|b| format!("{b:02x}")).collect();
+        // Do not reject an existing committed retry just because new storage is full.
+        let available = self.room_for(body.len().saturating_add(4096), self.quota);
+        let authority = self.authority.clone();
+        let tx = self
+            .conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(err)?;
+        let policy: Option<(String, String, String, Option<i64>)> = tx
+            .query_row(
+                "SELECT owner,origin,producer,head FROM plan_scope WHERE scope=?1",
+                [&command.scope.0],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .optional()
+            .map_err(err)?;
+        let (owner, origin, producer, head) = policy.ok_or("unauthorized plan scope")?;
+        if owner != writer {
+            return Err("unauthorized plan scope".into());
+        }
+        let saved: Option<(String,String)> = tx.query_row("SELECT request_hash,result FROM plan_decision WHERE scope=?1 AND writer=?2 AND command_id=?3", params![command.scope.0,writer,command.command_id], |r| Ok((r.get(0)?,r.get(1)?))).optional().map_err(err)?;
+        if let Some((saved_hash, result)) = saved {
+            return if saved_hash == request_hash {
+                Ok(result)
+            } else {
+                Err("plan command conflict".into())
+            };
+        }
+        if head != command.expected_head {
+            return Err("stale plan head".into());
+        }
+        available?;
+        let count: u64 = tx
+            .query_row("SELECT count(*) FROM plan_decision", [], |r| r.get(0))
+            .map_err(err)?;
+        if count >= 4096 {
+            return Err("plan decision capacity exhausted".into());
+        }
+        if command.origin != origin {
+            return Err("unauthorized proposal origin".into());
+        }
+        let StoredObservation::V3(observation) =
+            observation::decode_versioned(command.proposal_raw.as_bytes())?
+        else {
+            return Err("proposal is not v3".into());
+        };
+        if observation.identity.producer != producer
+            || serde_json::to_vec(&observation).map_err(err)? != command.proposal_raw.as_bytes()
+        {
+            return Err("invalid canonical proposal frame".into());
+        }
+        let Data::JsonLog { fields } = &observation.data else {
+            return Err("invalid proposal carrier".into());
+        };
+        if fields.len() != 1 {
+            return Err("invalid proposal carrier".into());
+        }
+        let raw = fields
+            .get(canonical::PROPOSAL_MARKER)
+            .and_then(|v| v.as_str())
+            .ok_or("invalid proposal carrier")?;
+        if raw.len() > 4096 {
+            return Err("proposal carrier too large".into());
+        }
+        let proposal: PlanProposal = serde_json::from_str(raw).map_err(err)?;
+        if proposal.version != 1
+            || proposal.scope != command.scope
+            || proposal.proposal_id.len() != 64
+            || !proposal
+                .proposal_id
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        {
+            return Err("invalid proposal carrier".into());
+        }
+        let record: Option<(String,u64)> = tx.query_row("SELECT raw_hash,raw_len FROM records WHERE origin=?1 AND source_id=?2 AND producer=?3 AND generation=?4 AND sequence=?5", params![origin,command.source_id,observation.identity.producer,observation.identity.generation,observation.identity.sequence.to_string()], |r| Ok((r.get(0)?,r.get(1)?))).optional().map_err(err)?;
+        if record
+            != Some((
+                digest(command.proposal_raw.as_bytes()),
+                command.proposal_raw.len() as u64,
+            ))
+        {
+            return Err("canonical proposal mismatch".into());
+        }
+        let next: i64 = tx
+            .query_row("SELECT coalesce(max(id),0)+1 FROM plan_decision", [], |r| {
+                r.get(0)
+            })
+            .map_err(err)?;
+        let result = serde_json::to_string(&PlanDecision {
+            version: 1,
+            authority,
+            scope: command.scope.clone(),
+            command_id: command.command_id.clone(),
+            writer: writer.into(),
+            previous_head: head,
+            head: next,
+            proposal_id: proposal.proposal_id.clone(),
+        })
+        .map_err(err)?;
+        tx.execute("INSERT INTO plan_decision(id,scope,writer,command_id,request_hash,previous_head,proposal_id,result) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",params![next,command.scope.0,writer,command.command_id,request_hash,head,proposal.proposal_id,result]).map_err(err)?;
+        let updated = tx
+            .execute(
+                "UPDATE plan_scope SET head=?2 WHERE scope=?1 AND owner=?3 AND head IS ?4",
+                params![command.scope.0, next, writer, head],
+            )
+            .map_err(err)?;
+        if updated != 1 {
+            return Err("stale plan head".into());
+        }
+        tx.commit().map_err(err)?;
+        Ok(result)
+    }
+
     pub fn ingest(&mut self, origin: &str, records: &[ForwardRecord]) -> Result<u64, String> {
         if origin.is_empty()
             || origin.len() > 128
