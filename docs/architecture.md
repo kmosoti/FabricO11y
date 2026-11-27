@@ -4,7 +4,7 @@
 
 ## 1. Crate & Authority Boundaries
 
-Pure domain logic, schema contracts, statistical sketches, causal graph traversal, and formal admission arithmetic live in **Sans-I/O** crates (`admission-kernel`, `fabric-core`, `fabric-graph`, `fabric-corpus`, `fabric-colloquium`, `fabric-ops`, `fabric-evidence`). All Linux kernel probing, embedded disk/memory custody, DataFusion query execution, and CLI rendering are isolated in dedicated I/O crates (`fabric-store`, `fabric-collect`, `fabric-query`, `fabric-cli`, plus preserved custody/protocol crates `fabric`, `fabric-server`, and `fabric-mcp`). Downstream Rust integrators consume `fabric.cli.v1` JSON outputs and `fabric-query` over bounded subprocess pipes via the lightweight, headless [`fabric-client`](../fabric-client/Cargo.toml) crate without pulling in Arrow, DataFusion, or UI crates. Dependency boundaries are machine-verified by [`verification/architecture.toml`](../verification/architecture.toml) via `cargo xtask architecture`.
+Pure domain logic, schema contracts, statistical sketches, causal graph traversal, and formal admission arithmetic live in **Sans-I/O** crates (`admission-kernel`, `fabric-core`, `fabric-graph`, `fabric-corpus`, `fabric-colloquium`, `fabric-ops`, `fabric-evidence`, `fabric-query-contract`). All Linux kernel probing, embedded disk/memory custody, DataFusion query execution, and CLI rendering are isolated in dedicated I/O crates (`fabric-store`, `fabric-collect`, `fabric-query`, `fabric-cli`, plus preserved custody/protocol crates `fabric`, `fabric-server`, and `fabric-mcp`). Downstream Rust integrators consume `fabric.cli.v1` JSON outputs and `fabric-query` over bounded subprocess pipes via the lightweight, headless [`fabric-client`](../fabric-client/Cargo.toml) crate without pulling in Arrow, DataFusion, or UI crates. Dependency boundaries are machine-verified by [`verification/architecture.toml`](../verification/architecture.toml) via `cargo xtask architecture`.
 
 ```mermaid
 flowchart TD
@@ -13,6 +13,8 @@ flowchart TD
         CC["fabric-colloquium (bounded causal contribution projection)"]
         OPS["fabric-ops (bounded operation lifecycles)"]
         EVID["fabric-evidence (bounded evidence contracts)"]
+        QC["fabric-query-contract (portable query DTOs)"]
+        QC --> OPS
         AK["admission-kernel (Verus / Charon / Aeneas)"]
         FC["fabric-core (Models, PathPolicy, Gorilla HotMetricRing, UnifiedQuerySpec, run/attempt and application result contracts, DDSketch, EWMA-MAD, Five Pillars, Arrow)"]
         FG["fabric-graph (CausalGraph, BFS lineage, ranked blame)"]
@@ -52,6 +54,7 @@ flowchart TD
 
     subgraph HeadlessClient["Headless Typed Consumer Crate"]
         FCL["fabric-client (fabric.cli.v1 schemas, FabricClient, FabricQueryClient; no Arrow/UI deps)"]
+        FCL --> QC
         FCL -. "subprocess (--json)" .-> CLI
         FCL -. "FABRIC_CREDENTIAL_FILE only" .-> FQBIN["fabric-query CLI"]
     end
@@ -63,12 +66,21 @@ flowchart TD
         FAB --> AK
         FAB --> OPS
         FAB --> EVID
+        FAB --> QC
         SRV --> FAB
         SRV --> FQ
         SRV --> AK
         MCP --> FAB
     end
 ```
+
+The portable `fabric-query-contract` package owns query DTOs, decimal wire
+codecs, validation and operation bindings. `fabric::query` re-exports those
+same types and keeps its native credential and transport client. Consumers
+of `fabric-client` can use `query_contract` with default features disabled;
+that path does not activate the native transport. Optional `query-schema`
+forwards to the contract package. Query responses still carry generic JSON
+rows, which consumers decode as the documented row type for the operation.
 
 The independent [`fabric-corpus` contract](corpus-contract.md) defines research revision identities and attributed claims without a collector, transport, or storage dependency.
 

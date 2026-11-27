@@ -390,7 +390,7 @@ version = "0.1.1-alpha.2"
 dependencies = [
  "admission-kernel",
  "fabric-evidence",
- "fabric-ops",
+ "fabric-query-contract",
  "hmac",
  "rusqlite",
  "rustix",
@@ -447,6 +447,15 @@ dependencies = [
 [[package]]
 name = "fabric-ops"
 version = "0.1.1-alpha.2"
+
+[[package]]
+name = "fabric-query-contract"
+version = "0.1.1-alpha.2"
+dependencies = [
+ "fabric-ops",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "fallible-iterator"
