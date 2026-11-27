@@ -1,0 +1,34 @@
+# N02 design fixture; declares a run plan, never an observation or receipt.
+version = 1
+resource_profile = "resource-profile.toml"
+
+[baseline]
+source_commit = "7de9e1918802f51ca108b1e9fd54005236982390"
+rustc_commit = "0ef1bc386059596dada8fb65b50425aab2ea637a"
+rustc_release = "1.100.0"
+target = "x86_64-unknown-linux-gnu"
+build_profile = "release"
+fixture = "xtask/src/bin/collection-resources.rs"
+required_run_identity = ["candidate-acceptance-receipt", "cargo-lock-digest", "executable-digest", "fixture-digest", "resource-profile-digest", "machine-profile-digest"]
+
+[machine]
+arch = "x86_64"
+os = "linux"
+cgroup_version = 2
+# Compare on one matched host; exact values belong in run identity, not here.
+match_fields = ["cpu-model", "cpu-topology", "memory-capacity", "kernel-release", "filesystem-and-mount", "power-policy", "logical-cpu-affinity", "cache-state"]
+
+[workload]
+case = "full-width"
+slots = 8
+record_capacity_bytes = 4096
+producers = 4
+warmups = 1
+measured_repeats = 5
+# Setup and recovery are separate phases. Keep failures and refusals in the record.
+report = ["peak-rss-by-process-bytes", "cgroup-memory-peak-bytes", "cgroup-file-cache-bytes", "peak-fds-by-process", "cpu-time-ns", "wakeups", "bytes-written", "scratch-peak-bytes", "observer-overhead", "failed-and-refused-work", "variance"]
+
+[thresholds]
+# Fixture invariants, not claims of observed performance or thresholds for Spindle RSS.
+sdk_reserved_payload_max_bytes = 32768
+accepted_records_lost_max = 0

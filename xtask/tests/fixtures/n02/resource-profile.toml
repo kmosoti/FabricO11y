@@ -1,0 +1,32 @@
+# N02 design fixture; not runtime configuration or a policy change.
+version = 1
+
+[collector_process]
+rss_target_exclusive_bytes = 104857600
+rss_shed_ceiling_bytes = 209715200
+fd_target_exclusive = 64
+source = "AGENTS.md"
+
+[slice_global]
+name = "fabrico11y.slice"
+memory_high_bytes = 268435456
+memory_max_bytes = 536870912
+cpu_quota_percent = 15
+io_weight = 30
+tasks_max = 64
+source = "config/fabrico11y.slice"
+
+[spindle_connection]
+request_max_bytes = 65536
+reply_max_bytes = 73728
+frame_header_bytes = 4
+parser_depth_max = 16
+
+[spindle_fixture_process]
+# Harness concurrency, not the product default or a machine-wide limit.
+max_connections = 8
+transport_buffers_max_bytes = 1114144
+
+[coverage]
+# Missing qualification is not an inherited cap of zero or an unlimited cap.
+not_qualified = ["auth-cache", "dataref", "sessions", "collector-queues", "series-indexes", "live-rings", "maintenance-buffers", "multi-process-transport", "rv1-rv6"]
