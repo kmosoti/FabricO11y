@@ -28,8 +28,9 @@ pub use evidence_manifest::{
     ArtifactContentDigest, ArtifactKind, ArtifactReference, AttemptManifest, AttemptManifestDigest,
     AttemptOverride, CanonicalRecordDigest, ClockProvenance, DigestAlgorithm, DigestClaim,
     DigestRepresentation, Disclosure, ImmutableReference, MANIFEST_SCHEMA_VERSION,
-    MAX_MANIFEST_WIRE_BYTES, ManifestEnvelope, ManifestError, ObservationReference,
-    PhysicalFileDigest, ProvenancedTime, RunManifest, RunManifestDigest,
+    MAX_ATTEMPT_INPUT_OVERRIDES, MAX_ATTEMPT_OVERRIDES, MAX_MANIFEST_WIRE_BYTES, ManifestEnvelope,
+    ManifestError, ObservationReference, OriginalArtifactDigest, PhysicalFileDigest,
+    ProvenancedTime, RunManifest, RunManifestDigest,
 };
 pub use model::{
     AgentSessionRecord, BlameEntry, BlameReport, BlameResource, CgroupSample, CliEnvelope,

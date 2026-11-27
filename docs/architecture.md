@@ -351,15 +351,47 @@ immutable run context, attempt-specific overrides, and observation references.
 An envelope contains one shared run manifest, bounded attempt manifests that
 reference it by ID and digest, and observations that reference an attempt by ID
 and digest. Observations carry record digests and time provenance rather than
-copying run context. Digest roles are distinct Rust types for artifact content,
-run manifests, attempt manifests, canonical records, and physical files. Hashes
-are declared claims: this contract checks SHA-256 syntax and representation
-basis but does not compute or independently verify them.
+copying run context. Digest roles are distinct Rust types for run manifests,
+attempt manifests, shared artifact content, each observation's original
+artifact bytes, exact canonical record bytes, and physical files.
 
-The decoder rejects wire bodies above 64 KiB before JSON parsing. Nested
-artifacts, attempts, observations, identifiers, text, and times have explicit
-limits. Fields use explicit `available`, `unavailable`, `redacted`, `unknown`,
-and `inapplicable` states. Each supplied source, observed, custody, or verified
-time carries a clock ID and source; timestamps from different clocks have no
-global order guarantee. This contract does not activate collection, storage,
-telemetry migration, or custody verification.
+Run and attempt digests use `fabric.manifest.canonical-json.v1`: SHA-256 over
+compact UTF-8 JSON for the closed typed payload, excluding its own `digest`
+member. Run payload keys are ordered `schema_version`, `immutable_id`, `code`,
+`source_tree`, `configuration`, `inputs`, `dataset`, `cohort`, `evaluator`,
+`toolchain`, `capture_policy`, `artifacts`. Attempt payload keys are ordered
+`schema_version`, `immutable_id`, `run`, `overrides`. Nested artifact keys are
+`kind`, `locator`, `media_type`, `digest`; digest keys are `algorithm`,
+`representation`, `hex`; references use `id`, `digest`; overrides use `kind`,
+`artifact`. Available disclosure values are `{"state":"available","value":...}`;
+other states contain only `state`.
+
+The profile uses integer-only numeric values. It emits non-ASCII scalar values
+as UTF-8, escapes quotes and backslashes, uses JSON escapes for control
+characters (`\b`, `\t`, `\n`, `\f`, `\r`, then lowercase `\u00xx` for other
+U+0000..U+001F controls), does not escape `/`, and emits no spaces or trailing
+newline. It has no generic maps,
+duplicate-key parsing, floating-point values, or arbitrary input JSON
+normalization. The decoder rejects duplicate struct members. `canonical_bytes`
+and validation recompute manifest hashes before accepting the declaration.
+Changing field order, escaping, enum spelling, or payload fields requires a new
+profile version and known-answer vector.
+
+Artifact content, original artifact, canonical record, and physical-file claims
+use SHA-256 over their respective exact bytes (`exact_bytes`), including source
+or storage trailing newlines. Typed `verify_exact_bytes` methods compare these
+claims against supplied bytes. An application file and its submitted record can
+therefore have different digests while retaining explicit roles.
+
+The decoder rejects wire bodies above 64 KiB before JSON parsing. The JSON
+encoder uses a 64 KiB capped writer so escaping cannot grow an unbounded
+intermediate; this matches the existing 64 KiB observation frame budget.
+Envelopes contain at most 64 attempts and 64 observations; a run has at most 32
+artifacts. An attempt allows up to 32 unique input overrides and one each of
+the evaluator, toolchain, and capture-policy overrides. IDs are at most 128
+bytes; artifact locators 1,024 bytes; media types 128 bytes; clock IDs 128
+bytes; clock sources 256 bytes. Fields use explicit `available`, `unavailable`,
+`redacted`, `unknown`, and `inapplicable` states. Each supplied source,
+observed, custody, or verified time carries a clock ID and source; timestamps
+from different clocks have no global order guarantee. This contract does not
+activate collection, storage, telemetry migration, or custody verification.
