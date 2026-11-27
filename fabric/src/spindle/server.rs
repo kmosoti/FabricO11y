@@ -9,10 +9,7 @@ use crate::{
     sdk::Admission,
     self_telemetry::{SelfTelemetry, Service},
 };
-use rustix::{
-    event::{EventfdFlags, PollFd, PollFlags, Timespec, eventfd, poll},
-    net::sockopt::socket_peercred,
-};
+use rustix::event::{EventfdFlags, PollFd, PollFlags, Timespec, eventfd, poll};
 use std::{
     fs,
     io::{Read, Write},
@@ -26,8 +23,42 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+// This is the only production minting boundary for local peer evidence.
+// The UID is kernel credential evidence, not an application principal.
+mod local_peer {
+    use std::os::unix::net::UnixStream;
+
+    pub(super) struct AcceptedLocalPeer {
+        uid: u32,
+    }
+
+    fn allowed(uid: rustix::process::Uid) -> bool {
+        uid == rustix::process::getuid()
+    }
+
+    pub(super) fn authenticate(stream: &UnixStream) -> Result<Option<AcceptedLocalPeer>, String> {
+        let cred = rustix::net::sockopt::socket_peercred(stream).map_err(super::err)?;
+        Ok(allowed(cred.uid).then_some(AcceptedLocalPeer {
+            uid: cred.uid.as_raw(),
+        }))
+    }
+
+    impl AcceptedLocalPeer {
+        pub(super) fn uid(&self) -> u32 {
+            self.uid
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn wrong_uid_is_rejected() -> bool {
+        let uid = rustix::process::getuid().as_raw();
+        !allowed(rustix::process::Uid::from_raw(uid ^ 1))
+    }
+}
+
 struct Connection {
     stream: UnixStream,
+    peer: local_peer::AcceptedLocalPeer,
     header: [u8; 4],
     header_used: usize,
     body: Vec<u8>,
@@ -371,14 +402,14 @@ impl Daemon {
                             self.health.refusals += 1;
                             continue;
                         }
-                        let cred = socket_peercred(&stream).map_err(err)?;
-                        if cred.uid != rustix::process::getuid() {
+                        let Some(peer) = local_peer::authenticate(&stream)? else {
                             self.health.refusals += 1;
                             continue;
-                        }
+                        };
                         stream.set_nonblocking(true).map_err(err)?;
                         self.connections.push(Connection {
                             stream,
+                            peer,
                             header: [0; 4],
                             header_used: 0,
                             body: Vec::new(),
@@ -470,7 +501,8 @@ impl Daemon {
             } else {
                 match connection.progress(client_timeout, self.stopping) {
                     Ok(ConnectionProgress::Request(body)) => {
-                        match self.prepare_remote(&body) {
+                        let _uid = connection.peer.uid();
+                        match self.prepare_remote(&body, &connection.peer) {
                             Ok(Some(job)) => {
                                 let (send, receive) = std::sync::mpsc::sync_channel(1);
                                 let deadline = connection.deadline;
@@ -490,7 +522,8 @@ impl Daemon {
                                 }
                             }
                             Ok(None) => {
-                                let (reply, keep_alive) = self.handle_with_keep_alive(&body)?;
+                                let (reply, keep_alive) =
+                                    self.handle_with_keep_alive(&body, &connection.peer)?;
                                 connection.output = reply;
                                 if keep_alive {
                                     connection.keep_alive = true;
@@ -603,6 +636,7 @@ impl Daemon {
     fn prepare_remote(
         &mut self,
         bytes: &[u8],
+        _peer: &local_peer::AcceptedLocalPeer,
     ) -> Result<Option<super::custody::RemoteJob>, String> {
         observation::check_json(bytes, observation::MAX_FRAME)?;
         let value: serde_json::Value = serde_json::from_slice(bytes).map_err(err)?;
@@ -627,9 +661,16 @@ impl Daemon {
     }
     #[cfg(test)]
     fn handle(&mut self, bytes: &[u8]) -> Result<Vec<u8>, String> {
-        self.handle_with_keep_alive(bytes).map(|(reply, _)| reply)
+        let (stream, _other) = UnixStream::pair().map_err(err)?;
+        let peer = local_peer::authenticate(&stream)?.ok_or("peer rejected")?;
+        self.handle_with_keep_alive(bytes, &peer)
+            .map(|(reply, _)| reply)
     }
-    fn handle_with_keep_alive(&mut self, bytes: &[u8]) -> Result<(Vec<u8>, bool), String> {
+    fn handle_with_keep_alive(
+        &mut self,
+        bytes: &[u8],
+        _peer: &local_peer::AcceptedLocalPeer,
+    ) -> Result<(Vec<u8>, bool), String> {
         let request = observation::check_json(bytes, observation::MAX_FRAME)
             .and_then(|()| serde_json::from_slice::<serde_json::Value>(bytes).map_err(err));
         let mut keep_alive = false;
@@ -1201,7 +1242,12 @@ mod shadow_reclamation_tests {
         };
         assert!(
             daemon
-                .prepare_remote(&expected_read(&origin))
+                .prepare_remote(
+                    &expected_read(&origin),
+                    &local_peer::authenticate(&UnixStream::pair().unwrap().0)
+                        .unwrap()
+                        .unwrap()
+                )
                 .unwrap()
                 .is_none()
         );
@@ -1480,6 +1526,48 @@ mod connection_accounting_tests {
         }
     }
     #[test]
+    fn accepted_socket_peer_is_kernel_bound_and_caller_claims_are_rejected() {
+        let temp = tempfile::tempdir().unwrap();
+        let config = config(temp.path());
+        let mut daemon = Daemon::open(config.clone()).unwrap();
+        assert!(local_peer::wrong_uid_is_rejected());
+
+        for claim in [
+            r#"{"command":"status","locality":"remote"}"#,
+            r#"{"command":"status","uid":123456}"#,
+            r#"{"command":"status","principal":"forged"}"#,
+            r#"{"command":"status","effective_authority":"forged"}"#,
+        ] {
+            let mut client = UnixStream::connect(&config.socket).unwrap();
+            client
+                .set_read_timeout(Some(Duration::from_secs(1)))
+                .unwrap();
+            let body = claim.as_bytes();
+            client
+                .write_all(&(body.len() as u32).to_be_bytes())
+                .unwrap();
+            client.write_all(body).unwrap();
+            daemon.tick().unwrap();
+            assert_eq!(daemon.connections.len(), 1);
+            assert_eq!(
+                daemon.connections[0].peer.uid(),
+                rustix::process::getuid().as_raw()
+            );
+            daemon.tick().unwrap();
+            let mut header = [0; 4];
+            client.read_exact(&mut header).unwrap();
+            let mut reply = vec![0; u32::from_be_bytes(header) as usize];
+            client.read_exact(&mut reply).unwrap();
+            assert!(matches!(
+                serde_json::from_slice::<Reply>(&reply).unwrap(),
+                Reply::Error { .. }
+            ));
+            assert_eq!(daemon.store.count().unwrap(), 0);
+        }
+        assert_eq!(daemon.health.ingestion, 0);
+    }
+
+    #[test]
     fn qualified_lease_refuses_wrong_origin_before_allocating() {
         let temp = tempfile::tempdir().unwrap();
         let config = config(temp.path());
@@ -1621,8 +1709,10 @@ mod connection_accounting_tests {
         let (send, receive) = std::sync::mpsc::sync_channel(1);
         let response = serde_json::to_vec(&Reply::Stopped).unwrap();
         send.send(Ok(response.clone())).unwrap();
+        let peer = local_peer::authenticate(&server).unwrap().unwrap();
         daemon.connections.push(Connection {
             stream: server,
+            peer,
             header: [0; 4],
             header_used: 0,
             body: Vec::new(),

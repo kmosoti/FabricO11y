@@ -104,7 +104,7 @@ constructing contributions.
 ### Runtime-neutral operation lifecycles
 
 `fabric-ops` defines five typed call shapes without a transport or runtime
-dependency. Adapters establish peer identity and locality and provide a local
+dependency. Adapters supply peer identity and locality assertions and a local
 monotonic millisecond clock; local and wire durations default to 10 seconds
 and cannot exceed 30 seconds. A wire remaining-time budget is capped separately
 from the local deadline. Each transition either returns a fixed-capacity effect
@@ -122,7 +122,20 @@ query preparation and resource reservation. Legacy query remains supported. The 
 checks explicit native x86-64 and wasm32 normal/build dependency allowlists for
 `fabric-ops`, `fabric-colloquium`, and `fabric-corpus`.
 Batch construction is atomic with the in-memory transition; an adapter owns
-any external delivery or durable transaction semantics.
+any external delivery or durable transaction semantics. The public
+`VerifiedPeer` constructor checks shape only: the value is an adapter
+assertion, not evidence of authentication or authorization by itself.
+
+Spindle's deployed Unix listener retains private evidence from `SO_PEERCRED`
+only after the accepted socket's UID matches the server's UID; both remote-read
+preparation and local request handling require that evidence. This is a local
+OS UID in the server's user-namespace view, not a named application principal
+or an effective authority. Same-UID processes share this boundary. Socket FD
+handoff or a local proxy can allow a different process to send on the connected
+socket, so the captured credentials do not identify every later sender. This
+fact is not forwarded as authenticated application identity, and Spindle's
+separate outbound canonical credential does not authenticate the local caller.
+Policy-at-commit and broader authorization remain separate work.
 
 ```mermaid
 flowchart LR

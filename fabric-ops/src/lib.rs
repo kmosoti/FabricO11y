@@ -10,7 +10,10 @@ pub mod registry;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Tick(pub u64);
 
-/// Identity established by an adapter, never deserialized by this crate.
+/// An adapter's identity and locality assertion, never deserialized by this crate.
+///
+/// This public value is not itself proof of authentication or authority. Only
+/// the adapter's own trusted boundary can establish the facts it supplies.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VerifiedPeer {
     identity: Box<str>,
@@ -25,6 +28,7 @@ pub enum Locality {
 
 impl VerifiedPeer {
     /// The caller must establish identity and locality at its trust boundary.
+    /// Public construction does not authenticate the supplied values.
     pub fn from_adapter(identity: String, locality: Locality) -> Result<Self, Error> {
         if identity.is_empty() || identity.len() > 256 || identity.contains('\0') {
             return Err(Error::InvalidPeer);
