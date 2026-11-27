@@ -132,19 +132,40 @@ async fn unified_predicates_use_the_selected_domains_field_types() {
     let catalog = CatalogStore::open(dir.path()).unwrap();
     let olap = OlapParquetStore::new(catalog.layout().clone());
     let now = Utc::now().timestamp_millis();
+    olap.write_metrics(&[MetricPoint {
+        timestamp_ms: now,
+        name: "large".into(),
+        value: 1e100,
+        ..Default::default()
+    }])
+    .unwrap();
     olap.write_logs(&[LogRecord {
         timestamp_ms: now,
         message: "007's status is true".into(),
         ..Default::default()
     }])
     .unwrap();
-    olap.write_fs_events(&[FsEventRecord {
-        timestamp_ms: now,
-        path: "/data/work/file".into(),
-        delta_bytes: -4096,
-        owner_pid: Some(42),
-        ..Default::default()
-    }])
+    olap.write_fs_events(&[
+        FsEventRecord {
+            timestamp_ms: now,
+            path: "/data/work/file".into(),
+            delta_bytes: -4096,
+            owner_pid: Some(42),
+            ..Default::default()
+        },
+        FsEventRecord {
+            timestamp_ms: now,
+            path: "/min".into(),
+            delta_bytes: i64::MIN,
+            ..Default::default()
+        },
+        FsEventRecord {
+            timestamp_ms: now,
+            path: "/min-plus-one".into(),
+            delta_bytes: i64::MIN + 1,
+            ..Default::default()
+        },
+    ])
     .unwrap();
     let snapshot = HostSnapshot {
         units: vec![
@@ -233,6 +254,117 @@ async fn unified_predicates_use_the_selected_domains_field_types() {
         .unwrap();
         assert_eq!(result.row_count, 1);
         assert_eq!(result.rows[0][field].as_str(), Some(expected));
+    }
+
+    // Adjacent values around f64's precision limit and the UInt64 maximum must
+    // remain distinguishable for equality and ordering in DataFusion.
+    let mut boundary_snapshot = HostSnapshot::default();
+    boundary_snapshot.units = [
+        ("below", 9_007_199_254_740_992),
+        ("above", 9_007_199_254_740_993),
+        ("max-1", u64::MAX - 1),
+        ("max", u64::MAX),
+    ]
+    .into_iter()
+    .map(|(name, cpu_usage_usec)| UnitRecord {
+        name: name.into(),
+        cpu_usage_usec,
+        ..Default::default()
+    })
+    .collect();
+    for (predicate, expected) in [
+        ("cpu_usage_usec=9007199254740993", vec!["above"]),
+        (
+            "cpu_usage_usec>9007199254740992",
+            vec!["above", "max-1", "max"],
+        ),
+        ("cpu_usage_usec=18446744073709551614", vec!["max-1"]),
+        (
+            "cpu_usage_usec<18446744073709551615",
+            vec!["below", "above", "max-1"],
+        ),
+    ] {
+        let result = execute_unified_query(
+            dir.path(),
+            &UnifiedQuerySpec {
+                domain: QueryDomain::Units,
+                where_clauses: vec![predicate.into()],
+                ..Default::default()
+            },
+            &[],
+            Some(&boundary_snapshot),
+        )
+        .await
+        .unwrap();
+        let mut actual: Vec<_> = result
+            .rows
+            .iter()
+            .map(|row| row["name"].as_str().unwrap())
+            .collect();
+        actual.sort_unstable();
+        let mut expected = expected;
+        expected.sort_unstable();
+        assert_eq!(actual, expected, "{predicate}");
+    }
+
+    for (predicate, expected) in [
+        ("delta_bytes=-9223372036854775808", "/min"),
+        ("delta_bytes=-9223372036854775807", "/min-plus-one"),
+    ] {
+        let result = execute_unified_query(
+            dir.path(),
+            &UnifiedQuerySpec {
+                domain: QueryDomain::Fs,
+                where_clauses: vec![predicate.into()],
+                ..Default::default()
+            },
+            &[],
+            Some(&snapshot),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.row_count, 1, "{predicate}");
+        assert_eq!(result.rows[0]["path"].as_str(), Some(expected));
+    }
+
+    let result = execute_unified_query(
+        dir.path(),
+        &UnifiedQuerySpec {
+            domain: QueryDomain::Metrics,
+            where_clauses: vec!["value=1e100".into()],
+            ..Default::default()
+        },
+        &[],
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.row_count, 1);
+
+    for (domain, predicate) in [
+        (QueryDomain::Metrics, "value=NaN"),
+        (QueryDomain::Metrics, "value=inf"),
+        (QueryDomain::Metrics, "value=1e999"),
+        (QueryDomain::Fs, "delta_bytes=-9223372036854775809"),
+        (QueryDomain::Fs, "delta_bytes=9223372036854775808"),
+        (QueryDomain::Fs, "size_bytes=-1"),
+        (QueryDomain::Logs, "owner_pid=42"),
+    ] {
+        assert!(
+            execute_unified_query(
+                dir.path(),
+                &UnifiedQuerySpec {
+                    domain,
+                    where_clauses: vec![predicate.into()],
+                    ..Default::default()
+                },
+                &[],
+                Some(&snapshot)
+            )
+            .await
+            .is_err(),
+            "accepted {predicate}"
+        );
     }
 
     for (predicate, expected) in [
