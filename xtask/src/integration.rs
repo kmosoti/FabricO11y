@@ -36,12 +36,19 @@ struct Actions {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Review {
+    approved: bool,
     candidate: Candidate,
     author: String,
     reviewer: String,
     independent_context: String,
     receipt: String,
     semantic_scope: String,
+}
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LinearCommit {
+    sha: String,
+    parents: Vec<String>,
 }
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -56,6 +63,8 @@ struct Facts {
     conflict: bool,
     preview: String,
     preview_tree: String,
+    head_tree: String,
+    linear_commits: Vec<LinearCommit>,
     preview_parents: Vec<String>,
     changed_paths: Vec<String>,
     semantic_review_required: bool,
@@ -130,6 +139,28 @@ fn validate(f: &Facts) -> Result<bool, String> {
     {
         return fail("invalid preview, tree or ordered parents");
     }
+    if !xtask::valid_commit(&f.head_tree)
+        || f.head_tree != f.preview_tree
+        || f.linear_commits.is_empty()
+    {
+        return fail("head tree or linear chain missing or mismatched");
+    }
+    let mut previous = c.base.as_str();
+    let mut seen = std::collections::HashSet::new();
+    seen.insert(previous);
+    for commit in &f.linear_commits {
+        if !xtask::valid_commit(&commit.sha)
+            || commit.parents.len() != 1
+            || commit.parents[0] != previous
+            || !seen.insert(&commit.sha)
+        {
+            return fail("invalid linear commit chain");
+        }
+        previous = &commit.sha;
+    }
+    if previous != c.head {
+        return fail("linear chain does not end at head");
+    }
     let r = &f.reviewed;
     if r.candidate.repository != c.repository
         || r.candidate.pr != c.pr
@@ -139,7 +170,8 @@ fn validate(f: &Facts) -> Result<bool, String> {
     {
         return fail("stale review candidate");
     }
-    if !nonempty(&f.implementation_author)
+    if !r.approved
+        || !nonempty(&f.implementation_author)
         || !f
             .implementation_author
             .trim()
@@ -218,6 +250,7 @@ mod tests {
             version: 1,
             live: c.clone(),
             reviewed: Review {
+                approved: true,
                 candidate: c.clone(),
                 author: "author".into(),
                 reviewer: "reviewer".into(),
@@ -232,6 +265,11 @@ mod tests {
             conflict: false,
             preview: "d".repeat(40),
             preview_tree: c.tree.clone(),
+            head_tree: c.tree.clone(),
+            linear_commits: vec![LinearCommit {
+                sha: c.head.clone(),
+                parents: vec![c.base.clone()],
+            }],
             preview_parents: vec![c.base.clone(), c.head.clone()],
             changed_paths: vec!["fabric-core/src/lib.rs".into()],
             semantic_review_required: false,
@@ -326,5 +364,37 @@ mod tests {
         wrong.reviewed.reviewer = wrong.reviewed.author.clone();
         wrong.reviewed.independent_context = "different context".into();
         assert!(validate(&wrong).is_err());
+    }
+    #[test]
+    fn rebase_equivalence_and_approval_required() {
+        let f = fixture();
+        let mut multi = f.clone();
+        multi.linear_commits.insert(
+            0,
+            LinearCommit {
+                sha: "e".repeat(40),
+                parents: vec![multi.live.base.clone()],
+            },
+        );
+        multi.linear_commits[1].parents[0] = "e".repeat(40);
+        assert_eq!(validate(&multi), Ok(false));
+        let mut x = f.clone();
+        x.head_tree = "e".repeat(40);
+        assert!(validate(&x).is_err());
+        let mut x = f.clone();
+        x.linear_commits[0].parents.push("e".repeat(40));
+        assert!(validate(&x).is_err());
+        let mut x = f.clone();
+        x.linear_commits.clear();
+        assert!(validate(&x).is_err());
+        let mut x = f.clone();
+        x.linear_commits[0].parents[0] = "e".repeat(40);
+        assert!(validate(&x).is_err());
+        let mut x = f.clone();
+        x.linear_commits[0].sha = "e".repeat(40);
+        assert!(validate(&x).is_err());
+        let mut x = f;
+        x.reviewed.approved = false;
+        assert!(validate(&x).is_err());
     }
 }
