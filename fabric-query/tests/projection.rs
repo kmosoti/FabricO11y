@@ -594,3 +594,13 @@ fn grouped_receipt_corruption_isolated_to_one_segment() {
     assert!(answers[0].is_err());
     assert_eq!(answers[1], Ok(true));
 }
+
+#[test]
+fn grouped_receipt_expired_budget_does_not_open_segments() {
+    let (_dir, p) = loaded();
+    let rows = records();
+    let (answers, scans, _, _) =
+        p.proves_projected_rows(&rows, &AtomicBool::new(false), std::time::Instant::now());
+    assert!(answers.iter().all(Result::is_err));
+    assert_eq!(scans, 0);
+}

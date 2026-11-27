@@ -432,15 +432,30 @@ impl Projection {
         }
         let mut groups: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
         for (i, row) in rows.iter().enumerate() {
-            let mut matches = self.manifest.segments.iter().enumerate().filter(|(_, s)| {
-                s.origin == row.origin
+            let mut matched = None;
+            let mut ambiguous = false;
+            for (segment, s) in self.manifest.segments.iter().enumerate() {
+                if segment % 64 == 0
+                    && (cancel.load(Ordering::Acquire) || Instant::now() >= deadline)
+                {
+                    return (results, 0, 0, 0);
+                }
+                if s.origin == row.origin
                     && s.min_source <= row.source_id
                     && row.source_id <= s.max_source
-            });
-            match (matches.next(), matches.next()) {
-                (None, _) => results[i] = Ok(false),
-                (Some((segment, _)), None) => groups.entry(segment).or_default().push(i),
-                _ => {}
+                {
+                    if matched.replace(segment).is_some() {
+                        ambiguous = true;
+                        break;
+                    }
+                }
+            }
+            if !ambiguous {
+                if let Some(segment) = matched {
+                    groups.entry(segment).or_default().push(i);
+                } else {
+                    results[i] = Ok(false);
+                }
             }
         }
         let mut used_bytes = 0u64;
@@ -519,18 +534,21 @@ impl Projection {
             return Err("receipt projection segment digest mismatch".into());
         }
         check()?;
-        let expected: Vec<_> = indexes
-            .iter()
-            .map(|i| TypedRow::decode(&rows[*i]).and_then(|r| to_batch(&[r])))
-            .collect();
+        let mut expected = Vec::with_capacity(indexes.len());
+        for i in indexes {
+            check()?;
+            expected.push(TypedRow::decode(&rows[*i]).and_then(|r| to_batch(&[r])));
+        }
         let mut matched = vec![false; indexes.len()];
         let mut bad = vec![false; indexes.len()];
         let mut total_rows = 0usize;
-        let reader = fabric_store::parquet_guard::open_verified_parquet_batch_reader_from_bytes(
-            bytes::Bytes::from(captured),
-            Some(&schema()),
-            128,
-        )?;
+        let reader =
+            fabric_store::parquet_guard::open_verified_parquet_batch_reader_from_bytes_with_check(
+                bytes::Bytes::from(captured),
+                Some(&schema()),
+                128,
+                check,
+            )?;
         for batch in reader {
             check()?;
             let batch = batch.map_err(err)?;
