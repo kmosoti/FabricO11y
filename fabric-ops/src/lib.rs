@@ -4,7 +4,7 @@
 //! ticks. This crate neither parses wire claims nor performs I/O. A tick is only
 //! meaningful in the adapter's local clock domain.
 
-/// A monotonic tick and duration use the same adapter-defined unit.
+/// Milliseconds on an adapter-provided monotonic clock; the epoch is local.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Tick(pub u64);
 
@@ -40,6 +40,10 @@ impl VerifiedPeer {
     }
 }
 
+/// Default and maximum call durations in milliseconds, aligned with Fabric query budgets.
+pub const DEFAULT_CALL_BUDGET_MS: u64 = 10_000;
+pub const MAX_CALL_BUDGET_MS: u64 = 30_000;
+
 /// A local deadline is not a wire timestamp. It cannot be serialized here.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CallContext {
@@ -50,14 +54,23 @@ pub struct CallContext {
 }
 
 impl CallContext {
-    /// `requested` and `wire_cap` are durations, never remote clock readings.
+    /// Both durations are milliseconds, never remote clock readings. Neither
+    /// the local budget nor an adapter override of the wire cap may exceed
+    /// `MAX_CALL_BUDGET_MS`.
+    pub fn with_defaults(peer: VerifiedPeer, now: Tick) -> Result<Self, Error> {
+        Self::from_adapter(peer, now, DEFAULT_CALL_BUDGET_MS, DEFAULT_CALL_BUDGET_MS)
+    }
+
+    /// Constructs a call with explicit local and wire duration limits.
     pub fn from_adapter(
         peer: VerifiedPeer,
         now: Tick,
         requested: u64,
         wire_cap: u64,
     ) -> Result<Self, Error> {
-        if requested == 0 || wire_cap == 0 {
+        if !(1..=MAX_CALL_BUDGET_MS).contains(&requested)
+            || !(1..=MAX_CALL_BUDGET_MS).contains(&wire_cap)
+        {
             return Err(Error::InvalidBudget);
         }
         let deadline = now.0.checked_add(requested).ok_or(Error::InvalidBudget)?;
@@ -75,11 +88,12 @@ impl CallContext {
         self.deadline
     }
     /// The returned duration is safe to pass to another adapter, not an instant.
-    pub fn wire_remaining(&self, now: Tick) -> Result<u64, Error> {
+    pub fn wire_remaining(&self, now: Tick) -> Result<u32, Error> {
         if now < self.started {
             return Err(Error::ClockRegressed);
         }
-        Ok(self.deadline.0.saturating_sub(now.0).min(self.wire_cap))
+        u32::try_from(self.deadline.0.saturating_sub(now.0).min(self.wire_cap))
+            .map_err(|_| Error::InvalidBudget)
     }
 }
 
@@ -392,6 +406,48 @@ mod tests {
                 .into_effects()
                 .collect::<Vec<_>>(),
             vec![Effect::Cancelled]
+        );
+    }
+
+    #[test]
+    fn call_budget_maximum_defaults_and_wire_conversion_are_bounded() {
+        let peer = VerifiedPeer::from_adapter("peer".into(), Locality::Local).unwrap();
+        let default = CallContext::with_defaults(peer.clone(), Tick(100)).unwrap();
+        assert_eq!(default.deadline(), Tick(100 + DEFAULT_CALL_BUDGET_MS));
+        assert_eq!(
+            default.wire_remaining(Tick(100)),
+            Ok(DEFAULT_CALL_BUDGET_MS as u32)
+        );
+        let max = CallContext::from_adapter(
+            peer.clone(),
+            Tick(10),
+            MAX_CALL_BUDGET_MS,
+            MAX_CALL_BUDGET_MS,
+        )
+        .unwrap();
+        assert_eq!(max.wire_remaining(Tick(10)), Ok(MAX_CALL_BUDGET_MS as u32));
+        assert_eq!(max.wire_remaining(Tick(10 + MAX_CALL_BUDGET_MS - 1)), Ok(1));
+        assert_eq!(max.wire_remaining(Tick(10 + MAX_CALL_BUDGET_MS)), Ok(0));
+        assert_eq!(
+            CallContext::from_adapter(peer.clone(), Tick(0), MAX_CALL_BUDGET_MS + 1, 1),
+            Err(Error::InvalidBudget)
+        );
+        assert_eq!(
+            CallContext::from_adapter(peer.clone(), Tick(0), 1, MAX_CALL_BUDGET_MS + 1),
+            Err(Error::InvalidBudget)
+        );
+        assert_eq!(
+            CallContext::from_adapter(peer.clone(), Tick(0), 1, u64::MAX),
+            Err(Error::InvalidBudget)
+        );
+        assert_eq!(
+            CallContext::from_adapter(
+                peer,
+                Tick(u64::MAX - MAX_CALL_BUDGET_MS + 1),
+                MAX_CALL_BUDGET_MS,
+                MAX_CALL_BUDGET_MS
+            ),
+            Err(Error::InvalidBudget)
         );
     }
 
