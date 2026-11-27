@@ -27,7 +27,7 @@ pub use arrow_schemas::{
 pub use evidence_manifest::{
     ArtifactContentDigest, ArtifactKind, ArtifactReference, AttemptManifest, AttemptManifestDigest,
     AttemptOverride, CanonicalRecordDigest, ClockProvenance, DigestAlgorithm, DigestClaim,
-    DigestRepresentation, Disclosure, ImmutableReference, MANIFEST_SCHEMA_VERSION,
+    DigestRepresentation, Disclosure, EffectiveInputs, ImmutableReference, MANIFEST_SCHEMA_VERSION,
     MAX_ATTEMPT_INPUT_OVERRIDES, MAX_ATTEMPT_OVERRIDES, MAX_MANIFEST_WIRE_BYTES, ManifestEnvelope,
     ManifestError, ObservationReference, OriginalArtifactDigest, PhysicalFileDigest,
     ProvenancedTime, RunManifest, RunManifestDigest,

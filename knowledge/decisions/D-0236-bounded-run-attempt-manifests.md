@@ -44,11 +44,23 @@ bytes.
 Shared run references avoid copying reproducibility context into every record,
 while typed digest wrappers keep shared artifact content, source artifact bytes,
 manifest bytes, canonical records, and physical files distinct in Rust APIs.
-Input/output overrides permit at most 32 unique input locators and one each of
-evaluator, toolchain, and capture-policy. Fixed run fields must carry their
-matching artifact kind. This DTO alone does not
-collect, persist, transmit, or verify manifests. Its size choices are initial
-wire limits for small provenance records, not measured throughput claims.
+Input overrides permit at most 32 unique locators and one each of evaluator,
+toolchain, and capture-policy overrides. Fixed run fields must carry their
+matching artifact kind. If an attempt has any `Input` override entries, all of
+them replace the run's complete input set. They are not appended or matched to
+run inputs by locator. An attempt without input entries inherits the run's
+explicit input disclosure. Empty replacement is unsupported; `available([])`
+at the run level explicitly describes an empty set. This avoids treating a
+missing override as either clear or partial replacement.
+
+The manifest digest profile does not define canonical bytes for #196's future
+application result schema. That result needs its own closed, versioned encoding
+contract; until it exists, canonical-record digests cover the exact accepted
+payload bytes and original artifacts retain their separate exact-byte hashes.
+
+This DTO alone does not collect, persist, transmit, or verify manifests. Its
+size choices are initial wire limits for small provenance records, not measured
+throughput claims.
 
 ## Revisit when
 
