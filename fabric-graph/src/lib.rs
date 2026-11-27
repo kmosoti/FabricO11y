@@ -531,6 +531,7 @@ impl CausalGraph {
     }
 
     /// Bounded BFS lineage traversal supporting exact node IDs, bare names, and path prefixes.
+    /// Both directions return the union of upstream and downstream paths from the matched roots.
     #[must_use]
     pub fn lineage(&self, target: &str, direction: Direction, max_depth: usize) -> LineageSubgraph {
         let roots = self.resolve_targets(target);
@@ -545,47 +546,35 @@ impl CausalGraph {
             };
         }
 
-        let mut visited_nodes: BTreeSet<String> = BTreeSet::new();
-        let mut collected_edge_idxs: BTreeSet<usize> = BTreeSet::new();
-        let mut queue: VecDeque<(String, usize)> = VecDeque::new();
-
-        for root in &roots {
-            if visited_nodes.insert(root.clone()) {
-                queue.push_back((root.clone(), 0));
-            }
-        }
-
-        while let Some((node_id, depth)) = queue.pop_front() {
-            if depth >= max_depth {
-                continue;
-            }
-            if matches!(direction, Direction::Upstream | Direction::Both)
-                && let Some(in_edges) = self.adj_in.get(&node_id)
-            {
-                for &edge_idx in in_edges {
+        let traversals: &[(_, bool)] = match direction {
+            Direction::Upstream => &[(&self.adj_in, true)],
+            Direction::Downstream => &[(&self.adj_out, false)],
+            Direction::Both => &[(&self.adj_in, true), (&self.adj_out, false)],
+        };
+        let mut visited_nodes = BTreeSet::new();
+        let mut collected_edge_idxs = BTreeSet::new();
+        for (adjacency, upstream) in traversals {
+            let mut visited: BTreeSet<&str> = roots.iter().map(String::as_str).collect();
+            let mut queue: VecDeque<_> = visited.iter().map(|&root| (root, 0)).collect();
+            while let Some((node_id, depth)) = queue.pop_front() {
+                if depth >= max_depth {
+                    continue;
+                }
+                for &edge_idx in adjacency.get(node_id).into_iter().flatten() {
                     collected_edge_idxs.insert(edge_idx);
-                    let src = &self.edges[edge_idx].src;
-                    if visited_nodes.insert(src.clone()) {
-                        queue.push_back((src.clone(), depth + 1));
+                    let edge = &self.edges[edge_idx];
+                    let next = if *upstream { &edge.src } else { &edge.dst };
+                    if visited.insert(next) {
+                        queue.push_back((next, depth + 1));
                     }
                 }
             }
-            if matches!(direction, Direction::Downstream | Direction::Both)
-                && let Some(out_edges) = self.adj_out.get(&node_id)
-            {
-                for &edge_idx in out_edges {
-                    collected_edge_idxs.insert(edge_idx);
-                    let dst = &self.edges[edge_idx].dst;
-                    if visited_nodes.insert(dst.clone()) {
-                        queue.push_back((dst.clone(), depth + 1));
-                    }
-                }
-            }
+            visited_nodes.extend(visited);
         }
 
         let nodes = visited_nodes
             .into_iter()
-            .filter_map(|id| self.nodes.get(&id).cloned())
+            .filter_map(|id| self.nodes.get(id).cloned())
             .collect();
         let edges = collected_edge_idxs
             .into_iter()
@@ -1027,6 +1016,42 @@ mod tests {
             disk.entries[0].unit.as_deref(),
             Some("fabric-synth-load-test.scope")
         );
+    }
+
+    #[test]
+    fn both_direction_lineage_unions_bounded_paths_from_the_root() {
+        let mut graph = CausalGraph::new();
+        for label in ["session", "agent", "sibling", "process", "file", "outside"] {
+            graph.upsert_node(label, NodeKind::Process, label, BTreeMap::new());
+        }
+        for (from, to) in [
+            ("session", "agent"),
+            ("session", "sibling"),
+            ("agent", "process"),
+            ("process", "agent"),
+            ("process", "file"),
+            ("file", "outside"),
+        ] {
+            graph.add_edge(from, to, EdgeKind::Spawns, 1.0, "fixture");
+        }
+        let ids = |direction, depth| {
+            graph
+                .lineage("agent", direction, depth)
+                .nodes
+                .into_iter()
+                .map(|node| node.id)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(ids(Direction::Upstream, 2), ["agent", "process", "session"]);
+        assert_eq!(ids(Direction::Downstream, 2), ["agent", "file", "process"]);
+        assert_eq!(
+            ids(Direction::Both, 2),
+            ["agent", "file", "process", "session"]
+        );
+        assert_eq!(ids(Direction::Both, 0), ["agent"]);
+        let both = graph.lineage("agent", Direction::Both, 2);
+        assert_eq!(both.edges.len(), 4);
+        assert!(both.edges.iter().all(|edge| edge.dst != "sibling"));
     }
 
     proptest! {
