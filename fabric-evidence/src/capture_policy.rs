@@ -179,6 +179,9 @@ impl CapturePolicy {
         }
         let mut total_path_bytes = 0usize;
         for rule in &paths {
+            if rule.path.is_empty() || rule.path.len() > MAX_CAPTURE_PATH_DEPTH {
+                return Err(CaptureError::InvalidPolicy);
+            }
             for segment in &rule.path {
                 total_path_bytes = total_path_bytes
                     .checked_add(segment.len())
@@ -187,15 +190,12 @@ impl CapturePolicy {
                     return Err(CaptureError::InvalidPolicy);
                 }
             }
-            if rule.path.is_empty()
-                || rule.path.len() > MAX_CAPTURE_PATH_DEPTH
-                || rule.path.iter().any(|segment| {
-                    segment.is_empty()
-                        || segment.len() > MAX_CAPTURE_NAME_BYTES
-                        || segment.contains('\0')
-                        || segment.contains('*')
-                })
-                || matches!(&rule.action, CaptureAction::ScalarArray { max_items, .. } if *max_items == 0 || usize::from(*max_items) > MAX_CAPTURE_ARRAY_ITEMS)
+            if rule.path.iter().any(|segment| {
+                segment.is_empty()
+                    || segment.len() > MAX_CAPTURE_NAME_BYTES
+                    || segment.contains('\0')
+                    || segment.contains('*')
+            }) || matches!(&rule.action, CaptureAction::ScalarArray { max_items, .. } if *max_items == 0 || usize::from(*max_items) > MAX_CAPTURE_ARRAY_ITEMS)
             {
                 return Err(CaptureError::InvalidPolicy);
             }
