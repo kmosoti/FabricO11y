@@ -1409,11 +1409,25 @@ fn application_eight_case_restart_and_paired_delivery() {
     let outbox = root.join("batch-outbox");
     let primary_id = "00000000-0000-4001-8000-000000000001";
     let supplement_id = "00000000-0000-4001-8000-000000000002";
-    let primary_json = "{\"schema\":\"example.result.v1\",\"record_id\":\"fixture.primary\",\"enrolled\":8,\"valid\":4,\"exact\":3,\"unavailable\":4}";
-    let supplement_json = format!(
-        "{{\"schema\":\"example.result.v1\",\"record_id\":\"fixture.supplementary\",\"parent_report_id\":\"{primary_id}\",\"relation\":\"supplements\",\"enrolled\":8,\"valid\":7,\"exact\":5,\"unavailable\":1}}"
-    );
-    let first_request = application_request(primary_id, None, &source.origin, primary_json, 42);
+    let payload = |record_id: &str, parent: Option<&str>, rows: &[(String, bool)]| {
+        let (valid, exact, unavailable) = evaluate(rows);
+        let states: BTreeMap<_, _> = rows
+            .iter()
+            .map(|(id, exact)| (id.as_str(), *exact))
+            .collect();
+        let cases: Vec<_> = roster.iter().map(|id| json!({"id":id,"state":match states.get(id.as_str()) { Some(true) => "exact", Some(false) => "known", None => "unavailable" }})).collect();
+        let mut payload = json!({"schema":"example.result.v1","record_id":record_id,"enrolled":roster.len(),"valid":valid,"exact":exact,"unavailable":unavailable,"cases":cases});
+        if let Some(parent) = parent {
+            payload["parent_report_id"] = parent.into();
+            payload["relation"] = "supplements".into();
+        }
+        payload
+    };
+    let primary_payload = payload("fixture.primary", None, &primary);
+    let supplement_payload = payload("fixture.supplementary", Some(primary_id), &combined);
+    let primary_json = format!("{}\n", serde_json::to_string(&primary_payload).unwrap());
+    let supplement_json = format!("{}\n", serde_json::to_string(&supplement_payload).unwrap());
+    let first_request = application_request(primary_id, None, &source.origin, &primary_json, 42);
     let second_request = application_request(
         supplement_id,
         Some(primary_id),
@@ -1560,8 +1574,16 @@ fn application_eight_case_restart_and_paired_delivery() {
         parent["verified_parent"]["first_verified_read"],
         first_verified
     );
+    assert_eq!(
+        parent["verified_parent"]["result"]["payload"],
+        primary_payload
+    );
+    assert_eq!(
+        second["verified_application"]["result"]["payload"],
+        supplement_payload
+    );
     for (raw, result) in [
-        (primary_json, &parent["verified_parent"]["result"]),
+        (primary_json.as_str(), &parent["verified_parent"]["result"]),
         (
             supplement_json.as_str(),
             &second["verified_application"]["result"],
@@ -1585,44 +1607,83 @@ fn application_eight_case_restart_and_paired_delivery() {
     let mut rows = Vec::new();
     read_lane(&source, 2, &mut rows).unwrap();
     assert_eq!(rows.len(), 2);
+    // Each arm receives the same three independent completion events at 0/80/160ms.
+    // Immediate consumes on arrival; periodic sweeps all queued completions at 250ms ticks.
     for pair in 0..3 {
         for periodic in if pair % 2 == 0 {
             [false, true]
         } else {
             [true, false]
         } {
-            let id = format!(
-                "00000000-0000-4001-8000-{:012x}",
-                10 + pair * 2 + usize::from(periodic)
-            );
-            let finish_wall_ms = wall_millis();
-            let finished = Instant::now();
-            let request =
-                application_request(&id, None, &source.origin, primary_json, finish_wall_ms);
-            if periodic {
-                thread::sleep(Duration::from_millis(250));
+            let (sent, received) = mpsc::channel();
+            let base = Instant::now() + Duration::from_millis(100);
+            let producer = thread::spawn(move || {
+                for (job, offset_ms) in [0_u64, 80, 160].into_iter().enumerate() {
+                    let scheduled = base + Duration::from_millis(offset_ms);
+                    if let Some(wait) = scheduled.checked_duration_since(Instant::now()) {
+                        thread::sleep(wait);
+                    }
+                    sent.send((job, offset_ms, Instant::now(), wall_millis()))
+                        .unwrap();
+                }
+            });
+            let mut completed = 0;
+            let mut tick = 1_u32;
+            while completed < 3 {
+                let mut batch = Vec::new();
+                let sweep_tick = if periodic {
+                    let scheduled_tick = base + Duration::from_millis(u64::from(tick) * 250);
+                    if let Some(wait) = scheduled_tick.checked_duration_since(Instant::now()) {
+                        thread::sleep(wait);
+                    }
+                    while let Ok(event) = received.try_recv() {
+                        batch.push(event);
+                    }
+                    let current = tick;
+                    tick += 1;
+                    Some(current)
+                } else {
+                    batch.push(received.recv_timeout(Duration::from_secs(5)).unwrap());
+                    None
+                };
+                for (job, offset_ms, finished, finish_wall_ms) in batch {
+                    let id = format!(
+                        "00000000-0000-4001-8000-{:012x}",
+                        10 + pair * 6 + usize::from(periodic) * 3 + job
+                    );
+                    let request = application_request(
+                        &id,
+                        None,
+                        &source.origin,
+                        &primary_json,
+                        finish_wall_ms,
+                    );
+                    let dispatch_ns = finished.elapsed().as_nanos();
+                    batch_send(&mut adapter, &request);
+                    let ack = batch_reply(&replies);
+                    let ack_ns = finished.elapsed().as_nanos();
+                    assert_eq!(ack["delivery_state"], "custody_confirmed", "{ack}");
+                    let staged_ms = ack["application_timing"]["outbox_staged_at"]["unix_ms"]
+                        .as_i64()
+                        .unwrap();
+                    assert!(staged_ms >= finish_wall_ms, "wall clock regressed");
+                    let verified = verify_until(&mut adapter, &replies, &id);
+                    let verified_ns = finished.elapsed().as_nanos();
+                    assert!(
+                        verified["verified_application"]["first_verified_read"]["unix_ms"]
+                            .as_i64()
+                            .unwrap()
+                            >= staged_ms,
+                        "wall clock regressed"
+                    );
+                    println!(
+                        "FABRIC196_SAMPLE {}",
+                        json!({"pair":pair,"job":job,"mode":if periodic {"periodic"} else {"immediate"},"period_ms":250,"scheduled_completion_offset_ms":offset_ms,"actual_completion_since_start_ns":finished.duration_since(base).as_nanos(),"sweep_tick":sweep_tick,"finish_wall_ms":finish_wall_ms,"stage_wall_ms":staged_ms,"finish_to_stage_ms":staged_ms-finish_wall_ms,"finish_to_dispatch_ns":dispatch_ns,"finish_to_ack_ns":ack_ns,"finish_to_verified_response_ns":verified_ns,"first_verified_read":verified["verified_application"]["first_verified_read"],"payload_sha256":independent_sha256(primary_json.as_bytes())})
+                    );
+                    completed += 1;
+                }
             }
-            batch_send(&mut adapter, &request);
-            let ack = batch_reply(&replies);
-            let ack_ns = finished.elapsed().as_nanos();
-            assert_eq!(ack["delivery_state"], "custody_confirmed", "{ack}");
-            let staged_ms = ack["application_timing"]["outbox_staged_at"]["unix_ms"]
-                .as_i64()
-                .unwrap();
-            assert!(staged_ms >= finish_wall_ms, "wall clock regressed");
-            let verified = verify_until(&mut adapter, &replies, &id);
-            let verified_ns = finished.elapsed().as_nanos();
-            assert!(
-                verified["verified_application"]["first_verified_read"]["unix_ms"]
-                    .as_i64()
-                    .unwrap()
-                    >= staged_ms,
-                "wall clock regressed"
-            );
-            println!(
-                "FABRIC196_SAMPLE {}",
-                json!({"pair":pair,"mode":if periodic {"periodic"} else {"immediate"},"period_ms":250,"finish_wall_ms":finish_wall_ms,"stage_wall_ms":staged_ms,"finish_to_stage_ms":staged_ms-finish_wall_ms,"finish_to_ack_ns":ack_ns,"finish_to_verified_response_ns":verified_ns,"first_verified_read":verified["verified_application"]["first_verified_read"],"payload_sha256":independent_sha256(primary_json.as_bytes())})
-            );
+            producer.join().unwrap();
         }
     }
     adapter.kill_wait();
