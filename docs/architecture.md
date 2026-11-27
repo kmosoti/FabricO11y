@@ -87,7 +87,10 @@ and cannot exceed 30 seconds. A wire remaining-time budget is capped separately
 from the local deadline. Each transition either returns a fixed-capacity effect
 batch and commits its state, or returns an error with state unchanged. Message
 counts and effects are bounded; adapters enforce payload byte limits. This
-kernel does not authenticate peers, deliver effects, or register operations.
+kernel does not authenticate peers or deliver effects. A bounded static registry
+validates independent protocol and operation versions before returning a typed
+handler token. Registry metadata conveys no authority; adapters retain request
+and response types and choose their own transport and compatibility policy.
 Batch construction is atomic with the in-memory transition; an adapter owns
 any external delivery or durable transaction semantics.
 
