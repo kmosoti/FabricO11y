@@ -1700,3 +1700,231 @@ fn application_eight_case_restart_and_paired_delivery() {
     );
     drop(server);
 }
+
+#[test]
+#[ignore = "requires exact release executables and fabrico11y.slice"]
+fn snapshot_readback_survives_packaged_restart() {
+    assert!(
+        fs::read_to_string("/proc/self/cgroup")
+            .unwrap()
+            .contains("/fabrico11y.slice/")
+    );
+    let bins = PathBuf::from(std::env::var_os("FABRIC_TEST_BIN_DIR").unwrap());
+    let sandbox = xtask::evidence::non_tmp_tempdir().unwrap();
+    let root = sandbox.path();
+    let mut source = Node::open(&bins, root, NODE[0].0, NODE[0].1);
+    let beta = Node::open(&bins, root, NODE[1].0, NODE[1].1);
+    let lane = Node::open(&bins, root, NODE[2].0, NODE[2].1);
+    let endpoint = TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .to_string();
+    let credential = root.join("reader");
+    private_file(&credential, READER);
+    let (mut server, authority) =
+        receiver(&bins, root, &endpoint, [&source, &beta, &lane], &credential);
+    source.forward(&bins, &endpoint, &authority, None);
+    let outbox = root.join("snapshot-outbox");
+    let (mut adapter, replies) = open_batch_reader(
+        &bins,
+        &source.config.socket,
+        &outbox,
+        &endpoint,
+        &authority,
+        &credential,
+    );
+    let report_id = |n: u64| format!("00000000-0000-4001-8000-{n:012x}");
+    let clock = json!({"unix_ms":42,"clock":{"clock_id":"producer","source":"fixture","uncertainty_ms":null}});
+    let make_ref = |id: &str, hex: &str| json!({"id":id,"digest":{"algorithm":"sha256","representation":"exact_bytes","hex":hex.repeat(64)}});
+    let source_ref = make_ref("cutoff-source", "a");
+    let definition = json!({"evaluator":make_ref("evaluator","b"),"configuration":make_ref("configuration","c"),"unit":"cases","aggregation":"count"});
+    let mut case_refs: Vec<Value> = Vec::new();
+    let record = |adapter: &mut OwnedChild,
+                  id: &str,
+                  parent: Option<&str>,
+                  schema: &str,
+                  artifact: &Value|
+     -> Value {
+        batch_send(
+            adapter,
+            &json!({"command":"record_application","report_id":id,"context":{"run_id":"00000000-0000-4000-8000-000000000001"},"scope":{"origin":source.origin,"producer":"batch-fixture"},"parent_report_id":parent,"schema":schema,"producer_completion":clock,"artifact_json":artifact.to_string(),"timestamp_ns":123}),
+        );
+        let response = batch_reply(&replies);
+        assert_eq!(
+            response["delivery_state"], "custody_confirmed",
+            "{response}"
+        );
+        response
+    };
+    let case = |id: usize, refs: &[Value]| -> Value {
+        if id <= refs.len() {
+            json!({"id":format!("case-{id:02}"),"evidence":{"state":"known","reference":refs[id-1]}})
+        } else {
+            json!({"id":format!("case-{id:02}"),"evidence":{"state":"unknown","reason":"unavailable"}})
+        }
+    };
+    let payload = |ordinal: u64, refs: &[Value], parent_digest: Option<Value>| -> Value {
+        json!({"schema":"fabric.snapshot.v1","cutoff":{"source":source_ref,"ordinal":ordinal,"time":clock},"definition":definition,"cases":(1..=8).map(|i| case(i, refs)).collect::<Vec<_>>(),"parent_payload_digest":parent_digest})
+    };
+    for i in 1..=4 {
+        let id = report_id(i);
+        let response = record(
+            &mut adapter,
+            &id,
+            None,
+            "example.case.v1",
+            &json!({"schema":"example.case.v1","case":format!("case-{i:02}"),"exact":i <= 3}),
+        );
+        case_refs.push(json!({"report_id":id,"payload_digest":response["application_payload_digest"],"expected_source_id":response["receipt"]["id"]}));
+    }
+    let first_id = report_id(100);
+    let first = record(
+        &mut adapter,
+        &first_id,
+        None,
+        "fabric.snapshot.v1",
+        &payload(1, &case_refs, None),
+    );
+    for i in 5..=7 {
+        let id = report_id(i);
+        let response = record(
+            &mut adapter,
+            &id,
+            None,
+            "example.case.v1",
+            &json!({"schema":"example.case.v1","case":format!("case-{i:02}"),"exact":i <= 6}),
+        );
+        case_refs.push(json!({"report_id":id,"payload_digest":response["application_payload_digest"],"expected_source_id":response["receipt"]["id"]}));
+    }
+    let second_id = report_id(101);
+    record(
+        &mut adapter,
+        &second_id,
+        Some(&first_id),
+        "fabric.snapshot.v1",
+        &payload(
+            2,
+            &case_refs,
+            Some(first["application_payload_digest"].clone()),
+        ),
+    );
+    let mut bad_refs = case_refs.clone();
+    bad_refs[0]["payload_digest"]["hex"] = "f".repeat(64).into();
+    let bad_digest_id = report_id(102);
+    record(
+        &mut adapter,
+        &bad_digest_id,
+        None,
+        "fabric.snapshot.v1",
+        &payload(1, &bad_refs, None),
+    );
+    let mut missing_refs = case_refs.clone();
+    missing_refs[0]["report_id"] = report_id(999).into();
+    missing_refs[0]["expected_source_id"] = Value::Null;
+    let missing_id = report_id(103);
+    record(
+        &mut adapter,
+        &missing_id,
+        None,
+        "fabric.snapshot.v1",
+        &payload(1, &missing_refs, None),
+    );
+    until(
+        "snapshot canonical handoff",
+        Duration::from_secs(30),
+        || (source.health().canonical_through >= 11).then_some(()),
+    );
+    adapter.kill_wait();
+    server.kill_wait();
+    let (mut server, same_authority) =
+        receiver(&bins, root, &endpoint, [&source, &beta, &lane], &credential);
+    assert_eq!(same_authority, authority);
+    let (mut adapter, replies) = open_batch_reader(
+        &bins,
+        &source.config.socket,
+        &outbox,
+        &endpoint,
+        &authority,
+        &credential,
+    );
+    for (id, known, exact) in [(&first_id, 4, 3), (&second_id, 7, 5)] {
+        batch_send(
+            &mut adapter,
+            &json!({"command":"verify_snapshot","report_id":id,"timeout_ms":30000}),
+        );
+        let verified = replies
+            .recv_timeout(Duration::from_secs(35))
+            .expect("snapshot verification reply");
+        let boundary = &verified["verified_snapshot"]["root"];
+        assert_eq!(boundary["report_id"], *id, "{verified}");
+        let rows = boundary["payload"]["cases"].as_array().unwrap();
+        assert_eq!(rows.len(), 8);
+        assert_eq!(
+            rows.iter()
+                .filter(|c| c["evidence"]["state"] == "known")
+                .count(),
+            known
+        );
+        let mut exact_count = 0;
+        for (index, row) in rows.iter().enumerate() {
+            assert_eq!(row["id"], format!("case-{:02}", index + 1));
+            if row["evidence"]["state"] == "known" {
+                batch_send(
+                    &mut adapter,
+                    &json!({"command":"verify_application","report_id":row["evidence"]["reference"]["report_id"]}),
+                );
+                let item = batch_reply(&replies);
+                assert_eq!(
+                    item["verified_application"]["result"]["payload"]["case"], row["id"],
+                    "{item}"
+                );
+                exact_count +=
+                    usize::from(item["verified_application"]["result"]["payload"]["exact"] == true);
+            }
+        }
+        assert_eq!(exact_count, exact);
+        if id == &second_id {
+            assert_eq!(
+                verified["verified_snapshot"]["parent"]["report_id"],
+                first_id
+            );
+        }
+    }
+    for id in [&bad_digest_id, &missing_id] {
+        batch_send(
+            &mut adapter,
+            &json!({"command":"verify_snapshot","report_id":id,"timeout_ms":30000}),
+        );
+        let reply = replies.recv_timeout(Duration::from_secs(35)).unwrap();
+        assert!(
+            reply.get("error").is_some() && reply.get("verified_snapshot").is_none(),
+            "{reply}"
+        );
+    }
+    batch_send(
+        &mut adapter,
+        &json!({"command":"verify_snapshot","report_id":first_id,"timeout_ms":0}),
+    );
+    assert_eq!(batch_reply(&replies)["code"], "invalid");
+    adapter.kill_wait();
+    let (mut wrong, replies) = open_batch_reader(
+        &bins,
+        &source.config.socket,
+        &outbox,
+        &endpoint,
+        "wrong-authority",
+        &credential,
+    );
+    batch_send(
+        &mut wrong,
+        &json!({"command":"verify_snapshot","report_id":second_id,"timeout_ms":30000}),
+    );
+    let reply = replies.recv_timeout(Duration::from_secs(35)).unwrap();
+    assert!(
+        reply.get("error").is_some() && reply.get("verified_snapshot").is_none(),
+        "{reply}"
+    );
+    wrong.kill_wait();
+    server.kill_wait();
+}

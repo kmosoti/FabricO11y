@@ -10,6 +10,7 @@ use crate::{
 use fabric_evidence::{
     ReportScope,
     application_result::{ApplicationPayloadDigest, ApplicationResult},
+    durable_snapshot::{CaseEvidence, DurableSnapshot, Payload},
     evidence_manifest::{OriginalArtifactDigest, ProvenancedTime},
 };
 use outbox::{Lease, Outbox, Pending, SavedReport};
@@ -176,6 +177,17 @@ impl fmt::Display for BatchError {
 }
 impl std::error::Error for BatchError {}
 
+fn check_read_deadline(deadline: Instant) -> Result<(), BatchError> {
+    if Instant::now() >= deadline {
+        Err(BatchError::Unavailable("application read deadline".into()))
+    } else {
+        Ok(())
+    }
+}
+fn snapshot_error(error: fabric_evidence::durable_snapshot::DurableError) -> BatchError {
+    BatchError::Invalid(format!("snapshot contract: {error:?}"))
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct BatchStatus {
     pub origin: Option<String>,
@@ -191,6 +203,19 @@ pub struct BatchStatus {
 pub struct VerifiedApplication {
     pub result: ApplicationResult,
     pub first_verified_read: ProvenancedTime,
+}
+
+/// Authenticated, bounded view of one reporting boundary.
+#[derive(Clone, Debug, Serialize)]
+pub struct VerifiedBoundary {
+    pub report_id: String,
+    pub payload: Payload,
+}
+/// A root and, when named, its one verified primary boundary.
+#[derive(Clone, Debug, Serialize)]
+pub struct VerifiedSnapshot {
+    pub root: VerifiedBoundary,
+    pub parent: Option<VerifiedBoundary>,
 }
 
 struct CanonicalReader {
@@ -253,6 +278,17 @@ impl BatchClient {
         &mut self,
         report_id: &str,
     ) -> Result<VerifiedApplication, BatchError> {
+        let deadline = Instant::now() + self.config.delivery_timeout;
+        self.verify_application_until(report_id, deadline)
+            .map(|(result, _)| result)
+    }
+
+    fn verify_application_until(
+        &mut self,
+        report_id: &str,
+        deadline: Instant,
+    ) -> Result<(VerifiedApplication, Receipt), BatchError> {
+        check_read_deadline(deadline)?;
         validate_id(report_id).map_err(|()| BatchError::Invalid("invalid report_id".into()))?;
         let (digest, receipt) = match self.outbox.find(report_id)? {
             Some(SavedReport::Confirmed(digest, receipt)) => (digest, receipt),
@@ -278,13 +314,15 @@ impl BatchClient {
             identity: receipt.identity.clone(),
         };
         request.validate().map_err(BatchError::Invalid)?;
+        check_read_deadline(deadline)?;
         let response = reader
             .client
             .exchange(
                 &crate::canonical::Request::ExactReceiptLookup { request },
-                Instant::now() + self.config.delivery_timeout,
+                deadline.min(Instant::now() + self.config.delivery_timeout),
             )
             .map_err(BatchError::Unavailable)?;
+        check_read_deadline(deadline)?;
         let crate::canonical::Response::ExactReceiptFound {
             authority,
             row: Some(row),
@@ -327,10 +365,80 @@ impl BatchClient {
         let result = ApplicationResult::decode_bounded(&bytes)
             .map_err(|e| BatchError::Unavailable(format!("invalid application result: {e:?}")))?;
         let first_verified_read = self.outbox.record_verified_read(report_id)?;
-        Ok(VerifiedApplication {
-            result,
-            first_verified_read,
+        check_read_deadline(deadline)?;
+        Ok((
+            VerifiedApplication {
+                result,
+                first_verified_read,
+            },
+            receipt,
+        ))
+    }
+
+    /// Verify all named known case references, and one named parent boundary,
+    /// using one total deadline. Unknown cases remain explicit in the result.
+    pub fn verify_snapshot(
+        &mut self,
+        report_id: &str,
+        timeout: Duration,
+    ) -> Result<VerifiedSnapshot, BatchError> {
+        if timeout.is_zero() || timeout > Duration::from_secs(30) {
+            return Err(BatchError::Invalid(
+                "snapshot timeout must be 1..=30000 ms".into(),
+            ));
+        }
+        let deadline = Instant::now()
+            .checked_add(timeout)
+            .ok_or_else(|| BatchError::Invalid("snapshot timeout overflow".into()))?;
+        let (verified, _) = self.verify_application_until(report_id, deadline)?;
+        let root = DurableSnapshot::from_result(verified.result).map_err(snapshot_error)?;
+        let parent = if let Some(id) = root.result().parent_report_id() {
+            let (verified, _) = self.verify_application_until(id, deadline)?;
+            let parent = DurableSnapshot::from_result(verified.result).map_err(snapshot_error)?;
+            if parent.result().parent_report_id().is_some() {
+                return Err(BatchError::Invalid(
+                    "snapshot parent chain exceeds one boundary".into(),
+                ));
+            }
+            root.validate_supplement(&parent).map_err(snapshot_error)?;
+            Some(parent)
+        } else {
+            None
+        };
+        self.verify_snapshot_cases(&root, deadline)?;
+        if let Some(parent) = &parent {
+            self.verify_snapshot_cases(parent, deadline)?;
+        }
+        check_read_deadline(deadline)?;
+        let boundary = |snapshot: &DurableSnapshot| VerifiedBoundary {
+            report_id: snapshot.result().report_id().to_owned(),
+            payload: snapshot.payload().clone(),
+        };
+        Ok(VerifiedSnapshot {
+            root: boundary(&root),
+            parent: parent.as_ref().map(boundary),
         })
+    }
+
+    fn verify_snapshot_cases(
+        &mut self,
+        snapshot: &DurableSnapshot,
+        deadline: Instant,
+    ) -> Result<(), BatchError> {
+        for case in &snapshot.payload().cases {
+            if let CaseEvidence::Known { reference } = &case.evidence {
+                let (resolved, receipt) =
+                    self.verify_application_until(reference.report_id.as_str(), deadline)?;
+                snapshot
+                    .match_case(
+                        &case.id,
+                        &resolved.result,
+                        std::num::NonZeroU64::new(receipt.id),
+                    )
+                    .map_err(snapshot_error)?;
+            }
+        }
+        Ok(())
     }
 
     /// Verify a child and read its same-scope parent from this owner outbox.
@@ -731,6 +839,7 @@ pub fn batch_adapter_reply(client: &mut BatchClient, bytes: &[u8]) -> serde_json
         Status,
         ReportStatus { report_id: String },
         VerifyApplication { report_id: String },
+        VerifySnapshot { report_id: String, timeout_ms: u64 },
         ReadApplicationParent { report_id: String },
     }
     fn error_reply(error: BatchError) -> serde_json::Value {
@@ -838,6 +947,13 @@ pub fn batch_adapter_reply(client: &mut BatchClient, bytes: &[u8]) -> serde_json
         Ok(Command::VerifyApplication { report_id }) => match client.verify_application(&report_id)
         {
             Ok(result) => serde_json::json!({"verified_application":result}),
+            Err(error) => error_reply(error),
+        },
+        Ok(Command::VerifySnapshot {
+            report_id,
+            timeout_ms,
+        }) => match client.verify_snapshot(&report_id, Duration::from_millis(timeout_ms)) {
+            Ok(result) => serde_json::json!({"verified_snapshot":result}),
             Err(error) => error_reply(error),
         },
         Ok(Command::ReadApplicationParent { report_id }) => {
