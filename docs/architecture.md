@@ -82,6 +82,27 @@ that path does not activate the native transport. Optional `query-schema`
 forwards to the contract package. Query responses still carry generic JSON
 rows, which consumers decode as the documented row type for the operation.
 
+### MCP request scheduling
+
+The stdio adapter uses the same credential-bound canonical exchanges as the CLI.
+It admits one analytical or evidence exchange at a time. The adapter reserves a
+separate exchange for cancellation and keeps the analytical slot occupied until
+the blocking exchange ends. Status calls queue in the order they start waiting
+for the single status worker, with a 16-request total limit and a shared
+five-second queue and transport budget per request. See the [investigation guide](investigation.md) for tool
+assignments and overload behavior.
+
+```mermaid
+flowchart LR
+    Host["MCP stdio host"]
+    Host -->|"capabilities, progress"| Status["Status · FIFO, 16 total"]
+    Host -->|"query, plan, evidence"| Work["Work · one active"]
+    Host -->|"cancel or cancellation notification"| Cancel["Cancellation · one active"]
+    Status --> Canonical["Authenticated canonical receiver"]
+    Work --> Canonical
+    Cancel --> Canonical
+```
+
 The independent [`fabric-corpus` contract](corpus-contract.md) defines research revision identities and attributed claims without a collector, transport, or storage dependency. Its bounded as-of view freezes explicit revision and relation membership and attributed conjunctive support groups. It retains missing selections, dissent and other relation claims; a group resolves only when its conclusion, every premise and each exact support edge are present. Resolution is not an entailment or custody claim.
 
 Canonical plan acceptance uses a separately provisioned decision-writer grant.

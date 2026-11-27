@@ -23,12 +23,19 @@ use std::{
 };
 use tokio::sync::Semaphore;
 use tokio_util::codec::{FramedRead, FramedWrite};
+
+const MAX_STATUS_REQUESTS: usize = 16;
+const STATUS_TIMEOUT: Duration = Duration::from_secs(5);
+const EXCHANGE_TIMEOUT: Duration = Duration::from_secs(35);
+
 #[derive(Clone)]
 struct Investigation {
     endpoint: String,
     credential: String,
     tool_router: ToolRouter<Self>,
     work: Arc<Semaphore>,
+    status_capacity: Arc<Semaphore>,
+    status_work: Arc<Semaphore>,
     control: Arc<Semaphore>,
     live_client: Option<fabric_client::FabricClient>,
 }
@@ -80,6 +87,8 @@ impl Investigation {
             credential,
             tool_router: Self::tool_router(),
             work: Arc::new(Semaphore::new(1)),
+            status_capacity: Arc::new(Semaphore::new(MAX_STATUS_REQUESTS)),
+            status_work: Arc::new(Semaphore::new(1)),
             control: Arc::new(Semaphore::new(1)),
             live_client: None,
         }
@@ -97,13 +106,47 @@ impl Investigation {
             .clone()
             .try_acquire_owned()
             .map_err(|_| ErrorData::internal_error("MCP worker busy", None))?;
+        Ok(self.spawn_exchange(request, permit, None))
+    }
+
+    async fn exchange_status(&self, request: Request) -> Result<CallToolResult, ErrorData> {
+        let deadline = Instant::now() + STATUS_TIMEOUT;
+        let capacity = self
+            .status_capacity
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| ErrorData::internal_error("MCP status queue full", None))?;
+        let response = tokio::time::timeout_at(deadline.into(), async {
+            // The single worker semaphore serves waiters in the order they begin waiting.
+            let worker = self
+                .status_work
+                .clone()
+                .acquire_owned()
+                .await
+                .map_err(|_| ErrorData::internal_error("MCP status worker closed", None))?;
+            self.spawn_exchange(request, (capacity, worker), Some(deadline))
+                .await
+                .map_err(|e| ErrorData::internal_error(e.to_string(), None))
+        })
+        .await
+        .map_err(|_| ErrorData::internal_error("MCP status request timed out", None))??;
+        Self::render(response)
+    }
+
+    fn spawn_exchange(
+        &self,
+        request: Request,
+        permit: impl Send + 'static,
+        deadline: Option<Instant>,
+    ) -> tokio::task::JoinHandle<Result<Response, String>> {
         let endpoint = self.endpoint.clone();
         let credential = self.credential.clone();
-        Ok(tokio::task::spawn_blocking(move || {
+        tokio::task::spawn_blocking(move || {
+            // Keep capacity until blocking I/O ends, even if its caller times out.
             let _permit = permit;
-            Client::new(endpoint, credential)
-                .exchange(&request, Instant::now() + Duration::from_secs(35))
-        }))
+            let deadline = deadline.unwrap_or_else(|| Instant::now() + EXCHANGE_TIMEOUT);
+            Client::new(endpoint, credential).exchange(&request, deadline)
+        })
     }
     fn render(result: Result<Response, String>) -> Result<CallToolResult, ErrorData> {
         let result = match result {
@@ -401,7 +444,7 @@ impl Investigation {
         )
     )]
     async fn capabilities(&self) -> Result<CallToolResult, ErrorData> {
-        self.exchange(Request::Capabilities).await
+        self.exchange_status(Request::Capabilities).await
     }
     #[tool(
         description = "Read durable canonical source frontiers for freshness comparison.",
@@ -413,7 +456,7 @@ impl Investigation {
         )
     )]
     async fn progress(&self) -> Result<CallToolResult, ErrorData> {
-        self.exchange(Request::Progress).await
+        self.exchange_status(Request::Progress).await
     }
     #[tool(
         description = "Cancel this credential's active query; its reservation remains until worker cleanup.",
