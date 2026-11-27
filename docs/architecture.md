@@ -300,6 +300,7 @@ flowchart LR
     Client["Terminal run report"] --> Pending["Commit report to private outbox"]
     Pending --> Spindle["Submit exact bytes to Spindle"]
     Spindle --> Receipt["Persist matching custody receipt"]
+    Spindle -->|Capacity refusal before submission| Refused["Report not staged"]
     Spindle -->|Outcome unknown| Replay["Reopen and replay within lease"]
     Replay --> Spindle
     Replay -->|Lease expired| Recovery["Retain unresolved report"]

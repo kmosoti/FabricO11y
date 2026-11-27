@@ -68,6 +68,54 @@ fn send(mut stream: UnixStream, response: &Reply) {
 }
 
 #[test]
+fn capacity_refusal_is_pre_submit_and_does_not_stage_a_report() {
+    let base = directory();
+    let socket = base.path().join("server.sock");
+    let listener = UnixListener::bind(&socket).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let peer = thread::spawn(move || {
+        let (stream, request) = recv(&listener);
+        assert!(matches!(
+            serde_json::from_slice(&request).unwrap(),
+            Request::FabricProgress
+        ));
+        send(
+            stream,
+            &Reply::FabricProgress {
+                authority: None,
+                origin: "origin".into(),
+                through: 0,
+            },
+        );
+        let (stream, request) = recv(&listener);
+        assert!(matches!(
+            serde_json::from_slice(&request).unwrap(),
+            Request::LeaseForOrigin { .. }
+        ));
+        send(
+            stream,
+            &Reply::GenerationCapacity {
+                used: 128,
+                limit: 128,
+            },
+        );
+    });
+    let config = Config::local(socket, "batch-test".into()).unwrap();
+    let mut client = BatchClient::open(config, &base.path().join("outbox")).unwrap();
+    let mut request = serde_json::to_value(report(1)).unwrap();
+    request["command"] = "record".into();
+    let reply = batch_adapter_reply(&mut client, &serde_json::to_vec(&request).unwrap());
+    assert_eq!(reply["code"], "generation_capacity");
+    assert_eq!(reply["delivery_state"], "refused_before_acceptance");
+    assert_eq!(
+        reply["capacity"],
+        serde_json::json!({"used":128,"limit":128})
+    );
+    assert_eq!(client.status().unwrap().pending_report_id, None);
+    peer.join().unwrap();
+}
+
+#[test]
 fn invalid_receipt_leaves_original_frame_for_startup_replay() {
     let base = directory();
     let socket = base.path().join("server.sock");
@@ -159,6 +207,7 @@ fn invalid_receipt_leaves_original_frame_for_startup_replay() {
     let reply = batch_adapter_reply(&mut client, &serde_json::to_vec(&request).unwrap());
     assert_eq!(reply["report_id"], first.report_id);
     assert_eq!(reply["code"], "mismatched_receipt", "{reply}");
+    assert_eq!(reply["delivery_state"], "outcome_unknown");
     assert_eq!(
         client.status().unwrap().pending_report_id,
         Some(first.report_id.clone())

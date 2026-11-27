@@ -526,7 +526,6 @@ fn batch_adapter_replays_a_committed_report_and_projects_130_runs() {
     proxy.set_nonblocking(true).unwrap();
     let real_socket = source.config.socket.clone();
     let (observed, committed) = mpsc::sync_channel(1);
-    let (release_proxy, adapter_killed) = mpsc::sync_channel(1);
     let fault = thread::spawn(move || {
         loop {
             let mut adapter =
@@ -554,22 +553,62 @@ fn batch_adapter_replays_a_committed_report_and_projects_130_runs() {
             if let Reply::Receipt { receipt } = serde_json::from_slice(&response).unwrap() {
                 assert!(!receipt.duplicate);
                 observed.send(receipt).unwrap();
-                adapter_killed.recv_timeout(Duration::from_secs(5)).unwrap();
                 break;
             }
             write_spindle_frame(&mut adapter, &response);
         }
     });
     let outbox = root.join("outbox");
-    let (mut adapter, _lost_stdout) = open_batch_adapter(&bins, &proxy_path, &outbox);
+    let (mut adapter, lost_stdout) = open_batch_adapter(&bins, &proxy_path, &outbox);
     let first_request = batch_record(1);
     batch_send(&mut adapter, &first_request);
     let first_receipt = committed.recv_timeout(Duration::from_secs(15)).unwrap();
+    let unknown = batch_reply(&lost_stdout);
+    assert_eq!(unknown["delivery_state"], "outcome_unknown", "{unknown}");
     adapter.kill_wait();
-    release_proxy.send(()).unwrap();
     fault.join().unwrap();
     assert_eq!(first_receipt.id, 1);
     assert_eq!(source.health().canonical_through, 0);
+
+    // The first adapter owns one lease; fill the remaining slots without records.
+    for index in 0..127 {
+        let reply = spindle::transport::request(
+            &source.config.socket,
+            &spindle::Request::LeaseForOrigin {
+                producer: format!("capacity-{index}"),
+                expected_origin: source.origin.clone(),
+            },
+            Instant::now() + Duration::from_secs(5),
+        )
+        .unwrap();
+        assert!(matches!(reply, Reply::Lease { .. }), "{reply:?}");
+    }
+    let health = source.health();
+    let capacity = health.generation_capacity.unwrap();
+    assert_eq!((capacity.used, capacity.limit), (128, 128));
+    let wrong_origin = spindle::transport::request(
+        &source.config.socket,
+        &spindle::Request::LeaseForOrigin {
+            producer: "different-tenant".into(),
+            expected_origin: "different-origin".into(),
+        },
+        Instant::now() + Duration::from_secs(5),
+    )
+    .unwrap();
+    assert!(
+        matches!(wrong_origin, Reply::Error { ref error } if error == spindle::ORIGIN_MISMATCH)
+    );
+    assert_eq!(health.highest_record_id, 1);
+    let (mut refused_adapter, refused_responses) =
+        open_batch_adapter(&bins, &source.config.socket, &root.join("refused-outbox"));
+    batch_send(&mut refused_adapter, &batch_record(999));
+    let refused = batch_reply(&refused_responses);
+    assert_eq!(refused["code"], "generation_capacity", "{refused}");
+    assert_eq!(refused["delivery_state"], "refused_before_acceptance");
+    batch_send(&mut refused_adapter, &json!({"command":"status"}));
+    assert!(batch_reply(&refused_responses)["status"]["pending_report_id"].is_null());
+    assert_eq!(source.health().highest_record_id, 1);
+    refused_adapter.kill_wait();
 
     let (mut adapter, responses) = open_batch_adapter(&bins, &source.config.socket, &outbox);
     batch_send(&mut adapter, &json!({ "command": "status" }));
@@ -577,9 +616,19 @@ fn batch_adapter_replays_a_committed_report_and_projects_130_runs() {
     assert_eq!(status["status"]["confirmed"], 1, "{status}");
     batch_send(&mut adapter, &first_request);
     let repeated = batch_reply(&responses);
+    assert_eq!(repeated["delivery_state"], "custody_confirmed");
+    assert_eq!(repeated["projection"], "unchecked");
     let replayed: Receipt = serde_json::from_value(repeated["receipt"].clone()).unwrap();
     assert_eq!(replayed.id, first_receipt.id);
     assert_eq!(replayed.identity, first_receipt.identity);
+    receipt_state(
+        &bins,
+        root,
+        &root.join("batch-local"),
+        &source,
+        &replayed,
+        (3, "pending"),
+    );
     let mut conflict = first_request;
     conflict["data"]["duration_ns"] = json!(1_000);
     batch_send(&mut adapter, &conflict);

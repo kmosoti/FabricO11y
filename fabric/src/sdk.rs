@@ -649,11 +649,17 @@ fn validate_context_config(config: &Config) -> Result<(), String> {
     .validate()
 }
 
+#[derive(Debug)]
+enum LeaseError {
+    Capacity { used: u64, limit: u64 },
+    Other(String),
+}
+
 fn request_lease(
     config: &Config,
     expected_origin: Option<&str>,
     deadline: Instant,
-) -> Result<(String, u64), String> {
+) -> Result<(String, u64), LeaseError> {
     let producer = config.producer.clone();
     let request = match expected_origin {
         Some(origin) => Request::LeaseForOrigin {
@@ -662,13 +668,14 @@ fn request_lease(
         },
         None => Request::Lease { producer },
     };
-    match transport::request(&config.socket, &request, deadline)? {
+    match transport::request(&config.socket, &request, deadline).map_err(LeaseError::Other)? {
         Reply::Lease {
             generation,
             expires_unix_s,
         } => Ok((generation, expires_unix_s)),
-        Reply::Error { error } => Err(error),
-        _ => Err("unexpected lease response".into()),
+        Reply::GenerationCapacity { used, limit } => Err(LeaseError::Capacity { used, limit }),
+        Reply::Error { error } => Err(LeaseError::Other(error)),
+        _ => Err(LeaseError::Other("unexpected lease response".into())),
     }
 }
 
@@ -677,7 +684,12 @@ impl RunClient {
         context.validate()?;
         validate_context_config(&config)?;
         let (generation, expires) =
-            request_lease(&config, None, Instant::now() + config.delivery_timeout)?;
+            request_lease(&config, None, Instant::now() + config.delivery_timeout).map_err(
+                |error| match error {
+                    LeaseError::Capacity { .. } => "active generation limit".to_owned(),
+                    LeaseError::Other(error) => error,
+                },
+            )?;
         let (authority, origin) = match transport::request(
             &config.socket,
             &Request::FabricProgress,

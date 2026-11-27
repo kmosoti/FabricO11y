@@ -721,6 +721,13 @@ impl Store {
         mac.update(prefix.as_bytes());
         mac
     }
+    pub fn generation_capacity(&self) -> Result<super::GenerationCapacity, String> {
+        let used = self
+            .conn
+            .query_row("SELECT count(*) FROM generations", [], |row| row.get(0))
+            .map_err(err)?;
+        Ok(super::GenerationCapacity { used, limit: 128 })
+    }
     pub fn issue_lease(&mut self, producer: &str) -> Result<(String, u64), String> {
         if producer.is_empty()
             || producer.len() > 128
@@ -761,11 +768,8 @@ impl Store {
                     .map_err(err)?;
             }
         }
-        let count: u64 = self
-            .conn
-            .query_row("SELECT count(*) FROM generations", [], |r| r.get(0))
-            .map_err(err)?;
-        if count >= 128 {
+        let capacity = self.generation_capacity()?;
+        if capacity.used >= capacity.limit {
             return Err("active generation limit".into());
         }
         let expires = now.checked_add(86400).ok_or("lease expiry overflow")?;

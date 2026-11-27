@@ -43,7 +43,7 @@ The fixture checks these observable boundaries.
 | Two originating workloads | Distinct Spindle stores admit overlapping IDs and producer identities. A credential for one origin cannot read the other. The receiver returns exact source bytes at a fixed snapshot. |
 | Receiver failure and recovery | Cut the receiver process, accept and query another observation locally, and observe canonical unavailability. Restart against the same custody and projection directories. The authority remains stable and the new record becomes visible exactly once. |
 | Self-observability | A separate telemetry origin collects both services' metrics, events, logs, and traces. Compare the receiver's exact raw rows with the local durable prefix and query metrics, logs, and traces through the local projection. |
-| Batch replay | Spindle commits a report and the fixture withholds its receipt. Kill and reopen the adapter, recover the original receipt, then verify that 130 distinct runs share one generation and project with exact bytes and no duplicates after the receiver restarts. |
+| Batch replay and capacity | Fill 128 retained generation slots and check that a new adapter reports refusal before submission without moving the custody frontier. Withhold a committed receipt and observe an unknown outcome; reopen the persistent outbox, recover the receipt while projection is pending, and verify 130 distinct runs share the admitted generation and project with exact bytes and no duplicates after the receiver restarts. |
 
 A passing fixture emits `passed: true`, the authority and origins, the canonical
 telemetry frontier, and elapsed time. Record the source revision, hashes, and
