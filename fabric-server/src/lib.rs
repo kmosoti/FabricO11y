@@ -2,12 +2,15 @@
 use admission_kernel::telemetry::{elastic_can_admit, elastic_lease_return};
 
 pub mod engine;
+mod handshake;
+mod handshake_io;
 pub mod ledger;
 mod self_observation;
+mod worker_pool;
 use fabric::{
     canonical::{
-        self, Authenticated, ProjectionReadiness, ProjectionReadyRequest, ProjectionReason,
-        ProjectionStatus, Request, Response,
+        self, ProjectionReadiness, ProjectionReadyRequest, ProjectionReason, ProjectionStatus,
+        Request, Response,
     },
     observation,
     query::QueryRequest,
@@ -56,6 +59,10 @@ pub struct Config {
     pub node_quota_bytes: BTreeMap<String, u64>,
     #[serde(default)]
     pub engine_endpoint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine_auth_token_file: Option<PathBuf>,
+    #[serde(default)]
+    pub allow_unauthenticated_loopback_engine: bool,
     #[serde(default = "connections")]
     pub max_connections: usize,
 }
@@ -63,10 +70,17 @@ fn connections() -> usize {
     resources::DEFAULT_RECEIVER_CONNECTIONS
 }
 fn secret(path: &Path) -> Result<String, String> {
+    use rustix::fs::{Mode, OFlags};
     use std::io::Read;
-    let m = fs::symlink_metadata(path).map_err(|e| e.to_string())?;
-    if m.file_type().is_symlink()
-        || !m.is_file()
+    let fd = rustix::fs::open(
+        path,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
+        Mode::empty(),
+    )
+    .map_err(|e| format!("failed opening credential {}: {e}", path.display()))?;
+    let mut file = fs::File::from(fd);
+    let m = file.metadata().map_err(|e| e.to_string())?;
+    if !m.is_file()
         || m.uid() != rustix::process::getuid().as_raw()
         || m.permissions().mode() & 0o077 != 0
         || m.len() > 256
@@ -74,8 +88,7 @@ fn secret(path: &Path) -> Result<String, String> {
         return Err("credential must be a private owned regular file <=256 bytes".into());
     }
     let mut s = String::new();
-    fs::File::open(path)
-        .map_err(|e| e.to_string())?
+    (&mut file)
         .take(257)
         .read_to_string(&mut s)
         .map_err(|e| e.to_string())?;
@@ -163,15 +176,60 @@ impl Server {
         {
             return Err("canonical node quota requires a configured origin".into());
         }
-        let ledger = Arc::new(Mutex::new(Ledger::open_with_node_quotas(
+        let engine_auth_token = match (&config.engine_endpoint, &config.engine_auth_token_file) {
+            (Some(_), Some(token_path)) => Some(secret(token_path)?),
+            (Some(_), None) if config.allow_unauthenticated_loopback_engine => None,
+            (Some(_), None) => {
+                return Err(
+                    "engine_endpoint requires engine_auth_token_file unless allow_unauthenticated_loopback_engine is true"
+                        .into(),
+                );
+            }
+            (None, Some(_)) => {
+                return Err("engine_auth_token_file requires engine_endpoint".into());
+            }
+            (None, None) => None,
+        };
+        let enrolled_origins: Vec<String> = nodes.keys().cloned().collect();
+        let omitted_count = enrolled_origins
+            .iter()
+            .filter(|origin| !config.node_quota_bytes.contains_key(*origin))
+            .count();
+        let explicit_canonical_sum: u64 = config.node_quota_bytes.values().copied().sum();
+        let usable_canonical_pool = if config.engine_endpoint.is_some() {
+            config
+                .quota_bytes
+                .saturating_sub(ledger::RESERVE)
+                .saturating_sub(explicit_canonical_sum)
+        } else {
+            (config.quota_bytes.saturating_sub(ledger::RESERVE) / 2)
+                .saturating_sub(explicit_canonical_sum)
+        };
+        let default_canonical_origin_quota = if omitted_count > 0 {
+            Some((usable_canonical_pool / omitted_count as u64).max(1))
+        } else {
+            None
+        };
+        let ledger = Arc::new(Mutex::new(Ledger::open_with_quotas_and_auth(
             &config.storage,
             config.quota_bytes,
             config.engine_endpoint.as_deref(),
             config.node_quota_bytes,
+            default_canonical_origin_quota,
+            enrolled_origins.clone(),
+            engine_auth_token.as_deref(),
+            config.allow_unauthenticated_loopback_engine,
         )?));
         ledger::private_dir(&config.projection)?;
-        let mut projection_state =
-            Projection::open(&config.projection, config.projection_quota_bytes)?;
+        let projection_usable = config.projection_quota_bytes.saturating_sub(64 * 1024);
+        let default_projection_origin_quota =
+            Some((projection_usable / enrolled_origins.len() as u64).max(1));
+        let mut projection_state = Projection::open_with_origin_quotas(
+            &config.projection,
+            config.projection_quota_bytes,
+            BTreeMap::new(),
+            default_projection_origin_quota,
+        )?;
         projection_state.bind_authority(&ledger.lock().map_err(|_| "canonical lock")?.authority)?;
         let frontiers = ledger.lock().map_err(|_| "canonical lock")?.frontiers()?;
         if projection_state
@@ -314,10 +372,86 @@ impl Server {
             result
         });
         let active = Arc::new(AtomicUsize::new(0));
-        let mut workers = Vec::<thread::JoinHandle<()>>::new();
+        let pool = Arc::new(worker_pool::ConnectionWorkerPool::new(
+            connection_limit.clamp(2, 16),
+            connection_limit.max(4),
+        )?);
+        let handshake_auth = Arc::new(handshake::HandshakeAuth {
+            reader: self.auth.reader.clone(),
+            nodes: self.auth.nodes.clone(),
+        });
+        let preauth_limit = (connection_limit * 4).clamp(16, 128);
+        let preauth =
+            handshake::PreAuthGate::spawn(self.stop.clone(), handshake_auth, preauth_limit, {
+                let active = Arc::clone(&active);
+                let pool = Arc::clone(&pool);
+                let ledger = Arc::clone(&self.ledger);
+                let projection = Arc::clone(&self.projection);
+                let auth = Arc::clone(&self.auth);
+                let projection_error = Arc::clone(&self.projection_error);
+                let reads = Arc::clone(&self.reads);
+                move |session| {
+                    if !elastic_can_admit(
+                        connection_limit as u64,
+                        active.load(Ordering::SeqCst) as u64,
+                    ) {
+                        return;
+                    }
+                    active.fetch_add(1, Ordering::SeqCst);
+                    let guard = DropGuard::new(Arc::clone(&active), |active| {
+                        active.fetch_sub(1, Ordering::SeqCst);
+                    });
+                    let ledger = Arc::clone(&ledger);
+                    let projection = Arc::clone(&projection);
+                    let auth = Arc::clone(&auth);
+                    let projection_error = Arc::clone(&projection_error);
+                    let reads = Arc::clone(&reads);
+                    let _ = pool.try_submit(move || {
+                        let _connection_lease = guard;
+                        let mut socket = session.stream;
+                        let request = canonical::read_frame(
+                            &mut socket,
+                            Instant::now() + Duration::from_secs(2),
+                        )
+                        .and_then(|bytes| {
+                            if !canonical::verify_request_mac(
+                                &session.peer.secret,
+                                &session.client_nonce,
+                                &session.server_nonce,
+                                &bytes,
+                                &session.request_mac,
+                            ) {
+                                return Err("unauthorized".into());
+                            }
+                            observation::check_json_depth(
+                                &bytes,
+                                canonical::MAX_FRAME,
+                                observation::MAX_DEPTH + 6,
+                            )?;
+                            let req: Request =
+                                serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+                            Ok((session.peer.reader, session.peer.node, req))
+                        });
+                        respond(
+                            request,
+                            &ledger,
+                            &projection,
+                            &auth,
+                            &projection_error,
+                            &reads,
+                            |body| {
+                                let _ = canonical::write_frame(
+                                    &mut socket,
+                                    body,
+                                    Instant::now() + Duration::from_secs(2),
+                                );
+                            },
+                        );
+                    });
+                }
+            })?;
         let mut failure = None;
         while !self.stop.load(Ordering::SeqCst) {
-            workers.retain(|worker| !worker.is_finished());
             if Instant::now() >= next_sample {
                 next_sample = self.sample_pressure();
             }
@@ -343,54 +477,8 @@ impl Server {
             }
             match self.listener.accept() {
                 Ok((socket, _)) => {
-                    if !elastic_can_admit(
-                        connection_limit as u64,
-                        active.load(Ordering::SeqCst) as u64,
-                    ) {
-                        continue;
-                    }
-                    active.fetch_add(1, Ordering::SeqCst);
-                    let guard = DropGuard::new(active.clone(), |active| {
-                        active.fetch_sub(1, Ordering::SeqCst);
-                    });
-                    let ledger = self.ledger.clone();
-                    let projection = self.projection.clone();
-                    let auth = self.auth.clone();
-                    let projection_error = self.projection_error.clone();
-                    let reads = self.reads.clone();
-                    let worker = thread::Builder::new().spawn(move || {
-                        let _connection_lease = guard;
-                        let mut socket = socket;
-                        let request = canonical::read_frame(
-                            &mut socket,
-                            Instant::now() + Duration::from_secs(2),
-                        )
-                        .and_then(|b| {
-                            serde_json::from_slice::<Authenticated>(&b).map_err(|e| e.to_string())
-                        });
-                        respond(
-                            request,
-                            &ledger,
-                            &projection,
-                            &auth,
-                            &projection_error,
-                            &reads,
-                            |body| {
-                                let _ = canonical::write_frame(
-                                    &mut socket,
-                                    body,
-                                    Instant::now() + Duration::from_secs(2),
-                                );
-                            },
-                        );
-                    });
-                    match worker {
-                        Ok(worker) => workers.push(worker),
-                        Err(e) if retry_accept(&e) => thread::sleep(Duration::from_millis(5)),
-                        Err(e) => {
-                            failure = Some(e.to_string());
-                            break;
-                        }
+                    if !preauth.try_admit(socket) {
+                        thread::sleep(Duration::from_millis(2));
                     }
                 }
                 Err(e) if retry_accept(&e) => thread::sleep(Duration::from_millis(5)),
@@ -404,8 +492,9 @@ impl Server {
         if let Ok(q) = self.reads.queries.lock() {
             q.cancel.store(true, Ordering::SeqCst)
         }
-        for w in workers {
-            let _ = w.join();
+        preauth.shutdown();
+        if let Ok(pool) = Arc::try_unwrap(pool) {
+            pool.shutdown();
         }
         if let Some(telemetry) = &self.reads.telemetry {
             telemetry.shutdown();
@@ -635,7 +724,7 @@ fn receipt_readiness(
 }
 
 fn respond(
-    request: Result<Authenticated, String>,
+    request: Result<(bool, Option<String>, Request), String>,
     ledger: &Arc<Mutex<Ledger>>,
     projection: &Arc<Mutex<Projection>>,
     auth: &Auth,
@@ -646,8 +735,10 @@ fn respond(
     // The query lease covers execution, encoding, the write attempt and response cleanup.
     let mut query_lease = None;
     let response = request
-        .and_then(|req| {
+        .and_then(|(reader, node, req)| {
             handle(
+                reader,
+                node,
                 req,
                 ledger,
                 projection,
@@ -672,8 +763,11 @@ fn respond(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle(
-    req: Authenticated,
+    reader: bool,
+    node: Option<String>,
+    request: Request,
     ledger: &Arc<Mutex<Ledger>>,
     projection: &Arc<Mutex<Projection>>,
     auth: &Auth,
@@ -681,12 +775,6 @@ fn handle(
     reads: &ReadState,
     query_lease: &mut Option<QueryGuard>,
 ) -> Result<Response, String> {
-    let reader = matches(&auth.reader, &req.credential);
-    let node = auth
-        .nodes
-        .iter()
-        .find(|(_, key)| matches(key, &req.credential))
-        .map(|(id, _)| id.clone());
     if !reader && node.is_none() {
         return Err("unauthorized".into());
     }
@@ -695,8 +783,8 @@ fn handle(
     let mut measurement = reads
         .telemetry
         .as_ref()
-        .and_then(|telemetry| telemetry.measure(&req.request, node.as_deref(), reader, auth));
-    match req.request {
+        .and_then(|telemetry| telemetry.measure(&request, node.as_deref(), reader, auth));
+    match request {
         Request::Ingest { origin, records } => {
             if node.as_deref() != Some(&origin) {
                 return Err("unauthorized origin".into());
@@ -1056,6 +1144,8 @@ mod receipt_tests {
                 .collect(),
             node_quota_bytes: Default::default(),
             engine_endpoint: None,
+            engine_auth_token_file: None,
+            allow_unauthenticated_loopback_engine: false,
             max_connections: 4,
         })
         .unwrap();
@@ -1063,11 +1153,15 @@ mod receipt_tests {
     }
 
     fn call(server: &Server, credential: &str, request: Request) -> Result<Response, String> {
+        let (reader, node) = if credential == "reader" {
+            (true, None)
+        } else {
+            (false, Some(credential.to_owned()))
+        };
         handle(
-            Authenticated {
-                credential: format!("canonical-test-credential-{credential}"),
-                request,
-            },
+            reader,
+            node,
+            request,
             &server.ledger,
             &server.projection,
             &server.auth,
@@ -1110,10 +1204,7 @@ mod receipt_tests {
         };
         let mut wrote = false;
         respond(
-            Ok(Authenticated {
-                credential: "canonical-test-credential-reader".into(),
-                request,
-            }),
+            Ok((true, None, request)),
             &server.ledger,
             &server.projection,
             &server.auth,

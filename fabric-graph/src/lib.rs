@@ -657,23 +657,104 @@ impl CausalGraph {
         matched
     }
 
-    fn chain_for_node(&self, node_id: &str) -> Vec<String> {
-        let mut chain = Vec::new();
-        let mut cur = node_id.to_owned();
-        let mut seen = BTreeSet::new();
-        chain.push(cur.clone());
-        while seen.insert(cur.clone()) && chain.len() < 8 {
-            let Some(in_edges) = self.adj_in.get(&cur) else {
-                break;
-            };
-            let Some(&first_idx) = in_edges.first() else {
-                break;
-            };
-            cur = self.edges[first_idx].src.clone();
-            chain.push(cur.clone());
+    /// Returns ranked multi-parent upstream causal paths ending at `node_id`,
+    /// ordered from root to `node_id` with the highest-ranked primary path first.
+    #[must_use]
+    pub fn chain_for_node(&self, node_id: &str) -> Vec<Vec<String>> {
+        const MAX_CHAIN_DEPTH: usize = 8;
+        const MAX_CAUSAL_PATHS: usize = 8;
+        const MAX_CANDIDATES: usize = 32;
+
+        fn edge_priority(kind: EdgeKind) -> u8 {
+            match kind {
+                EdgeKind::Spawns => 9,
+                EdgeKind::RunsIn => 8,
+                EdgeKind::MutatesPath => 7,
+                EdgeKind::AllocatesGpu => 6,
+                EdgeKind::BindsSocket => 5,
+                EdgeKind::ContainsPid => 4,
+                EdgeKind::Controls => 3,
+                EdgeKind::MountsVolume => 2,
+                EdgeKind::TriggersAnomaly => 1,
+            }
         }
-        chain.reverse();
-        chain
+
+        let mut raw_paths: Vec<(f64, Vec<String>)> = Vec::new();
+        let mut stack: Vec<(String, Vec<String>, f64, BTreeSet<String>)> = vec![(
+            node_id.to_owned(),
+            vec![node_id.to_owned()],
+            0.0,
+            BTreeSet::from([node_id.to_owned()]),
+        )];
+
+        while let Some((cur, path, weight, seen)) = stack.pop() {
+            if raw_paths.len() >= MAX_CANDIDATES {
+                break;
+            }
+            let mut next_edges: Vec<&GraphEdge> = self
+                .adj_in
+                .get(&cur)
+                .into_iter()
+                .flat_map(|idxs| idxs.iter().map(|&idx| &self.edges[idx]))
+                .filter(|edge| !seen.contains(&edge.src))
+                .collect();
+
+            if next_edges.is_empty() || path.len() >= MAX_CHAIN_DEPTH {
+                let mut forward = path;
+                forward.reverse();
+                raw_paths.push((weight, forward));
+                continue;
+            }
+
+            next_edges.sort_by(|a, b| {
+                b.weight
+                    .total_cmp(&a.weight)
+                    .then_with(|| edge_priority(b.kind).cmp(&edge_priority(a.kind)))
+                    .then_with(|| a.src.cmp(&b.src))
+            });
+
+            // Push in reverse so the highest-ranked parent is explored first.
+            for edge in next_edges.into_iter().rev() {
+                let mut next_path = path.clone();
+                next_path.push(edge.src.clone());
+                let mut next_seen = seen.clone();
+                next_seen.insert(edge.src.clone());
+                let edge_w = if edge.weight.is_finite() {
+                    edge.weight.max(0.0)
+                } else {
+                    0.0
+                };
+                stack.push((edge.src.clone(), next_path, weight + edge_w, next_seen));
+            }
+        }
+
+        raw_paths.sort_by(|a, b| {
+            b.0.total_cmp(&a.0)
+                .then_with(|| b.1.len().cmp(&a.1.len()))
+                .then_with(|| a.1.cmp(&b.1))
+        });
+
+        let mut deduped = Vec::new();
+        let mut seen_paths = BTreeSet::new();
+        for (_, path) in raw_paths {
+            if seen_paths.insert(path.clone()) {
+                deduped.push(path);
+                if deduped.len() >= MAX_CAUSAL_PATHS {
+                    break;
+                }
+            }
+        }
+        if deduped.is_empty() {
+            deduped.push(vec![node_id.to_owned()]);
+        }
+        deduped
+    }
+
+    fn primary_chain_for_node(&self, node_id: &str) -> Vec<String> {
+        self.chain_for_node(node_id)
+            .into_iter()
+            .next()
+            .unwrap_or_default()
     }
 
     fn blame_memory(&self, snapshot: &HostSnapshot) -> BlameReport {
@@ -710,7 +791,7 @@ impl CausalGraph {
                     slice: proc_sample.slice.clone(),
                     agent: proc_sample.agent_hint.clone(),
                     target_path: proc_sample.open_paths.first().cloned(),
-                    lineage_chain: self.chain_for_node(&node_id),
+                    lineage_chain: self.primary_chain_for_node(&node_id),
                 }
             })
             .collect();
@@ -748,7 +829,7 @@ impl CausalGraph {
                     slice: p.slice.clone(),
                     agent: p.agent_hint.clone(),
                     target_path: p.open_paths.first().cloned(),
-                    lineage_chain: self.chain_for_node(&node_id),
+                    lineage_chain: self.primary_chain_for_node(&node_id),
                 }
             })
             .collect();
@@ -769,7 +850,7 @@ impl CausalGraph {
                 slice: fs.owner_slice.clone().unwrap_or_else(|| "unknown".into()),
                 agent: fs.owner_agent.clone(),
                 target_path: Some(fs.path.clone()),
-                lineage_chain: self.chain_for_node(&node_id),
+                lineage_chain: self.primary_chain_for_node(&node_id),
             });
         }
 
@@ -823,7 +904,7 @@ impl CausalGraph {
                     slice: f.owner_slice.clone().unwrap_or_else(|| "unknown".into()),
                     agent: f.owner_agent.clone(),
                     target_path: Some(f.path.clone()),
-                    lineage_chain: self.chain_for_node(&node_id),
+                    lineage_chain: self.primary_chain_for_node(&node_id),
                 }
             })
             .collect();
@@ -876,7 +957,7 @@ impl CausalGraph {
                     slice: p.slice.clone(),
                     agent: p.agent_hint.clone(),
                     target_path: p.cwd.clone(),
-                    lineage_chain: self.chain_for_node(&node_id),
+                    lineage_chain: self.primary_chain_for_node(&node_id),
                 }
             })
             .collect();
@@ -948,7 +1029,7 @@ mod tests {
     fn sample_snapshot() -> HostSnapshot {
         HostSnapshot {
             timestamp_unix_ms: 1_700_000_000_000,
-            hostname: "fedora-blade".into(),
+            hostname: "workstation-01".into(),
             memory: MemorySnapshot {
                 mem_total_bytes: 32 * 1024 * 1024 * 1024,
                 mem_available_bytes: 16 * 1024 * 1024 * 1024,
@@ -978,7 +1059,7 @@ mod tests {
                 cpu_time_ticks: 1200,
                 open_fds: 8,
                 unlinked_fds: 0,
-                cwd: Some("/home/kmosoti".into()),
+                cwd: Some("/home/user".into()),
                 open_paths: vec!["/data/tmp/fabric-synth-load/payload.bin".into()],
                 agent_hint: Some("synthetic_agent_load".into()),
             }],
@@ -1027,6 +1108,37 @@ mod tests {
             disk.entries[0].unit.as_deref(),
             Some("fabric-synth-load-test.scope")
         );
+    }
+
+    #[test]
+    fn chain_for_node_returns_multi_parent_ranked_paths_with_primary_first() {
+        let mut graph = CausalGraph::new();
+        for (id, kind) in [
+            ("session:h", NodeKind::Session),
+            ("agent:high", NodeKind::Agent),
+            ("slice:low", NodeKind::Cgroup),
+            ("unit:svc", NodeKind::SystemdUnit),
+            ("pid:99", NodeKind::Process),
+        ] {
+            graph.upsert_node(id, kind, id, BTreeMap::new());
+        }
+        graph.add_edge("session:h", "agent:high", EdgeKind::Spawns, 50.0, "agent");
+        graph.add_edge("agent:high", "unit:svc", EdgeKind::RunsIn, 100.0, "high");
+        graph.add_edge("session:h", "slice:low", EdgeKind::Controls, 10.0, "slice");
+        graph.add_edge("slice:low", "unit:svc", EdgeKind::Controls, 20.0, "low");
+        graph.add_edge("unit:svc", "pid:99", EdgeKind::ContainsPid, 40.0, "pid");
+
+        let paths = graph.chain_for_node("pid:99");
+        assert_eq!(paths.len(), 2);
+        assert_eq!(
+            paths[0],
+            vec!["session:h", "agent:high", "unit:svc", "pid:99"]
+        );
+        assert_eq!(
+            paths[1],
+            vec!["session:h", "slice:low", "unit:svc", "pid:99"]
+        );
+        assert_eq!(graph.primary_chain_for_node("pid:99"), paths[0]);
     }
 
     proptest! {

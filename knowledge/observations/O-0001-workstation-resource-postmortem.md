@@ -1,6 +1,6 @@
 ---
 id: O-0001
-title: fedora-blade 13.2-Day Resource Exhaustion Post-Mortem and Telemetry Mapping
+title: workstation-01 13.2-Day Resource Exhaustion Post-Mortem and Telemetry Mapping
 type: observation
 status: observed
 date: 2026-11-14
@@ -11,9 +11,9 @@ related:
   - R-0001
 ---
 
-# O-0001 · `fedora-blade` 13.2-Day Resource Post-Mortem
+# O-0001 · `workstation-01` 13.2-Day Resource Post-Mortem
 
-## Observed Incident Telemetry (`fedora-blade`)
+## Observed Incident Telemetry (`workstation-01`)
 
 Four failure modes combined during an unbounded 13.2-day autonomous agent desktop session before host remediation:
 

@@ -35,7 +35,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use tokio::io::{AsyncWriteExt, BufReader as TokioBufReader};
-use tokio::net::{UnixListener, UnixStream};
+use tokio::net::UnixStream;
 use tokio::sync::Semaphore;
 
 const MAX_SPINDLE_STAGED_ITEMS: usize = 1024;
@@ -1172,14 +1172,7 @@ async fn run_daemon_mode(mut config: DaemonConfig, spindle_only: bool) -> Result
         .runtime_dir
         .as_ref()
         .map_or_else(|| default_daemon_socket(&layout), |d| d.join("daemon.sock"));
-    if let Some(parent) = daemon_sock.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    if daemon_sock.exists() {
-        let _ = fs::remove_file(&daemon_sock);
-    }
-    let rpc_listener = UnixListener::bind(&daemon_sock)
-        .map_err(|e| format!("failed binding {}: {e}", daemon_sock.display()))?;
+    let rpc_listener = crate::socket_security::bind_private_unix_listener(&daemon_sock)?;
     let rpc_runtime = runtime.clone();
     let rpc_permits = Arc::new(Semaphore::new(MAX_CONCURRENT_RPC_CONNS));
     let (shutdown_tx, mut shutdown_rx) = tokio::sync::watch::channel(false);
@@ -1205,7 +1198,13 @@ async fn run_daemon_mode(mut config: DaemonConfig, spindle_only: bool) -> Result
                     break;
                 }
                 res = rpc_listener.accept() => match res {
-                    Ok((s, _)) => s,
+                    Ok((s, _)) => {
+                        if !crate::socket_security::is_same_uid_peer(&s) {
+                            drop(permit);
+                            continue;
+                        }
+                        s
+                    }
                     Err(_) => {
                         drop(permit);
                         continue;
@@ -1217,37 +1216,49 @@ async fn run_daemon_mode(mut config: DaemonConfig, spindle_only: bool) -> Result
                 let _permit = permit;
                 let (reader, mut writer) = stream.into_split();
                 let mut reader = TokioBufReader::with_capacity(8192, reader);
-                let reply = match tokio::time::timeout(
-                    RPC_IO_TIMEOUT,
-                    read_bounded_line(&mut reader, RPC_LINE_LIMIT_BYTES),
-                )
-                .await
-                {
-                    Ok(Ok(Some(Some(line)))) => {
-                        match serde_json::from_str::<DaemonRequest>(line.trim()) {
-                            Ok(req) => rt.handle_rpc(req),
-                            Err(e) => DaemonResponse::Error {
-                                message: e.to_string(),
-                            },
+                for _ in 0..64 {
+                    let reply = match tokio::time::timeout(
+                        RPC_IO_TIMEOUT,
+                        read_bounded_line(&mut reader, RPC_LINE_LIMIT_BYTES),
+                    )
+                    .await
+                    {
+                        Ok(Ok(Some(Some(line)))) => {
+                            match serde_json::from_str::<DaemonRequest>(line.trim()) {
+                                Ok(req) => rt.handle_rpc(req),
+                                Err(e) => DaemonResponse::Error {
+                                    message: e.to_string(),
+                                },
+                            }
                         }
+                        Ok(Ok(Some(None))) => DaemonResponse::Error {
+                            message: format!(
+                                "rpc request exceeds {RPC_LINE_LIMIT_BYTES} byte limit"
+                            ),
+                        },
+                        _ => break,
+                    };
+                    let mut bytes = match serde_json::to_vec(&reply) {
+                        Ok(b) => b,
+                        Err(e) => serde_json::to_vec(&DaemonResponse::Error {
+                            message: format!("serialize daemon reply failed: {e}"),
+                        })
+                        .unwrap_or_default(),
+                    };
+                    if !bytes.is_empty() {
+                        bytes.push(b'\n');
+                        if tokio::time::timeout(RPC_IO_TIMEOUT, writer.write_all(&bytes))
+                            .await
+                            .ok()
+                            .and_then(Result::ok)
+                            .is_none()
+                        {
+                            break;
+                        }
+                        let _ = tokio::time::timeout(RPC_IO_TIMEOUT, writer.flush()).await;
                     }
-                    Ok(Ok(Some(None))) => DaemonResponse::Error {
-                        message: format!("rpc request exceeds {RPC_LINE_LIMIT_BYTES} byte limit"),
-                    },
-                    _ => return,
-                };
-                let mut bytes = match serde_json::to_vec(&reply) {
-                    Ok(b) => b,
-                    Err(e) => serde_json::to_vec(&DaemonResponse::Error {
-                        message: format!("serialize daemon reply failed: {e}"),
-                    })
-                    .unwrap_or_default(),
-                };
-                if !bytes.is_empty() {
-                    bytes.push(b'\n');
-                    let _ = tokio::time::timeout(RPC_IO_TIMEOUT, writer.write_all(&bytes)).await;
-                    let _ = tokio::time::timeout(RPC_IO_TIMEOUT, writer.shutdown()).await;
                 }
+                let _ = tokio::time::timeout(RPC_IO_TIMEOUT, writer.shutdown()).await;
             });
         }
         conn_tasks.abort_all();
@@ -1384,6 +1395,7 @@ async fn run_daemon_mode(mut config: DaemonConfig, spindle_only: bool) -> Result
                 let force_shed = runtime.guard.is_shedding();
                 if cgroup_pressure || force_shed {
                     runtime.ring.write().release_hot_history();
+                    fs_tracker.clear();
                 }
                 let scheduled = tick_count == 1
                     || force_shed
@@ -2035,7 +2047,7 @@ mod tests {
                     timestamp_ms: 1_700_000_000_000,
                     name: "custom.tokens_per_sec".into(),
                     value: 99.5,
-                    host: "fedora-blade".into(),
+                    host: "workstation-01".into(),
                     slice: "spindle".into(),
                     unit: "spindle.service".into(),
                     pid: Some(7),
@@ -2534,7 +2546,7 @@ mod tests {
             timestamp_ms: ts_ms,
             name: "volatile.cpu".into(),
             value: 12.5,
-            host: "fedora-blade".into(),
+            host: "workstation-01".into(),
             slice: "agent.slice".into(),
             unit: "agent.service".into(),
             pid: Some(1001),
@@ -2554,7 +2566,7 @@ mod tests {
                 timestamp_ms: ts_ms,
                 name: "spindle.latency".into(),
                 value: 3.25,
-                host: "fedora-blade".into(),
+                host: "workstation-01".into(),
                 slice: "spindle".into(),
                 unit: "spindle.service".into(),
                 pid: Some(1002),
@@ -2707,7 +2719,7 @@ mod tests {
                 timestamp_ms: day1_ms,
                 name: "spindle.retry.day1".into(),
                 value: 1.0,
-                host: "fedora-blade".into(),
+                host: "workstation-01".into(),
                 slice: "spindle".into(),
                 unit: "spindle.service".into(),
                 pid: Some(2001),
@@ -2731,7 +2743,7 @@ mod tests {
                 timestamp_ms: day2_ms,
                 name: "spindle.new.day2".into(),
                 value: 2.0,
-                host: "fedora-blade".into(),
+                host: "workstation-01".into(),
                 slice: "spindle".into(),
                 unit: "spindle.service".into(),
                 pid: Some(2002),

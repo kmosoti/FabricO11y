@@ -5,16 +5,15 @@
 use crate::channel::BoundedTelemetryQueue;
 use chrono::Utc;
 use fabric::observation::{Data, Level, MetricType, Outcome, StoredObservation, decode_versioned};
-use fabric::spindle::transport::{read_origin, read_raw, read_raw_for_origin};
+use fabric::spindle::transport::{read_origin, read_raw_batch, read_raw_for_origin_batch};
+use fabric::spindle::wire::MAX_READ_PAGE;
 use fabric_core::{LogRecord, MetricPoint, SpindleProvenance, TraceSpanRecord};
 use fabric_store::CatalogStore;
 use serde::{Deserialize, Serialize};
-use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, BufReader};
-use tokio::net::UnixListener;
 use tokio::sync::Semaphore;
 
 const MAX_INGEST_LINE_BYTES: usize = 64 * 1024;
@@ -345,13 +344,16 @@ pub fn poll_spindle_projection_records(
 ) -> Result<SpindleProjectionPoll, String> {
     let deadline = Instant::now() + Duration::from_millis(250);
     let origin = read_origin(spindle_sock, deadline)?;
+    let page_cap = max_records.min(MAX_READ_PAGE);
     poll_spindle_projection_records_with(
         &origin,
         after_id,
         max_records,
         default_host,
         deadline,
-        |cursor, deadline| read_raw_for_origin(spindle_sock, &origin, cursor, deadline),
+        |cursor, deadline| {
+            read_raw_for_origin_batch(spindle_sock, &origin, cursor, page_cap, deadline)
+        },
         || catalog.bind_spindle_projection(&origin).map(|_| ()),
     )
 }
@@ -368,7 +370,7 @@ fn poll_spindle_projection_records_with(
     let mut records = Vec::new();
     let mut bind = Some(bind);
     let mut tail_error = None;
-    while records.len() < max_records {
+    'outer: while records.len() < max_records {
         if Instant::now() >= deadline {
             if records.is_empty() {
                 return Err(
@@ -377,18 +379,54 @@ fn poll_spindle_projection_records_with(
             }
             break;
         }
-        let next = read_batch(cursor, deadline).and_then(|mut page| {
-            if page.len() > 1 {
-                return Err("Spindle returned more than one record in a bounded read".into());
+        let page = match read_batch(cursor, deadline) {
+            Ok(page) => page,
+            Err(error) if records.is_empty() => return Err(error),
+            Err(error) => {
+                tail_error = Some(error);
+                break;
             }
-            let Some((id, raw)) = page.pop() else {
-                return Ok(None);
-            };
+        };
+        if page.len() > MAX_READ_PAGE {
+            let err = format!(
+                "Spindle returned {} records exceeding page limit {MAX_READ_PAGE}",
+                page.len()
+            );
+            if records.is_empty() {
+                return Err(err);
+            }
+            tail_error = Some(err);
+            break;
+        }
+        if page.is_empty() {
+            if let Some(bind) = bind.take() {
+                bind()?;
+            }
+            break;
+        }
+        for (id, raw) in page {
             if cursor.checked_add(1) != Some(id) {
-                return Err(format!("non-contiguous Spindle record {id} after {cursor}"));
+                let err = format!("non-contiguous Spindle record {id} after {cursor}");
+                if records.is_empty() {
+                    return Err(err);
+                }
+                tail_error = Some(err);
+                break 'outer;
             }
-            let observation = decode_versioned(&raw)
-                .map_err(|error| format!("cannot decode Spindle record {id}: {error}"))?;
+            let observation = match decode_versioned(&raw) {
+                Ok(obs) => obs,
+                Err(error) => {
+                    let err = format!("cannot decode Spindle record {id}: {error}");
+                    if records.is_empty() {
+                        return Err(err);
+                    }
+                    tail_error = Some(err);
+                    break 'outer;
+                }
+            };
+            if let Some(bind) = bind.take() {
+                bind()?;
+            }
             let identity = observation.identity();
             let key = SpindleProvenance {
                 origin: origin.to_owned(),
@@ -397,24 +435,10 @@ fn poll_spindle_projection_records_with(
                 generation: identity.generation.clone(),
                 sequence: identity.sequence,
             };
-            Ok(Some((
-                key,
-                observation_to_telemetry(&observation, default_host),
-            )))
-        });
-        match next {
-            Ok(next) => {
-                if let Some(bind) = bind.take() {
-                    bind()?;
-                }
-                let Some((key, envelope)) = next else { break };
-                cursor = key.record_id;
-                records.push((key, envelope));
-            }
-            Err(error) if records.is_empty() => return Err(error),
-            Err(error) => {
-                tail_error = Some(error);
-                break;
+            cursor = key.record_id;
+            records.push((key, observation_to_telemetry(&observation, default_host)));
+            if records.len() >= max_records {
+                break 'outer;
             }
         }
     }
@@ -433,12 +457,13 @@ pub fn poll_spindle_custody_records(
     default_host: &str,
 ) -> Result<Vec<(u64, IngestEnvelope)>, String> {
     let overall_deadline = Instant::now() + Duration::from_millis(250);
+    let page_cap = max_records.min(MAX_READ_PAGE);
     poll_spindle_custody_records_with(
         after_id,
         max_records,
         default_host,
         overall_deadline,
-        &mut |cursor, deadline| read_raw(spindle_sock, cursor, deadline),
+        &mut |cursor, deadline| read_raw_batch(spindle_sock, cursor, page_cap, deadline),
     )
 }
 
@@ -529,14 +554,7 @@ pub async fn serve_ingest_socket_until_shutdown(
     default_host: String,
     mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
 ) -> Result<(), String> {
-    if let Some(parent) = sock_path.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    if sock_path.exists() {
-        let _ = fs::remove_file(sock_path);
-    }
-    let listener = UnixListener::bind(sock_path)
-        .map_err(|e| format!("failed binding {}: {e}", sock_path.display()))?;
+    let listener = crate::socket_security::bind_private_unix_listener(sock_path)?;
     let permits = Arc::new(Semaphore::new(MAX_CONCURRENT_INGEST_CONNS));
     let mut conn_tasks = tokio::task::JoinSet::new();
 
@@ -560,7 +578,13 @@ pub async fn serve_ingest_socket_until_shutdown(
                 break;
             }
             res = listener.accept() => match res {
-                Ok((s, _)) => s,
+                Ok((s, _)) => {
+                    if !crate::socket_security::is_same_uid_peer(&s) {
+                        drop(permit);
+                        continue;
+                    }
+                    s
+                }
                 Err(_) => {
                     drop(permit);
                     continue;
@@ -681,6 +705,7 @@ pub async fn serve_ingest_socket_until_shutdown(
 mod tests {
     use super::*;
     use fabric::observation::{Data, Identity, Observation, REGISTRY, VERSION};
+    use std::fs;
     use tokio::io::AsyncWriteExt;
 
     fn sample_obs_bytes(seq: u64) -> Vec<u8> {
@@ -722,7 +747,7 @@ mod tests {
         let recs = poll_spindle_custody_records_with(
             4,
             64,
-            "fedora-blade",
+            "workstation-01",
             Instant::now() + Duration::from_secs(1),
             &mut reader,
         )
@@ -741,7 +766,7 @@ mod tests {
         let err = poll_spindle_custody_records_with(
             0,
             64,
-            "fedora-blade",
+            "workstation-01",
             Instant::now() + Duration::from_secs(1),
             &mut reader,
         )
@@ -763,7 +788,7 @@ mod tests {
         let recs = poll_spindle_custody_records_with(
             0,
             64,
-            "fedora-blade",
+            "workstation-01",
             Instant::now() + Duration::from_secs(1),
             &mut reader,
         )
@@ -880,7 +905,7 @@ mod tests {
 
         let sock_srv = sock.clone();
         let server = tokio::spawn(async move {
-            let _ = serve_ingest_socket(&sock_srv, mq, lq, tq, "fedora-blade".into()).await;
+            let _ = serve_ingest_socket(&sock_srv, mq, lq, tq, "workstation-01".into()).await;
         });
 
         let deadline = Instant::now() + Duration::from_secs(2);
@@ -896,7 +921,7 @@ mod tests {
             timestamp_ms: 1_700_000_000_123,
             name: "post.overlong".into(),
             value: 42.0,
-            host: "fedora-blade".into(),
+            host: "workstation-01".into(),
             slice: "spindle".into(),
             unit: "spindle.service".into(),
             pid: None,
@@ -946,7 +971,7 @@ mod tests {
                 mq,
                 lq,
                 tq,
-                "fedora-blade".into(),
+                "workstation-01".into(),
                 shutdown_rx,
             )
             .await
@@ -961,7 +986,7 @@ mod tests {
             timestamp_ms: 1_700_000_000_123,
             name: "shutdown.handshake".into(),
             value: 1.0,
-            host: "fedora-blade".into(),
+            host: "workstation-01".into(),
             slice: "spindle".into(),
             unit: "spindle.service".into(),
             pid: None,
@@ -974,7 +999,7 @@ mod tests {
             timestamp_ms: 1_700_000_000_456,
             name: "shutdown.drain".into(),
             value: 7.0,
-            host: "fedora-blade".into(),
+            host: "workstation-01".into(),
             slice: "spindle".into(),
             unit: "spindle.service".into(),
             pid: None,

@@ -45,6 +45,6 @@ Pivot `FabricO11y` from UI/external-DB prototypes into a **single-binary, zero-U
 
 ## Relations
 
-- *informed-by*: [O-0001](../observations/O-0001-fedora-blade-resource-postmortem.md)
+- *informed-by*: [O-0001](../observations/O-0001-workstation-resource-postmortem.md)
 - *backed-by*: [R-0001](../research/R-0001-converged-rust-storage-and-five-pillars.md)
 - *aligned-with*: [D-0001](D-0001-development-workflow.md)

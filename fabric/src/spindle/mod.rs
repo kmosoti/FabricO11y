@@ -1,6 +1,7 @@
 //! Fedora user-service collection and local durable custody.
 pub const MAX_REPLY: usize = crate::observation::MAX_FRAME + 8192;
 pub mod custody;
+mod pool;
 mod server;
 pub mod sources;
 pub mod transport;
@@ -80,23 +81,7 @@ impl ForwardConfig {
         self.credential().map(|_| ())
     }
     pub fn credential(&self) -> Result<String, String> {
-        use std::os::unix::fs::MetadataExt;
-        let m = std::fs::symlink_metadata(&self.credential_file).map_err(|e| e.to_string())?;
-        if !m.is_file()
-            || m.uid() != rustix::process::getuid().as_raw()
-            || m.mode() & 0o077 != 0
-            || m.len() > 4096
-        {
-            return Err("credential must be a private owned regular file".into());
-        }
-        let credential = std::fs::read_to_string(&self.credential_file)
-            .map_err(|e| e.to_string())?
-            .trim()
-            .to_owned();
-        if credential.is_empty() {
-            return Err("empty canonical credential".into());
-        }
-        Ok(credential)
+        crate::query::read_credential_fd(&self.credential_file, true, 4096)
     }
 }
 fn connections() -> usize {
@@ -149,6 +134,13 @@ pub enum Request {
     },
     ReadForOrigin {
         expected_origin: String,
+        after: u64,
+        limit: usize,
+    },
+    /// Keep-alive batched read returning up to `wire::MAX_READ_PAGE` records on a pooled UDS.
+    ReadBatch {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expected_origin: Option<String>,
         after: u64,
         limit: usize,
     },

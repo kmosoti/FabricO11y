@@ -1,0 +1,9 @@
+#!/bin/sh
+set -e
+if [ "$1" = "configure" ]; then
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl --global daemon-reload >/dev/null 2>&1 || true
+  fi
+  echo "fabrico11y: user services stay opt-in; copy examples from /usr/share/doc/fabrico11y/examples/config/ to ~/.config/fabrico11y/ before enabling fabrico11y-spindle.service and fabrico11y-daemon.service"
+fi
+exit 0

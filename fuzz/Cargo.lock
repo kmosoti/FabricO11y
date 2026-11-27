@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "admission-kernel"
-version = "0.1.0"
+version = "0.1.1-alpha.2"
 dependencies = [
  "vstd",
 ]
@@ -386,7 +386,7 @@ dependencies = [
 
 [[package]]
 name = "fabric"
-version = "0.1.0"
+version = "0.1.1-alpha.2"
 dependencies = [
  "admission-kernel",
  "hmac",
@@ -400,7 +400,7 @@ dependencies = [
 
 [[package]]
 name = "fabric-core"
-version = "0.1.0"
+version = "0.1.1-alpha.2"
 dependencies = [
  "admission-kernel",
  "arrow",
@@ -424,7 +424,7 @@ dependencies = [
 
 [[package]]
 name = "fabric-graph"
-version = "0.1.0"
+version = "0.1.1-alpha.2"
 dependencies = [
  "arrow",
  "fabric-core",

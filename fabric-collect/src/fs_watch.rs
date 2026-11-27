@@ -16,6 +16,7 @@ use crate::host::resolve_mount_point;
 
 const MAX_SCAN_ENTRIES_PER_ROOT: usize = 256;
 const MAX_SCAN_DEPTH: usize = 2;
+pub const MAX_TRACKED_PATHS: usize = 4096;
 
 /// Non-blocking `inotify` watcher + previous-size tracker for churn delta calculation.
 #[derive(Debug)]
@@ -89,6 +90,11 @@ impl FsChurnTracker {
         }
     }
 
+    /// Drops retained per-path size tracking state (e.g. under memory pressure).
+    pub fn clear(&mut self) {
+        self.prev_sizes.clear();
+    }
+
     /// Drains non-blocking `inotify` events and performs bounded directory attribution scan.
     pub fn sample(
         &mut self,
@@ -98,6 +104,7 @@ impl FsChurnTracker {
         let now_ms = Utc::now().timestamp_millis();
         let mut events = self.drain_inotify_events(now_ms, mounts, processes);
         let mut entries: BTreeMap<String, FsChurnEntry> = BTreeMap::new();
+        let mut next_sizes: BTreeMap<String, u64> = BTreeMap::new();
 
         for root in &self.watch_roots {
             let Ok(read_dir) = fs::read_dir(root) else {
@@ -124,7 +131,9 @@ impl FsChurnTracker {
                 let path_str = child_path.to_string_lossy().into_owned();
                 let prev = self.prev_sizes.get(&path_str).copied().unwrap_or(0);
                 let delta = (size_bytes as i64).saturating_sub(prev as i64);
-                self.prev_sizes.insert(path_str.clone(), size_bytes);
+                if next_sizes.len() < MAX_TRACKED_PATHS {
+                    next_sizes.insert(path_str.clone(), size_bytes);
+                }
 
                 let mount_point = resolve_mount_point(&child_path, mounts);
                 let owner = match_owner_process(&path_str, processes);
@@ -167,6 +176,8 @@ impl FsChurnTracker {
                 }
             }
         }
+
+        self.prev_sizes = next_sizes;
 
         // Also ensure any open path held by an attributed process appears even if below 1 MiB.
         for proc_sample in processes {
@@ -320,4 +331,89 @@ fn modified_ms(meta: &fs::Metadata) -> i64 {
         .ok()
         .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
         .map_or(0, |d| d.as_millis() as i64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    fn non_tmp_scratch() -> tempfile::TempDir {
+        let base = std::env::var_os("TMPDIR")
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute() && !p.starts_with("/tmp") && !p.starts_with("/dev/shm"))
+            .unwrap_or_else(|| PathBuf::from("/data/tmp"));
+        fs::create_dir_all(&base).unwrap();
+        tempfile::Builder::new()
+            .permissions(fs::Permissions::from_mode(0o700))
+            .tempdir_in(base)
+            .unwrap()
+    }
+
+    #[test]
+    fn disappeared_paths_are_evicted_each_scan_cycle() {
+        let scratch = non_tmp_scratch();
+        let victim = scratch.path().join("ephemeral.log");
+        let survivor = scratch.path().join("survivor.log");
+        fs::write(&victim, vec![b'a'; 64]).unwrap();
+        fs::write(&survivor, vec![b'b'; 64]).unwrap();
+
+        let mut tracker = FsChurnTracker {
+            inotify_fd: None,
+            wd_to_root: BTreeMap::new(),
+            prev_sizes: BTreeMap::new(),
+            watch_roots: vec![scratch.path().to_path_buf()],
+        };
+        let _ = tracker.sample(&[], &[]);
+        assert!(
+            tracker
+                .prev_sizes
+                .contains_key(victim.to_string_lossy().as_ref())
+        );
+        assert!(
+            tracker
+                .prev_sizes
+                .contains_key(survivor.to_string_lossy().as_ref())
+        );
+
+        fs::remove_file(&victim).unwrap();
+        let _ = tracker.sample(&[], &[]);
+        assert!(
+            !tracker
+                .prev_sizes
+                .contains_key(victim.to_string_lossy().as_ref()),
+            "disappeared path must be evicted on next cycle"
+        );
+        assert!(
+            tracker
+                .prev_sizes
+                .contains_key(survivor.to_string_lossy().as_ref())
+        );
+
+        tracker.clear();
+        assert!(tracker.prev_sizes.is_empty());
+    }
+
+    #[test]
+    fn tracked_paths_never_exceed_max_cap() {
+        let scratch = non_tmp_scratch();
+        // 18 sub-roots x 256 files = 4608 (> MAX_TRACKED_PATHS = 4096)
+        let mut roots = Vec::with_capacity(18);
+        for r in 0..18 {
+            let dir = scratch.path().join(format!("root-{r}"));
+            fs::create_dir(&dir).unwrap();
+            for f in 0..MAX_SCAN_ENTRIES_PER_ROOT {
+                fs::write(dir.join(format!("f-{f}")), b"x").unwrap();
+            }
+            roots.push(dir);
+        }
+        let mut tracker = FsChurnTracker {
+            inotify_fd: None,
+            wd_to_root: BTreeMap::new(),
+            prev_sizes: BTreeMap::new(),
+            watch_roots: roots,
+        };
+        let _ = tracker.sample(&[], &[]);
+        assert_eq!(tracker.prev_sizes.len(), MAX_TRACKED_PATHS);
+    }
 }

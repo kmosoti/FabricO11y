@@ -1,6 +1,6 @@
-# Fedora RPM (alpha.2)
+# Fedora RPM (`0.1.1-0.alpha.2`)
 
-This package targets x86_64 Fedora 44, built with Rust 1.100.0 and the checked-in lockfile. Fedora 45 requires a package signature trusted by the installing system. Before publishing, a maintainer must sign the RPM with an authorized release key and verify it; no release key is supplied here. An unsigned local test RPM is not a release artifact. No package script starts, enables, stops or migrates services or changes user data.
+This package targets x86_64 Fedora 44 and 45, built with Rust 1.100.0 and the checked-in lockfile. Fedora 45 requires a package signature trusted by the installing system. Before publishing, a maintainer must sign the RPM with an authorized release key (or verify SLSA build provenance with `gh attestation verify`) and verify it; no release key is supplied here. An unsigned local test RPM is not a release artifact. No package script starts, enables, stops or migrates services or changes user data.
 
 ## Build from a source checkout
 
@@ -9,8 +9,8 @@ Install `rpm-build`, `systemd-rpm-macros`, Rust 1.100.0, GCC, `pkgconf-pkg-confi
 ```sh
 export TMPDIR=/path/on/disk/tmp CARGO_BUILD_TARGET_DIR=/path/on/disk/cargo-target
 mkdir -p "$TMPDIR" "$CARGO_BUILD_TARGET_DIR" "$HOME/rpmbuild"/{SOURCES,RPMS,SRPMS,BUILD,BUILDROOT,SPECS}
-git archive --format=tar --prefix=fabrico11y-alpha.2/ "$CANDIDATE_COMMIT" | gzip > "$HOME/rpmbuild/SOURCES/fabrico11y-alpha.2.tar.gz"
-rpmbuild -ba packaging/rpm/fabrico11y.spec
+git archive --format=tar --prefix=fabrico11y-0.1.1-alpha.2/ "$CANDIDATE_COMMIT" | gzip > "$HOME/rpmbuild/SOURCES/fabrico11y-0.1.1-alpha.2.tar.gz"
+rpmbuild -ba --define "_pkg_ver 0.1.1" --define "_alpha_tag alpha.2" --define "_alpha_rel 0.alpha.2" packaging/rpm/fabrico11y.spec
 ```
 
 Build from the exact committed candidate, not a dirty checkout. If Rust is provided by rustup instead of RPM packages, RPM cannot verify its build dependencies; after checking them separately, pass `--nodeps` to `rpmbuild`. Record its revision, Fedora version, Rust version, RPM hashes and signature verification along with test results. `--offline` does not vendor dependencies into the source RPM.

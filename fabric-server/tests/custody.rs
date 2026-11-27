@@ -137,6 +137,8 @@ impl Receiver {
                 .collect(),
             node_quota_bytes: Default::default(),
             engine_endpoint: None,
+            engine_auth_token_file: None,
+            allow_unauthenticated_loopback_engine: false,
             max_connections: 16,
         };
         Self::start(config)

@@ -146,30 +146,44 @@ fn topic_report(topic: &Topic, detail: bool) -> TopicReport<'_> {
 }
 
 fn write_text(mut out: impl Write, report: &Report<'_>) -> std::io::Result<()> {
+    use fabric_core::sanitize_terminal_text as esc;
     for topic in &report.topics {
-        writeln!(out, "{}  {}", topic.id, topic.title)?;
-        writeln!(out, "  {}", topic.summary)?;
+        writeln!(out, "{}  {}", esc(topic.id), esc(topic.title))?;
+        writeln!(out, "  {}", esc(topic.summary))?;
         if let Some(detail) = &topic.detail {
             for scenario in detail.scenarios {
-                writeln!(out, "\n  {}", scenario.description)?;
-                writeln!(out, "    {}", scenario.command)?;
-                writeln!(out, "    {}", scenario.expected)?;
-                writeln!(out, "    Declared checks: {}", scenario.checks.join(", "))?;
+                writeln!(out, "\n  {}", esc(&scenario.description))?;
+                writeln!(out, "    {}", esc(&scenario.command))?;
+                writeln!(out, "    {}", esc(&scenario.expected))?;
+                writeln!(
+                    out,
+                    "    Declared checks: {}",
+                    esc(&scenario.checks.join(", "))
+                )?;
             }
             for proof in detail.proofs {
                 let kind = match proof.kind {
                     ProofKind::ExtractedRust => "Extracted Rust",
                     ProofKind::IndependentModel => "Independent model",
                 };
-                writeln!(out, "\n  {kind}: {} ({})", proof.theorem, proof.path)?;
-                writeln!(out, "    {}", proof.scope)?;
-                writeln!(out, "    Assumptions: {}", proof.assumptions)?;
-                writeln!(out, "    Reproduce: cargo xtask prove {}", proof.checker)?;
+                writeln!(
+                    out,
+                    "\n  {kind}: {} ({})",
+                    esc(&proof.theorem),
+                    esc(&proof.path)
+                )?;
+                writeln!(out, "    {}", esc(&proof.scope))?;
+                writeln!(out, "    Assumptions: {}", esc(&proof.assumptions))?;
+                writeln!(
+                    out,
+                    "    Reproduce: cargo xtask prove {}",
+                    esc(&proof.checker)
+                )?;
             }
             writeln!(
                 out,
                 "\n  Documentation: {}",
-                detail.documentation.join(", ")
+                esc(&detail.documentation.join(", "))
             )?;
             writeln!(out, "  Run declared tests: cargo xtask coverage check")?;
         }
@@ -190,14 +204,14 @@ fn write_text(mut out: impl Write, report: &Report<'_>) -> std::io::Result<()> {
         writeln!(
             out,
             "\nRecorded results for {} ({candidate_relation}, catalog {catalog_relation})",
-            evidence.recorded.candidate
+            esc(&evidence.recorded.candidate)
         )?;
         for check in &evidence.recorded.checks {
             let status = match check.status {
                 CheckStatus::Passed => "passed",
                 CheckStatus::Failed => "failed",
             };
-            writeln!(out, "  {}  {}", check.id, status)?;
+            writeln!(out, "  {}  {}", esc(&check.id), status)?;
         }
     }
     Ok(())

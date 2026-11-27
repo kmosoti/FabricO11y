@@ -1,0 +1,4 @@
+#!/bin/sh
+# User services belong to individual user sessions and are not mutated by package scripts.
+set -e
+exit 0

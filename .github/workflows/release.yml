@@ -1,0 +1,295 @@
+name: Release packages and provenance
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag or version label for manual build verification
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_BUILD_JOBS: '4'
+  CARGO_INCREMENTAL: '0'
+  RUSTUP_AUTO_INSTALL: '0'
+  TMPDIR: /var/tmp
+
+jobs:
+  fedora-rpm:
+    name: Fedora x86_64 RPM
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    container:
+      image: ghcr.io/kmosoti/fabrico11y-ci@sha256:65f2ea4b0e1fa702259853d9d4f9db2b44274e3cda50beb747743de614a9ca4e
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Enforce protected-main ancestry on release tags
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'push'
+        run: |
+          set -eu
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git merge-base --is-ancestor "${GITHUB_SHA}" refs/remotes/origin/main
+      - name: Trust workspace and verify pinned Rust 1.100.0
+        run: |
+          set -eu
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          expected=$(sed -En 's/^channel = "([0-9]+\.[0-9]+\.[0-9]+)"$/\1/p' rust-toolchain.toml)
+          actual=$(rustc --version | cut -d' ' -f2)
+          test "$actual" = "$expected"
+      - name: Install RPM build prerequisites
+        run: dnf -y install rpm-build systemd-rpm-macros jq && dnf clean all
+      - name: Build Fedora RPM
+        env:
+          CARGO_BUILD_TARGET_DIR: /var/tmp/fabrico11y-rpm-target
+          RELEASE_INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -eu
+          mkdir -p "$CARGO_BUILD_TARGET_DIR" "$HOME/rpmbuild"/{SOURCES,RPMS,SRPMS,BUILD,BUILDROOT,SPECS}
+          raw_tag="${RELEASE_INPUT_TAG:-}"
+          if [ -z "$raw_tag" ]; then
+            case "${GITHUB_REF_NAME:-}" in
+              v[0-9]*) raw_tag="${GITHUB_REF_NAME}" ;;
+              *) raw_tag="v$(sed -En 's/^version = "([^"]+)"$/\1/p' fabric/Cargo.toml | head -n 1)" ;;
+            esac
+          fi
+          clean_ver="${raw_tag#v}"
+          case "$clean_ver" in
+            *-*)
+              pkg_ver="${clean_ver%%-*}"
+              alpha_tag="${clean_ver#*-}"
+              alpha_rel="0.${alpha_tag}"
+              ;;
+            [0-9]*.[0-9]*.[0-9]*)
+              pkg_ver="$clean_ver"
+              alpha_tag="release"
+              alpha_rel="1"
+              ;;
+            *)
+              echo "unsupported release version format: $raw_tag" >&2
+              exit 1
+              ;;
+          esac
+          export SOURCE_DATE_EPOCH
+          SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+          cargo fetch --locked
+          git archive --format=tar --prefix="fabrico11y-${pkg_ver}-${alpha_tag}/" HEAD | gzip > "$HOME/rpmbuild/SOURCES/fabrico11y-${pkg_ver}-${alpha_tag}.tar.gz"
+          rpmbuild -ba --nodeps \
+            --define "_pkg_ver ${pkg_ver}" \
+            --define "_alpha_tag ${alpha_tag}" \
+            --define "_alpha_rel ${alpha_rel}" \
+            packaging/rpm/fabrico11y.spec
+          mkdir -p dist-rpm
+          cp -v "$HOME/rpmbuild/RPMS/x86_64/"*.rpm dist-rpm/
+          rpm -qip dist-rpm/*.rpm
+          rpm -qlp dist-rpm/*.rpm
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rpm-dist
+          path: dist-rpm/*.rpm
+
+  debian-deb-and-tarball:
+    name: Debian 12/13 .deb and Linux tar.zst (glibc <= 2.36)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    container:
+      image: debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
+    steps:
+      - name: Install Debian 12 toolchain prerequisites
+        run: |
+          set -eu
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ca-certificates curl git build-essential pkg-config dpkg-dev binutils \
+            python3 tar zstd xz-utils
+          rm -rf /var/lib/apt/lists/*
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Enforce protected-main ancestry on release tags
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'push'
+        run: |
+          set -eu
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git merge-base --is-ancestor "${GITHUB_SHA}" refs/remotes/origin/main
+      - name: Install pinned Rust 1.100.0 from rust-toolchain.toml
+        run: |
+          set -eu
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          rust_version=$(sed -En 's/^channel = "([0-9]+\.[0-9]+\.[0-9]+)"$/\1/p' rust-toolchain.toml)
+          test -n "$rust_version"
+          rustup_version="1.29.3"
+          rustup_sha256="b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55"
+          curl --proto '=https' --tlsv1.2 -fsS "https://static.rust-lang.org/rustup/archive/${rustup_version}/x86_64-unknown-linux-gnu/rustup-init" -o /var/tmp/rustup-init
+          printf '%s  %s\n' "$rustup_sha256" /var/tmp/rustup-init | sha256sum -c -
+          chmod +x /var/tmp/rustup-init
+          /var/tmp/rustup-init -y --profile minimal --default-toolchain "$rust_version"
+          rm -f /var/tmp/rustup-init
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          "$HOME/.cargo/bin/rustc" --version
+      - name: Verify fabric-client and build Debian 12 baseline binaries
+        env:
+          CARGO_BUILD_TARGET_DIR: /var/tmp/fabrico11y-deb-target
+          MAX_GLIBC: '2.36'
+          RELEASE_INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -eu
+          mkdir -p "$CARGO_BUILD_TARGET_DIR" dist-deb
+          cargo test --locked -p fabric-client
+          cargo check --locked -p fabric-client --no-default-features
+          cargo build --locked --release -p fabric -p fabric-cli -p fabric-query -p fabric-server -p fabric-mcp --bins -j 4
+          packaging/deb/check-glibc.sh \
+            "$CARGO_BUILD_TARGET_DIR/release/fabric" \
+            "$CARGO_BUILD_TARGET_DIR/release/spindle" \
+            "$CARGO_BUILD_TARGET_DIR/release/fabric-server" \
+            "$CARGO_BUILD_TARGET_DIR/release/fabric-adapter" \
+            "$CARGO_BUILD_TARGET_DIR/release/fabric-query" \
+            "$CARGO_BUILD_TARGET_DIR/release/fabric-mcp"
+          raw_tag="${RELEASE_INPUT_TAG:-}"
+          if [ -z "$raw_tag" ]; then
+            case "${GITHUB_REF_NAME:-}" in
+              v[0-9]*) raw_tag="${GITHUB_REF_NAME}" ;;
+              *) raw_tag="v$(sed -En 's/^version = "([^"]+)"$/\1/p' fabric/Cargo.toml | head -n 1)" ;;
+            esac
+          fi
+          clean_ver="${raw_tag#v}"
+          case "$clean_ver" in
+            *-*)
+              pkg_ver="${clean_ver%%-*}"
+              pre_tag="${clean_ver#*-}"
+              deb_ver="${pkg_ver}~${pre_tag}"
+              tar_ver="$clean_ver"
+              ;;
+            [0-9]*.[0-9]*.[0-9]*)
+              deb_ver="$clean_ver"
+              tar_ver="$clean_ver"
+              ;;
+            *)
+              echo "unsupported release version format: $raw_tag" >&2
+              exit 1
+              ;;
+          esac
+          export SOURCE_DATE_EPOCH
+          SOURCE_DATE_EPOCH=$(git log -1 --format=%ct 2>/dev/null || date -u +%s)
+          cargo fetch --locked
+          packaging/deb/build-deb.sh --bin-dir "$CARGO_BUILD_TARGET_DIR/release" --out-dir dist-deb --version "$deb_ver"
+          packaging/deb/build-tarball.sh --bin-dir "$CARGO_BUILD_TARGET_DIR/release" --out-dir dist-deb --version "$tar_ver"
+          dpkg-deb -I dist-deb/*.deb
+          dpkg-deb -c dist-deb/*.deb
+          tar --zstd -tf dist-deb/*.tar.zst | head -n 40
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: deb-and-tarball-dist
+          path: |
+            dist-deb/*.deb
+            dist-deb/*.tar.zst
+
+  release:
+    name: Attest and publish release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    environment: main-release
+    needs: [fedora-rpm, debian-deb-and-tarball]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Enforce protected-main ancestry on release tags
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'push'
+        run: |
+          set -eu
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git merge-base --is-ancestor "${GITHUB_SHA}" refs/remotes/origin/main
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: rpm-dist
+          path: incoming
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: deb-and-tarball-dist
+          path: incoming
+      - name: Stage release artifacts, SHA256SUMS, and RELEASE-EVIDENCE.json
+        env:
+          RELEASE_INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -eu
+          mkdir -p release
+          for f in incoming/*; do
+            base=$(basename "$f")
+            safe_name=$(printf '%s' "$base" | tr '~' '-')
+            cp "$f" "release/$safe_name"
+          done
+          (cd release && sha256sum -- *.rpm *.deb *.tar.zst > SHA256SUMS)
+          tag="${RELEASE_INPUT_TAG:-${GITHUB_REF_NAME}}"
+          rust_version=$(sed -En 's/^channel = "([0-9]+\.[0-9]+\.[0-9]+)"$/\1/p' rust-toolchain.toml)
+          artifacts_json=$(jq -Rn '[inputs | split("  ") | {sha256: .[0], file: .[1]}]' < release/SHA256SUMS)
+          jq -n \
+            --arg tag "$tag" \
+            --arg commit "$GITHUB_SHA" \
+            --arg rust_version "$rust_version" \
+            --arg debian_glibc_floor "2.36" \
+            --argjson artifacts "$artifacts_json" \
+            '{
+              schema: "fabrico11y.release.evidence.v1",
+              tag: $tag,
+              commit: $commit,
+              rust_version: $rust_version,
+              debian_glibc_floor: $debian_glibc_floor,
+              zero_ui: true,
+              zero_tmp: true,
+              artifacts: $artifacts
+            }' > release/RELEASE-EVIDENCE.json
+          notes_file="docs/releases/${tag}.md"
+          if [ -f "$notes_file" ]; then
+            cp "$notes_file" release/NOTES.md
+          else
+            printf '# FabricO11y %s\n\nCommit: `%s`\n' "$tag" "$GITHUB_SHA" > release/NOTES.md
+          fi
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            release/*.rpm
+            release/*.deb
+            release/*.tar.zst
+            release/SHA256SUMS
+            release/RELEASE-EVIDENCE.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-bundle
+          path: release/*
+      - uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          prerelease: true
+          body_path: release/NOTES.md
+          files: |
+            release/*.rpm
+            release/*.deb
+            release/*.tar.zst
+            release/SHA256SUMS
+            release/RELEASE-EVIDENCE.json

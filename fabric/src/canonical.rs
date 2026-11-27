@@ -1,4 +1,10 @@
 //! Bounded authenticated transport for authoritative custody and typed investigation.
+pub use crate::canonical_auth::{
+    AUTH_HANDSHAKE_VERSION, ClientHello, ClientProof, MAX_HANDSHAKE_FRAME, MAX_SERVER_PROOFS,
+    ServerChallenge, accept_authenticated_sync, build_client_proof, build_server_challenge,
+    derive_server_proof, is_valid_nonce_hex, random_nonce_hex, verify_client_proof,
+    verify_request_mac, verify_server_challenge,
+};
 use crate::{observation, query};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -94,12 +100,6 @@ pub struct ProjectionReadiness {
     pub projection_frontier: Option<u64>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Authenticated {
-    pub credential: String,
-    pub request: Request,
-}
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "command", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Request {
@@ -260,10 +260,180 @@ pub fn exchange(
     {
         return Err("canonical batch limit".into());
     }
+    let client_nonce = random_nonce_hex()?;
     let mut stream = TcpStream::connect_timeout(&address, remaining(deadline)?)
         .map_err(|e| format!("connect: {e}"))?;
-    let body = serde_json::to_vec(&serde_json::json!({"credential":credential,"request":request}))
-        .map_err(|e| e.to_string())?;
-    write_frame(&mut stream, &body, deadline)?;
+    let _ = stream.set_nodelay(true);
+
+    let hello = ClientHello {
+        version: AUTH_HANDSHAKE_VERSION,
+        client_nonce: client_nonce.clone(),
+    };
+    let hello_bytes = serde_json::to_vec(&hello).map_err(|e| e.to_string())?;
+    write_frame(&mut stream, &hello_bytes, deadline)?;
+
+    let challenge_bytes = read_frame(&mut stream, deadline)?;
+    if challenge_bytes.len() > MAX_HANDSHAKE_FRAME {
+        return Err("canonical handshake frame limit".into());
+    }
+    let challenge: ServerChallenge =
+        serde_json::from_slice(&challenge_bytes).map_err(|e| e.to_string())?;
+    verify_server_challenge(credential, &client_nonce, &challenge)?;
+
+    let request_bytes = serde_json::to_vec(request).map_err(|e| e.to_string())?;
+    if request_bytes.len() > MAX_FRAME {
+        return Err("canonical frame limit".into());
+    }
+    let proof = build_client_proof(
+        credential,
+        &client_nonce,
+        &challenge.server_nonce,
+        &request_bytes,
+    );
+    let proof_bytes = serde_json::to_vec(&proof).map_err(|e| e.to_string())?;
+    write_frame(&mut stream, &proof_bytes, deadline)?;
+    write_frame(&mut stream, &request_bytes, deadline)?;
     serde_json::from_slice(&read_frame(&mut stream, deadline)?).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod auth_tests {
+    use super::*;
+    use std::net::TcpListener;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+
+    #[test]
+    fn rogue_listener_never_receives_raw_credential_or_request() {
+        let secret = "super-secret-canonical-credential-12345";
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        let saw_extra_frame = Arc::new(AtomicBool::new(false));
+        let saw_raw_secret = Arc::new(AtomicBool::new(false));
+        let extra_flag = saw_extra_frame.clone();
+        let secret_flag = saw_raw_secret.clone();
+
+        let rogue = std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(3);
+            let (mut stream, _) = listener.accept().unwrap();
+            let hello_bytes = read_frame(&mut stream, deadline).unwrap();
+            if String::from_utf8_lossy(&hello_bytes).contains(secret) {
+                secret_flag.store(true, Ordering::SeqCst);
+            }
+            let hello: ClientHello = serde_json::from_slice(&hello_bytes).unwrap();
+            assert!(is_valid_nonce_hex(&hello.client_nonce));
+
+            // Rogue sends a challenge generated without knowledge of `secret`.
+            let (_, bogus) =
+                build_server_challenge(&hello.client_nonce, ["wrong-rogue-secret"]).unwrap();
+            write_frame(&mut stream, &serde_json::to_vec(&bogus).unwrap(), deadline).unwrap();
+
+            // Client must verify server challenge and abort without sending proof or request.
+            let mut buf = [0u8; 64];
+            let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
+            match stream.read(&mut buf) {
+                Ok(0) => {}
+                Ok(n) => {
+                    if String::from_utf8_lossy(&buf[..n]).contains(secret) {
+                        secret_flag.store(true, Ordering::SeqCst);
+                    }
+                    extra_flag.store(true, Ordering::SeqCst);
+                }
+                Err(_) => {}
+            }
+        });
+
+        let err = exchange(
+            &addr,
+            secret,
+            &Request::Ingest {
+                origin: "secret-origin".into(),
+                records: vec![ForwardRecord {
+                    source_id: 1,
+                    raw: "{\"secret\":\"telemetry\"}".into(),
+                }],
+            },
+            Instant::now() + Duration::from_secs(3),
+        )
+        .unwrap_err();
+        rogue.join().unwrap();
+        assert!(err.contains("mutual authentication"), "{err}");
+        assert!(
+            !saw_raw_secret.load(Ordering::SeqCst),
+            "raw credential crossed wire"
+        );
+        assert!(
+            !saw_extra_frame.load(Ordering::SeqCst),
+            "client sent proof/request to rogue listener"
+        );
+    }
+
+    #[test]
+    fn mutual_hmac_challenge_response_never_transmits_raw_credential() {
+        let secret = "shared-loopback-secret-abcdef123456";
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+
+        let peer = std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(3);
+            let (mut stream, _) = listener.accept().unwrap();
+            let hello_bytes = read_frame(&mut stream, deadline).unwrap();
+            assert!(!String::from_utf8_lossy(&hello_bytes).contains(secret));
+            let hello: ClientHello = serde_json::from_slice(&hello_bytes).unwrap();
+            let (server_nonce, challenge) =
+                build_server_challenge(&hello.client_nonce, ["other-secret", secret]).unwrap();
+            let challenge_bytes = serde_json::to_vec(&challenge).unwrap();
+            assert!(!String::from_utf8_lossy(&challenge_bytes).contains(secret));
+            write_frame(&mut stream, &challenge_bytes, deadline).unwrap();
+
+            let proof_bytes = read_frame(&mut stream, deadline).unwrap();
+            assert!(!String::from_utf8_lossy(&proof_bytes).contains(secret));
+            let proof: ClientProof = serde_json::from_slice(&proof_bytes).unwrap();
+            assert!(verify_client_proof(
+                secret,
+                &hello.client_nonce,
+                &server_nonce,
+                &proof.proof
+            ));
+
+            let req_bytes = read_frame(&mut stream, deadline).unwrap();
+            assert!(!String::from_utf8_lossy(&req_bytes).contains(secret));
+            assert!(verify_request_mac(
+                secret,
+                &hello.client_nonce,
+                &server_nonce,
+                &req_bytes,
+                &proof.request_mac
+            ));
+            let mut tampered = req_bytes.clone();
+            tampered[0] ^= 1;
+            assert!(!verify_request_mac(
+                secret,
+                &hello.client_nonce,
+                &server_nonce,
+                &tampered,
+                &proof.request_mac
+            ));
+
+            let req: Request = serde_json::from_slice(&req_bytes).unwrap();
+            assert!(matches!(req, Request::Progress));
+            let resp = Response::Progress {
+                authority: "auth-1".into(),
+                frontiers: BTreeMap::new(),
+            };
+            write_frame(&mut stream, &serde_json::to_vec(&resp).unwrap(), deadline).unwrap();
+        });
+
+        let resp = exchange(
+            &addr,
+            secret,
+            &Request::Progress,
+            Instant::now() + Duration::from_secs(3),
+        )
+        .unwrap();
+        peer.join().unwrap();
+        assert!(matches!(resp, Response::Progress { authority, .. } if authority == "auth-1"));
+    }
 }
