@@ -1,7 +1,7 @@
 use fabric_evidence::application_result::{ApplicationResult, ApplicationResultError, ReportScope};
 use fabric_evidence::durable_snapshot::{
     ApplicationReference, Case, CaseEvidence, Cutoff, Definition, DurableError, DurableSnapshot,
-    MAX_DURABLE_CASES, Payload,
+    MAX_DURABLE_CASES, Payload, ReportId,
 };
 use fabric_evidence::evidence_manifest::{
     ClockProvenance, DigestAlgorithm, DigestClaim, DigestRepresentation, ImmutableReference,
@@ -70,7 +70,7 @@ fn cases(known: usize) -> Vec<Case> {
                 let r = result(i as u64);
                 CaseEvidence::Known {
                     reference: ApplicationReference {
-                        report_id: r.report_id().into(),
+                        report_id: ReportId::new(r.report_id().into()).unwrap(),
                         payload_digest: r.application_payload_digest().clone(),
                         expected_source_id: NonZeroU64::new(i as u64),
                     },
@@ -248,7 +248,7 @@ fn case_cap_and_actual_application_payload_limit_both_apply() {
                 id: format!("{i:02}{}", "x".repeat(126)),
                 evidence: CaseEvidence::Known {
                     reference: ApplicationReference {
-                        report_id: r.report_id().into(),
+                        report_id: ReportId::new(r.report_id().into()).unwrap(),
                         payload_digest: r.application_payload_digest().clone(),
                         expected_source_id: NonZeroU64::new(i as u64 + 1),
                     },
@@ -283,7 +283,7 @@ fn canonical_payload_at_exact_4096_byte_boundary_is_accepted() {
                         let r = &refs[i];
                         CaseEvidence::Known {
                             reference: ApplicationReference {
-                                report_id: r.report_id().into(),
+                                report_id: ReportId::new(r.report_id().into()).unwrap(),
                                 payload_digest: r.application_payload_digest().clone(),
                                 expected_source_id: None,
                             },
@@ -307,4 +307,17 @@ fn canonical_payload_at_exact_4096_byte_boundary_is_accepted() {
     assert_eq!(serde_json::to_vec(&payload).unwrap().len(), 4096);
     let record = DurableSnapshot::create(scope(), uuid(300), None, time(1), payload).unwrap();
     assert_eq!(record.result().canonical_payload().unwrap().len(), 4096);
+}
+
+#[test]
+fn invalid_report_uuid_and_duplicate_known_reference_are_rejected() {
+    assert!(ReportId::new("not-a-uuid".into()).is_err());
+    assert!(serde_json::from_str::<ReportId>(r#""ABCDEF00-0000-4000-8000-000000000001""#).is_err());
+    assert!(serde_json::from_str::<ReportId>(r#""00000000-0000-0000-0000-000000000000""#).is_err());
+    let mut repeated = cases(4);
+    repeated[1].evidence = repeated[0].evidence.clone();
+    assert!(matches!(
+        Payload::new(cutoff(1), def(), repeated, None),
+        Err(DurableError::InvalidReference)
+    ));
 }

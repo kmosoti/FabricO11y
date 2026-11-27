@@ -268,7 +268,7 @@ impl ApplicationResult {
 fn bounded_text(s: &str, max: usize) -> bool {
     !s.is_empty() && s.len() <= max && !s.contains('\0')
 }
-fn uuid(s: &str) -> bool {
+pub(crate) fn uuid(s: &str) -> bool {
     s.len() == 36
         && s != "00000000-0000-0000-0000-000000000000"
         && s.bytes().enumerate().all(|(i, b)| {
