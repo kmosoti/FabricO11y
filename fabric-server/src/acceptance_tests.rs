@@ -59,11 +59,25 @@ fn config(root: &Path) -> Config {
         max_connections: 8,
     }
 }
-fn start(config: &Config) -> (String, Arc<AtomicBool>, thread::JoinHandle<()>) {
+fn start_observed(
+    config: &Config,
+) -> (
+    String,
+    Arc<AtomicBool>,
+    thread::JoinHandle<()>,
+    Arc<ReadState>,
+    Arc<Mutex<Ledger>>,
+) {
     let server = Server::open(config.clone()).unwrap();
     let address = server.address();
     let stop = server.stop_handle();
+    let reads = server.reads.clone();
+    let ledger = server.ledger.clone();
     let task = thread::spawn(move || server.serve().unwrap());
+    (address, stop, task, reads, ledger)
+}
+fn start(config: &Config) -> (String, Arc<AtomicBool>, thread::JoinHandle<()>) {
+    let (address, stop, task, _, _) = start_observed(config);
     (address, stop, task)
 }
 fn exchange(address: &str, credential: &str, request: &Request) -> Response {
@@ -679,7 +693,7 @@ fn scoped_cursor_survives_restart_and_hints_coalesce() {
     let scratch = std::env::var_os("TMPDIR").map(PathBuf::from).unwrap();
     let root = tempfile::tempdir_in(scratch).unwrap();
     let config = config(root.path());
-    let (address, stop, server) = start(&config);
+    let (address, stop, server, reads, ledger) = start_observed(&config);
     let authority = match exchange(&address, READER, &Request::Progress) {
         Response::Progress { authority, .. } => authority,
         other => panic!("{other:?}"),
@@ -709,7 +723,43 @@ fn scoped_cursor_survives_restart_and_hints_coalesce() {
             Response::Error { .. }
         ));
     }
-    let subscription = match exchange(&address, WRITER, &subscribe) {
+    // Block registration at the hint mutex after it has captured the frontier.
+    // The following real acceptance must wait for that registration, so its
+    // signal cannot pass between frontier capture and subscription insertion.
+    let hints = reads.plan_hints.lock().unwrap();
+    let sub_addr = address.clone();
+    let sub_scope = scope.clone();
+    let subscribing = thread::spawn(move || {
+        exchange(
+            &sub_addr,
+            WRITER,
+            &Request::SubscribePlan { scope: sub_scope },
+        )
+    });
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        if ledger.try_lock().is_err() {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "subscription did not acquire ledger"
+        );
+        thread::sleep(Duration::from_millis(2));
+    }
+    let accept_addr = address.clone();
+    let accept_cmd = command(&authority, "cursor-race", None, 1, &a);
+    let (done_tx, done_rx) = mpsc::channel();
+    let accepting = thread::spawn(move || {
+        let response = accept(&accept_addr, WRITER, &accept_cmd);
+        done_tx.send(response).unwrap();
+    });
+    assert!(
+        done_rx.recv_timeout(Duration::from_millis(100)).is_err(),
+        "commit crossed registration"
+    );
+    drop(hints);
+    let subscription = match subscribing.join().unwrap() {
         Response::PlanSubscribed {
             subscription,
             frontier,
@@ -719,8 +769,10 @@ fn scoped_cursor_survives_restart_and_hints_coalesce() {
         }
         other => panic!("{other:?}"),
     };
-    let mut head_id = None;
-    for id in 0..3 {
+    let race = result(done_rx.recv_timeout(Duration::from_secs(5)).unwrap());
+    accepting.join().unwrap();
+    let mut head_id = Some(head(&race));
+    for id in 0..2 {
         let accepted = result(accept(
             &address,
             WRITER,

@@ -1070,12 +1070,12 @@ fn handle(
             if command.scope.0 != writer.scope || command.origin != writer.origin {
                 return Err("unauthorized plan scope".into());
             }
-            let result = canonical_state(ledger, reads)?.accept_plan(writer, &body)?;
-            if let Ok(command) = serde_json::from_str::<canonical::AcceptPlan>(&body) {
-                if let Ok(mut hints) = reads.plan_hints.lock() {
-                    hints.signal(&command.scope.0);
-                }
+            let mut state = canonical_state(ledger, reads)?;
+            let result = state.accept_plan(writer, &body)?;
+            if let Ok(mut hints) = reads.plan_hints.lock() {
+                hints.signal(&command.scope.0);
             }
+            drop(state); // Hold canonical admission through the advisory signal.
             Ok(Response::PlanAccepted { decision: result })
         }
         Request::PlanPage { request } => {
@@ -1105,7 +1105,11 @@ fn handle(
             let state = canonical_state(ledger, reads)?;
             let (epoch, frontier) = state.plan_cursor_identity(writer, &scope.0)?;
             let mut hints = reads.plan_hints.lock().map_err(|_| "hint lock")?;
-            match hints.subscribe(writer, &scope.0, epoch)? {
+            let subscription = hints.subscribe(writer, &scope.0, epoch)?;
+            drop(hints);
+            // Registration and the captured frontier share the canonical lock with commit/signal.
+            drop(state);
+            match subscription {
                 Some(subscription) => Ok(Response::PlanSubscribed {
                     subscription,
                     frontier,
