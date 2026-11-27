@@ -587,3 +587,104 @@ impl QueryResponse {
             .collect()
     }
 }
+
+/// Optional registry integration. It does not add fields to the v1 wire DTOs.
+pub mod contracts {
+    use super::{API_VERSION, Operation, QueryRequest, QueryResponse};
+    use fabric_ops::Shape;
+    use fabric_ops::registry::{
+        Descriptor, Operation as OperationContract, Registry, RegistryError,
+    };
+
+    const fn descriptor(operation: &'static str) -> Descriptor {
+        Descriptor {
+            protocol: "fabric.query",
+            protocol_version: API_VERSION,
+            operation,
+            operation_version: 1,
+            shape: Shape::Unary,
+        }
+    }
+
+    /// Local operation-contract version 1; this is not a field in QueryRequest.
+    pub const QUERY_V1: [Descriptor; 7] = [
+        descriptor("capabilities"),
+        descriptor("list_runs"),
+        descriptor("run_summary"),
+        descriptor("tool_summary"),
+        descriptor("service_summary"),
+        descriptor("activity"),
+        descriptor("evidence"),
+    ];
+
+    macro_rules! contract {
+        ($name:ident, $index:literal) => {
+            struct $name;
+            impl OperationContract for $name {
+                type Request = QueryRequest;
+                type Response = QueryResponse;
+                const DESCRIPTOR: Descriptor = QUERY_V1[$index];
+            }
+        };
+    }
+    contract!(Capabilities, 0);
+    contract!(ListRuns, 1);
+    contract!(RunSummary, 2);
+    contract!(ToolSummary, 3);
+    contract!(ServiceSummary, 4);
+    contract!(Activity, 5);
+    contract!(Evidence, 6);
+
+    /// The request is held after its actual variant and versions are checked,
+    /// so a different operation cannot be substituted before the handler.
+    pub struct NegotiatedQuery {
+        request: QueryRequest,
+    }
+    impl NegotiatedQuery {
+        pub fn call(self, handler: impl FnOnce(QueryRequest) -> QueryResponse) -> QueryResponse {
+            handler(self.request)
+        }
+    }
+
+    /// This local gate does not authenticate, deserialize, or dispatch a wire call.
+    pub fn negotiate(
+        registry: &Registry,
+        request: QueryRequest,
+        operation_version: u32,
+    ) -> Result<NegotiatedQuery, RegistryError> {
+        macro_rules! check {
+            ($binding:ty, $index:literal) => {
+                registry.negotiate::<$binding>(
+                    "fabric.query",
+                    request.version,
+                    QUERY_V1[$index].operation,
+                    operation_version,
+                )?
+            };
+        }
+        match &request.operation {
+            Operation::Capabilities => {
+                check!(Capabilities, 0);
+            }
+            Operation::ListRuns => {
+                check!(ListRuns, 1);
+            }
+            Operation::RunSummary => {
+                check!(RunSummary, 2);
+            }
+            Operation::ToolSummary => {
+                check!(ToolSummary, 3);
+            }
+            Operation::ServiceSummary => {
+                check!(ServiceSummary, 4);
+            }
+            Operation::Activity { .. } => {
+                check!(Activity, 5);
+            }
+            Operation::Evidence => {
+                check!(Evidence, 6);
+            }
+        }
+        Ok(NegotiatedQuery { request })
+    }
+}

@@ -130,30 +130,6 @@ impl<O: Operation> Negotiated<O> {
     }
 }
 
-/// Query API v1 operation names in `fabric::query::Operation`. Operation
-/// contract version 1 is registry metadata, not a field in the existing wire.
-pub const QUERY_V1: [Descriptor; 7] = query_v1();
-const fn query_v1() -> [Descriptor; 7] {
-    const fn entry(operation: &'static str) -> Descriptor {
-        Descriptor {
-            protocol: "fabric.query",
-            protocol_version: 1,
-            operation,
-            operation_version: 1,
-            shape: Shape::Unary,
-        }
-    }
-    [
-        entry("capabilities"),
-        entry("list_runs"),
-        entry("run_summary"),
-        entry("tool_summary"),
-        entry("service_summary"),
-        entry("activity"),
-        entry("evidence"),
-    ]
-}
-
 /// Bounded, payload-free outcomes. Interpretation is supplied by the adapter;
 /// none of these variants itself authorizes replay or implies a durable result.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

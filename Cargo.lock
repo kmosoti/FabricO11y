@@ -1392,6 +1392,7 @@ name = "fabric"
 version = "0.1.1-alpha.2"
 dependencies = [
  "admission-kernel",
+ "fabric-ops",
  "hmac",
  "rusqlite",
  "rustix",
