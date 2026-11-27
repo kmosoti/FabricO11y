@@ -454,7 +454,8 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
         let tx = self.conn.transaction().map_err(err)?;
         tx.execute_batch("CREATE TABLE IF NOT EXISTS plan_schema(version INTEGER NOT NULL CHECK(version=1));
             CREATE TABLE IF NOT EXISTS plan_scope(scope TEXT PRIMARY KEY, owner TEXT NOT NULL, origin TEXT NOT NULL, producer TEXT NOT NULL, head INTEGER);
-            CREATE TABLE IF NOT EXISTS plan_decision(id INTEGER PRIMARY KEY, scope TEXT NOT NULL, writer TEXT NOT NULL, command_id TEXT NOT NULL, request_hash TEXT NOT NULL, previous_head INTEGER, proposal_id TEXT NOT NULL, result TEXT NOT NULL, UNIQUE(scope,writer,command_id));").map_err(err)?;
+            CREATE TABLE IF NOT EXISTS plan_decision(id INTEGER PRIMARY KEY, scope TEXT NOT NULL, writer TEXT NOT NULL, command_id TEXT NOT NULL, request_hash TEXT NOT NULL, previous_head INTEGER, proposal_id TEXT NOT NULL, result TEXT NOT NULL, UNIQUE(scope,writer,command_id));
+            CREATE TABLE IF NOT EXISTS plan_cursor_epoch(scope TEXT PRIMARY KEY, epoch INTEGER NOT NULL);").map_err(err)?;
         let versions: Vec<i64> = {
             let mut q = tx.prepare("SELECT version FROM plan_schema").map_err(err)?;
             q.query_map([], |r| r.get(0))
@@ -468,6 +469,12 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
         } else if versions != [1] {
             return Err("unsupported plan schema".into());
         }
+        let cursor_key = fabric::canonical_auth::random_nonce_hex()?;
+        tx.execute(
+            "INSERT OR IGNORE INTO meta(key,value) VALUES('plan_cursor_key',?1)",
+            [&cursor_key],
+        )
+        .map_err(err)?;
         for grant in grants {
             let exists: bool = tx
                 .query_row(
@@ -493,8 +500,161 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
             if !matches {
                 return Err("plan scope policy mismatch".into());
             }
+            tx.execute(
+                "INSERT OR IGNORE INTO plan_cursor_epoch(scope,epoch) VALUES(?1,0)",
+                [&grant.scope],
+            )
+            .map_err(err)?;
         }
         tx.commit().map_err(err)
+    }
+
+    /// The caller has authenticated a decision writer; scope ownership remains authoritative here.
+    pub(crate) fn plan_cursor_identity(
+        &self,
+        writer: &str,
+        scope: &str,
+    ) -> Result<(i64, i64), String> {
+        if scope.is_empty() || scope.len() > 128 {
+            return Err("unauthorized plan scope".into());
+        }
+        self.conn.query_row("SELECT e.epoch, COALESCE((SELECT MAX(id) FROM plan_decision WHERE scope=?1),0) FROM plan_scope s JOIN plan_cursor_epoch e ON e.scope=s.scope WHERE s.scope=?1 AND s.owner=?2", params![scope, writer], |r| Ok((r.get(0)?, r.get(1)?)))
+            .optional().map_err(err)?.ok_or_else(|| "unauthorized plan scope".to_string())
+    }
+    pub(crate) fn revoke_plan_cursors(&mut self, writer: &str, scope: &str) -> Result<(), String> {
+        if scope.is_empty() || scope.len() > 128 {
+            return Err("unauthorized plan scope".into());
+        }
+        let tx = self.conn.transaction().map_err(err)?;
+        let changed = tx.execute("UPDATE plan_cursor_epoch SET epoch=epoch+1 WHERE scope=?1 AND epoch<9223372036854775807 AND EXISTS (SELECT 1 FROM plan_scope WHERE scope=?1 AND owner=?2)", params![scope, writer]).map_err(err)?;
+        if changed != 1 {
+            return Err("unauthorized plan scope or exhausted epoch".into());
+        }
+        tx.commit().map_err(err)
+    }
+    pub(crate) fn plan_page(
+        &mut self,
+        writer: &str,
+        request: &fabric::canonical::PlanPageRequest,
+    ) -> Result<Result<fabric::canonical::PlanPage, fabric::canonical::PlanCursorFailure>, String>
+    {
+        use fabric::canonical::{PlanCursorFailure as Failure, PlanDecision, PlanPage};
+        let (epoch, frontier) = self.plan_cursor_identity(writer, &request.scope.0)?;
+        if request.limit == 0
+            || request.limit > 64
+            || request.ttl_secs == 0
+            || request.ttl_secs > 900
+        {
+            return Ok(Err(Failure::Invalid));
+        }
+        let key: String = self
+            .conn
+            .query_row(
+                "SELECT value FROM meta WHERE key='plan_cursor_key'",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(err)?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(err)?
+            .as_secs();
+        let mut cursor = if let Some(token) = &request.cursor {
+            let Some(cursor) =
+                crate::plan_cursor::decode(token, &key, &self.authority, writer, &request.scope.0)
+            else {
+                return Ok(Err(Failure::Invalid));
+            };
+            if cursor.epoch != epoch {
+                return Ok(Err(Failure::Revoked));
+            }
+            if now >= cursor.expires {
+                return Ok(Err(Failure::Expired));
+            }
+            cursor
+        } else {
+            let count: i64 = self
+                .conn
+                .query_row(
+                    "SELECT count(*) FROM plan_decision WHERE scope=?1 AND id<=?2",
+                    params![request.scope.0, frontier],
+                    |r| r.get(0),
+                )
+                .map_err(err)?;
+            crate::plan_cursor::Cursor {
+                epoch,
+                frontier,
+                count,
+                last: 0,
+                expires: now
+                    .checked_add(u64::from(request.ttl_secs))
+                    .ok_or("clock overflow")?,
+            }
+        };
+        if cursor.frontier < 0
+            || cursor.last < 0
+            || cursor.last > cursor.frontier
+            || cursor.count < 0
+            || cursor.count > 4096
+        {
+            return Ok(Err(Failure::Invalid));
+        }
+        let count: i64 = self
+            .conn
+            .query_row(
+                "SELECT count(*) FROM plan_decision WHERE scope=?1 AND id<=?2",
+                params![request.scope.0, cursor.frontier],
+                |r| r.get(0),
+            )
+            .map_err(err)?;
+        if count != cursor.count {
+            return Ok(Err(Failure::Gap));
+        }
+        let mut stmt = self.conn.prepare("SELECT id,result FROM plan_decision WHERE scope=?1 AND id>?2 AND id<=?3 ORDER BY id LIMIT ?4").map_err(err)?;
+        let rows: Vec<(i64, String)> = stmt
+            .query_map(
+                params![
+                    request.scope.0,
+                    cursor.last,
+                    cursor.frontier,
+                    i64::from(request.limit) + 1
+                ],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .map_err(err)?
+            .collect::<Result<_, _>>()
+            .map_err(err)?;
+        let more = rows.len() > usize::from(request.limit);
+        let mut decisions = Vec::with_capacity(rows.len().min(usize::from(request.limit)));
+        for (id, row) in rows.into_iter().take(usize::from(request.limit)) {
+            let decision = serde_json::from_str::<PlanDecision>(&row).map_err(err)?;
+            if decision.head != id
+                || decision.scope != request.scope
+                || decision.authority != self.authority
+            {
+                return Ok(Err(Failure::Gap));
+            }
+            decisions.push(decision);
+        }
+        let next_cursor = if more {
+            cursor.last = decisions.last().ok_or("missing decision")?.head;
+            Some(crate::plan_cursor::encode(
+                &cursor,
+                &key,
+                &self.authority,
+                writer,
+                &request.scope.0,
+            )?)
+        } else {
+            None
+        };
+        Ok(Ok(PlanPage {
+            authority: self.authority.clone(),
+            scope: request.scope.clone(),
+            frontier: cursor.frontier,
+            decisions,
+            next_cursor,
+        }))
     }
 
     /// Authenticate outside this method; policy, replay, CAS and result commit together.

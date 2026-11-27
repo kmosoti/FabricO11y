@@ -125,6 +125,25 @@ head and exact result together. Proposal identity is checked against the local
 committed canonical record, independently of later analytical projection.
 Stored decisions do not authorize external execution.
 
+A scope owner may read bounded pages of its canonical decisions. The first
+request freezes the committed per-scope frontier; continuation tokens bind that
+frontier and its row count, position, authority, owner, scope, expiry, and a
+persisted revocation epoch. Each request rechecks the provisioned owner. Pages
+contain at most 64 decisions, and token lifetimes are at most 900 seconds.
+Tokens are signed, not encrypted; clients treat them as opaque and must not put
+secrets in them. Expiration uses the receiver wall clock and can be affected by
+clock adjustments. The owner can revoke outstanding cursors and hints by
+incrementing the durable scope epoch. Expiry, revocation, invalid tokens and
+loss of a row in an issued snapshot have distinct outcomes. There is no history
+reclaimer or claim that a fresh snapshot detects earlier loss. The separate
+query cursor key and profile are unchanged.
+
+Subscriptions are advisory, in-memory, and limited to 32 per receiver for at
+most 900 seconds. Creation returns the current frontier, and commits coalesce
+into one pending bit per subscription. Polling does not wait. After a restart
+or dropped hint, the owner resubscribes and replays canonical pages; hints are
+never evidence of custody or a substitute for reading decisions.
+
 The independent `fabric-colloquium` crate projects bounded contribution and
 proposal state without I/O or runtime dependencies. Its distinct actor,
 principal and team IDs are attribution claims, not authenticated authority.

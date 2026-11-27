@@ -269,6 +269,33 @@ pub struct ReceiptBatchReadiness {
     pub segment_rows_reserved: u64,
 }
 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PlanCursorFailure {
+    Invalid,
+    Expired,
+    Revoked,
+    Gap,
+    Capacity,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlanPageRequest {
+    pub scope: PlanScope,
+    pub cursor: Option<String>,
+    pub limit: u8,
+    pub ttl_secs: u16,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlanPage {
+    pub authority: String,
+    pub scope: PlanScope,
+    pub frontier: i64,
+    pub decisions: Vec<PlanDecision>,
+    pub next_cursor: Option<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "command", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Request {
@@ -287,6 +314,19 @@ pub enum Request {
         identity: observation::Identity,
     },
     Progress,
+    PlanPage {
+        request: PlanPageRequest,
+    },
+    RevokePlanCursors {
+        scope: PlanScope,
+    },
+    SubscribePlan {
+        scope: PlanScope,
+    },
+    PollPlanHint {
+        scope: PlanScope,
+        subscription: String,
+    },
     AcceptPlan {
         body: String,
     },
@@ -344,6 +384,20 @@ pub enum Response {
     },
     Found {
         row: Option<CanonicalRow>,
+    },
+    PlanPage {
+        page: PlanPage,
+    },
+    PlanCursorFailure {
+        reason: PlanCursorFailure,
+    },
+    PlanCursorsRevoked,
+    PlanSubscribed {
+        subscription: String,
+        frontier: i64,
+    },
+    PlanHint {
+        pending: bool,
     },
     PlanAccepted {
         decision: String,

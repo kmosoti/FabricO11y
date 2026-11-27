@@ -667,3 +667,204 @@ fn segment_tickets_bind_real_reader_and_verified_resume() {
     stop.store(true, Ordering::SeqCst);
     task.join().unwrap();
 }
+
+#[test]
+fn scoped_cursor_survives_restart_and_hints_coalesce() {
+    use canonical::{PlanCursorFailure as Failure, PlanPageRequest};
+    assert!(
+        fs::read_to_string("/proc/self/cgroup")
+            .unwrap()
+            .contains("/fabrico11y.slice/")
+    );
+    let scratch = std::env::var_os("TMPDIR").map(PathBuf::from).unwrap();
+    let root = tempfile::tempdir_in(scratch).unwrap();
+    let config = config(root.path());
+    let (address, stop, server) = start(&config);
+    let authority = match exchange(&address, READER, &Request::Progress) {
+        Response::Progress { authority, .. } => authority,
+        other => panic!("{other:?}"),
+    };
+    let a = proposal(1, 'a');
+    assert!(matches!(
+        exchange(
+            &address,
+            NODE,
+            &Request::Ingest {
+                origin: "origin".into(),
+                records: vec![ForwardRecord {
+                    source_id: 1,
+                    raw: a.clone()
+                }]
+            }
+        ),
+        Response::Committed { .. }
+    ));
+    let scope = PlanScope("plan".into());
+    let subscribe = Request::SubscribePlan {
+        scope: scope.clone(),
+    };
+    for credential in [READER, NODE, OTHER] {
+        assert!(matches!(
+            exchange(&address, credential, &subscribe),
+            Response::Error { .. }
+        ));
+    }
+    let subscription = match exchange(&address, WRITER, &subscribe) {
+        Response::PlanSubscribed {
+            subscription,
+            frontier,
+        } => {
+            assert_eq!(frontier, 0);
+            subscription
+        }
+        other => panic!("{other:?}"),
+    };
+    let mut head_id = None;
+    for id in 0..3 {
+        let accepted = result(accept(
+            &address,
+            WRITER,
+            &command(&authority, &format!("cursor-{id}"), head_id, 1, &a),
+        ));
+        head_id = Some(head(&accepted));
+    }
+    let poll = || Request::PollPlanHint {
+        scope: scope.clone(),
+        subscription: subscription.clone(),
+    };
+    assert!(matches!(
+        exchange(&address, WRITER, &poll()),
+        Response::PlanHint { pending: true }
+    ));
+    assert!(matches!(
+        exchange(&address, WRITER, &poll()),
+        Response::PlanHint { pending: false }
+    ));
+    let page = |cursor| Request::PlanPage {
+        request: PlanPageRequest {
+            scope: scope.clone(),
+            cursor,
+            limit: 1,
+            ttl_secs: 900,
+        },
+    };
+    let (first, token, frontier) = match exchange(&address, WRITER, &page(None)) {
+        Response::PlanPage { page } => {
+            assert_eq!(page.decisions.len(), 1);
+            (
+                page.decisions[0].head,
+                page.next_cursor.unwrap(),
+                page.frontier,
+            )
+        }
+        other => panic!("{other:?}"),
+    };
+    assert!(matches!(
+        exchange(&address, OTHER, &page(Some(token.clone()))),
+        Response::Error { .. }
+    ));
+    let changed = result(accept(
+        &address,
+        WRITER,
+        &command(&authority, "after-frontier", head_id, 1, &a),
+    ));
+    assert!(head(&changed) > frontier);
+    stop.store(true, Ordering::SeqCst);
+    server.join().unwrap();
+    let (address, stop, server) = start(&config);
+    assert!(matches!(
+        exchange(&address, WRITER, &poll()),
+        Response::PlanCursorFailure {
+            reason: Failure::Revoked
+        }
+    ));
+    let second = match exchange(&address, WRITER, &page(Some(token.clone()))) {
+        Response::PlanPage { page } => {
+            assert_eq!(page.frontier, frontier);
+            assert!(page.decisions[0].head > first);
+            page.next_cursor.unwrap()
+        }
+        other => panic!("{other:?}"),
+    };
+    assert!(
+        matches!(exchange(&address,WRITER,&page(Some(second))),Response::PlanPage{page} if page.decisions.len()==1 && page.next_cursor.is_none() && page.decisions[0].head==frontier)
+    );
+    let db = rusqlite::Connection::open(config.storage.join("canonical.sqlite")).unwrap();
+    let key: String = db
+        .query_row(
+            "SELECT value FROM meta WHERE key='plan_cursor_key'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let expired = crate::plan_cursor::encode(
+        &crate::plan_cursor::Cursor {
+            epoch: 0,
+            frontier,
+            count: 3,
+            last: first,
+            expires: 0,
+        },
+        &key,
+        &authority,
+        "owner",
+        "plan",
+    )
+    .unwrap();
+    assert!(matches!(
+        exchange(&address, WRITER, &page(Some(expired))),
+        Response::PlanCursorFailure {
+            reason: Failure::Expired
+        }
+    ));
+    let mut tampered = token.clone();
+    tampered.push('0');
+    assert!(matches!(
+        exchange(&address, WRITER, &page(Some(tampered))),
+        Response::PlanCursorFailure {
+            reason: Failure::Invalid
+        }
+    ));
+    for _ in 0..32 {
+        assert!(matches!(
+            exchange(&address, WRITER, &subscribe),
+            Response::PlanSubscribed { .. }
+        ));
+    }
+    assert!(matches!(
+        exchange(&address, WRITER, &subscribe),
+        Response::PlanCursorFailure {
+            reason: Failure::Capacity
+        }
+    ));
+    db.execute("DELETE FROM plan_decision WHERE id=?1", [frontier])
+        .unwrap();
+    assert!(matches!(
+        exchange(&address, WRITER, &page(Some(token.clone()))),
+        Response::PlanCursorFailure {
+            reason: Failure::Gap
+        }
+    ));
+    assert!(matches!(
+        exchange(
+            &address,
+            WRITER,
+            &Request::RevokePlanCursors {
+                scope: scope.clone()
+            }
+        ),
+        Response::PlanCursorsRevoked
+    ));
+    stop.store(true, Ordering::SeqCst);
+    server.join().unwrap();
+    drop(db);
+    let (address, stop, server) = start(&config);
+    assert!(matches!(
+        exchange(&address, WRITER, &page(Some(token))),
+        Response::PlanCursorFailure {
+            reason: Failure::Revoked
+        }
+    ));
+    stop.store(true, Ordering::SeqCst);
+    server.join().unwrap();
+}
