@@ -538,15 +538,15 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
             .conn
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
             .map_err(err)?;
-        let policy: Option<(String, String, String, Option<i64>)> = tx
+        let policy: Option<(String, String, String)> = tx
             .query_row(
-                "SELECT owner,origin,producer,head FROM plan_scope WHERE scope=?1",
+                "SELECT owner,origin,producer FROM plan_scope WHERE scope=?1",
                 [&command.scope.0],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .optional()
             .map_err(err)?;
-        let (owner, origin, producer, head) = policy.ok_or("unauthorized plan scope")?;
+        let (owner, origin, producer) = policy.ok_or("unauthorized plan scope")?;
         if owner != writer {
             return Err("unauthorized plan scope".into());
         }
@@ -558,6 +558,13 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
                 Err("plan command conflict".into())
             };
         }
+        let head: Option<i64> = tx
+            .query_row(
+                "SELECT head FROM plan_scope WHERE scope=?1",
+                [&command.scope.0],
+                |r| r.get(0),
+            )
+            .map_err(err)?;
         if head != command.expected_head {
             return Err("stale plan head".into());
         }
