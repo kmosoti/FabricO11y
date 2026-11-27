@@ -1,0 +1,13 @@
+[package]
+name = "fabric-app-parity"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+fabric-app-core = { path = "../fabric-app-core" }
+fabric-query-contract = { path = "../../fabric-query-contract" }
+serde_json = { version = "1", features = ["float_roundtrip"] }
