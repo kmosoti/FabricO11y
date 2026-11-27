@@ -232,7 +232,7 @@ fn read_process_sample(
         .map(|s| s.trim().to_owned())
         .ok()?;
     let cmdline_bytes = fs::read(proc_dir.join("cmdline")).unwrap_or_default();
-    let (argv, cmdline) = parse_process_cmdline(&cmdline_bytes);
+    let ((argv0, argv1), cmdline) = parse_process_cmdline(&cmdline_bytes);
 
     let (ppid, cpu_time_ticks) = read_proc_stat(&proc_dir.join("stat"));
     let rss_bytes = read_proc_rss(&proc_dir.join("statm"));
@@ -242,13 +242,7 @@ fn read_process_sample(
         .map(|p| p.to_string_lossy().into_owned());
 
     let (open_fds, unlinked_fds, open_paths) = scan_proc_fds(&proc_dir.join("fd"));
-    let agent_hint = detect_agent_hint(
-        &slice,
-        unit.as_deref(),
-        &comm,
-        argv.first().map_or("", AsRef::as_ref),
-        argv.get(1).map_or("", AsRef::as_ref),
-    );
+    let agent_hint = detect_agent_hint(&slice, unit.as_deref(), &comm, &argv0, &argv1);
 
     Some(ProcessSample {
         pid,
@@ -269,23 +263,34 @@ fn read_process_sample(
     })
 }
 
-fn parse_process_cmdline(bytes: &[u8]) -> (Vec<std::borrow::Cow<'_, str>>, String) {
-    let argv: Vec<_> = bytes
-        .split(|&byte| byte == 0)
-        .map(String::from_utf8_lossy)
-        .collect();
-    let joined = argv
-        .iter()
-        .filter(|arg| !arg.is_empty())
-        .map(AsRef::as_ref)
-        .collect::<Vec<&str>>()
-        .join(" ");
-    let cmdline = if joined.len() > 240 {
-        joined.chars().take(240).collect()
-    } else {
-        joined
-    };
-    (argv, cmdline)
+fn parse_process_cmdline(
+    bytes: &[u8],
+) -> (
+    (std::borrow::Cow<'_, str>, std::borrow::Cow<'_, str>),
+    String,
+) {
+    let mut positions = bytes.split(|&byte| byte == 0);
+    let argv0 = String::from_utf8_lossy(positions.next().unwrap_or_default());
+    let argv1 = String::from_utf8_lossy(positions.next().unwrap_or_default());
+    let mut display = String::new();
+    let mut remaining = 240;
+    for arg in bytes.split(|&byte| byte == 0).filter(|arg| !arg.is_empty()) {
+        if remaining == 0 {
+            break;
+        }
+        if !display.is_empty() {
+            display.push(' ');
+            remaining -= 1;
+        }
+        // At most four bytes can contribute each displayed Unicode character.
+        // Decoding only this prefix keeps even invalid, very long arguments bounded.
+        let prefix = &arg[..arg.len().min(remaining * 4)];
+        for character in String::from_utf8_lossy(prefix).chars().take(remaining) {
+            display.push(character);
+            remaining -= 1;
+        }
+    }
+    ((argv0, argv1), display)
 }
 
 const AGENTS: &[&str] = &[
@@ -594,10 +599,10 @@ mod attribution_tests {
     #[test]
     fn argv_preserves_display_and_limits_attribution_to_identity_positions() {
         let bytes = b"/bin/node\0/work/main.js\0codex\0\0";
-        let (argv, display) = super::parse_process_cmdline(bytes);
+        let ((argv0, argv1), display) = super::parse_process_cmdline(bytes);
         assert_eq!(display, "/bin/node /work/main.js codex");
         assert_eq!(
-            super::detect_agent_hint("app.slice", None, "node", &argv[0], &argv[1]),
+            super::detect_agent_hint("app.slice", None, "node", &argv0, &argv1),
             None
         );
         let unicode = format!("/bin/worker\0{}\0", "é".repeat(130));
@@ -606,6 +611,25 @@ mod attribution_tests {
         let long = format!("/bin/worker\0{}\0", "x".repeat(300));
         let (_, display) = super::parse_process_cmdline(long.as_bytes());
         assert_eq!(display.chars().count(), 240);
+    }
+
+    #[test]
+    fn argv_keeps_empty_positions_and_lossy_display_boundaries() {
+        let mut bytes = vec![0; 100_000];
+        bytes.extend_from_slice(b"codex\0");
+        let ((argv0, argv1), display) = super::parse_process_cmdline(&bytes);
+        assert_eq!((&*argv0, &*argv1, display.as_str()), ("", "", "codex"));
+        assert_eq!(
+            super::detect_agent_hint("app.slice", None, "worker", &argv0, &argv1),
+            None
+        );
+
+        let mut bytes = vec![b'x'; 238];
+        bytes.extend_from_slice(b"\0\xf0\x9f\x92\xa9\xfftail\0");
+        let (_, display) = super::parse_process_cmdline(&bytes);
+        assert_eq!(display, format!("{} 💩", "x".repeat(238)));
+        let (_, display) = super::parse_process_cmdline(b"a\0\xf0\x9f\xffb\0");
+        assert_eq!(display, "a ��b");
     }
 
     #[test]
