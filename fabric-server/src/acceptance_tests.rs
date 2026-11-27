@@ -59,26 +59,31 @@ fn config(root: &Path) -> Config {
         max_connections: 8,
     }
 }
-fn start_observed(
-    config: &Config,
-) -> (
-    String,
-    Arc<AtomicBool>,
-    thread::JoinHandle<()>,
-    Arc<ReadState>,
-    Arc<Mutex<Ledger>>,
-) {
+struct ObservedServer {
+    address: String,
+    stop: Arc<AtomicBool>,
+    task: thread::JoinHandle<()>,
+    reads: Arc<ReadState>,
+    ledger: Arc<Mutex<Ledger>>,
+}
+fn start_observed(config: &Config) -> ObservedServer {
     let server = Server::open(config.clone()).unwrap();
     let address = server.address();
     let stop = server.stop_handle();
     let reads = server.reads.clone();
     let ledger = server.ledger.clone();
     let task = thread::spawn(move || server.serve().unwrap());
-    (address, stop, task, reads, ledger)
+    ObservedServer {
+        address,
+        stop,
+        task,
+        reads,
+        ledger,
+    }
 }
 fn start(config: &Config) -> (String, Arc<AtomicBool>, thread::JoinHandle<()>) {
-    let (address, stop, task, _, _) = start_observed(config);
-    (address, stop, task)
+    let running = start_observed(config);
+    (running.address, running.stop, running.task)
 }
 fn exchange(address: &str, credential: &str, request: &Request) -> Response {
     canonical::exchange(
@@ -693,7 +698,13 @@ fn scoped_cursor_survives_restart_and_hints_coalesce() {
     let scratch = std::env::var_os("TMPDIR").map(PathBuf::from).unwrap();
     let root = tempfile::tempdir_in(scratch).unwrap();
     let config = config(root.path());
-    let (address, stop, server, reads, ledger) = start_observed(&config);
+    let ObservedServer {
+        address,
+        stop,
+        task: server,
+        reads,
+        ledger,
+    } = start_observed(&config);
     let authority = match exchange(&address, READER, &Request::Progress) {
         Response::Progress { authority, .. } => authority,
         other => panic!("{other:?}"),
