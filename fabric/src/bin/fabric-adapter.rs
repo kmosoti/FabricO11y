@@ -32,20 +32,28 @@ fn run() -> Result<(), String> {
             );
         }
     };
-    let reader = match args.next().as_deref() {
-        None => None,
-        Some("--canonical-reader") if matches!(mode, Mode::Batch(_)) => Some((
-            args.next().ok_or("canonical reader endpoint required")?,
-            args.next().ok_or("canonical reader authority required")?,
-            PathBuf::from(
-                args.next()
-                    .ok_or("canonical reader credential file required")?,
-            ),
-        )),
-        Some(_) => return Err("unexpected argument".into()),
-    };
-    if args.next().is_some() {
-        return Err("unexpected argument".into());
+    let mut reader = None;
+    let mut protection = None;
+    while let Some(argument) = args.next() {
+        match argument.as_str() {
+            "--canonical-reader" if matches!(mode, Mode::Batch(_)) && reader.is_none() => {
+                reader = Some((
+                    args.next().ok_or("canonical reader endpoint required")?,
+                    args.next().ok_or("canonical reader authority required")?,
+                    PathBuf::from(
+                        args.next()
+                            .ok_or("canonical reader credential file required")?,
+                    ),
+                ));
+            }
+            "--protected-policy" if matches!(mode, Mode::Batch(_)) && protection.is_none() => {
+                protection = Some((
+                    PathBuf::from(args.next().ok_or("policy file required")?),
+                    args.next().ok_or("protected origin required")?,
+                ));
+            }
+            _ => return Err("unexpected argument".into()),
+        }
     }
     enum Adapter {
         Legacy(fabric::sdk::Client),
@@ -56,7 +64,13 @@ fn run() -> Result<(), String> {
         Mode::Legacy => Adapter::Legacy(fabric::sdk::Client::new(config)?),
         Mode::Run(context) => Adapter::Run(Box::new(fabric::sdk::RunClient::new(config, context)?)),
         Mode::Batch(path) => Adapter::Batch(Box::new(
-            fabric::sdk::BatchClient::open(config, &path).map_err(|e| e.to_string())?,
+            match protection {
+                Some((policy, origin)) => {
+                    fabric::sdk::BatchClient::open_protected(config, &path, &policy, origin)
+                }
+                None => fabric::sdk::BatchClient::open(config, &path),
+            }
+            .map_err(|e| e.to_string())?,
         )),
     };
     if let Some((endpoint, authority, credential)) = reader {

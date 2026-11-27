@@ -13,6 +13,7 @@ use std::{
 
 const APPLICATION_ID: u32 = u32::from_be_bytes(*b"FBOX");
 const SCHEMA_VERSION: u32 = 3;
+const PROTECTED_VERSION: u32 = 4;
 const MAX_COMPLETION_BYTES: usize = 4096;
 const STAGE_CLOCK: &str = "system_time.unix_ms";
 const STAGE_SOURCE: &str = "batch_outbox.stage_transaction";
@@ -60,6 +61,10 @@ const VISIBILITY_SCHEMA: &str = "
     ) STRICT;
 ";
 
+const PROTECTION_SCHEMA: &str = "
+    CREATE TABLE protection(singleton INTEGER PRIMARY KEY CHECK(singleton=1), policy_digest TEXT NOT NULL CHECK(length(policy_digest)=64), origin TEXT NOT NULL CHECK(length(origin) BETWEEN 1 AND 128)) STRICT;
+";
+
 #[derive(Clone)]
 pub(super) struct Lease {
     pub origin: String,
@@ -87,6 +92,23 @@ pub(super) struct Outbox {
 }
 impl Outbox {
     pub fn open(path: &Path, producer: &str, resource: &str) -> Result<Self, BatchError> {
+        Self::open_internal(path, producer, resource, None).map(|(outbox, _)| outbox)
+    }
+    pub fn open_protected(
+        path: &Path,
+        producer: &str,
+        resource: &str,
+        digest: &str,
+        origin: &str,
+    ) -> Result<(Self, bool), BatchError> {
+        Self::open_internal(path, producer, resource, Some((digest, origin)))
+    }
+    fn open_internal(
+        path: &Path,
+        producer: &str,
+        resource: &str,
+        protection: Option<(&str, &str)>,
+    ) -> Result<(Self, bool), BatchError> {
         let (path, owner) = open_directory(path)?;
         let db = path.join("outbox.sqlite");
         let journal = path.join("outbox.sqlite-journal");
@@ -128,7 +150,16 @@ impl Outbox {
                 })
                 .map_err(storage)?;
         if !initialize
-            && (application_id != APPLICATION_ID || !matches!(version, 1 | 2 | SCHEMA_VERSION))
+            && ((protection.is_none() && version == PROTECTED_VERSION)
+                || (protection.is_some() && version != PROTECTED_VERSION))
+        {
+            return Err(BatchError::Storage(
+                "outbox protection mode mismatch".into(),
+            ));
+        }
+        if !initialize
+            && (application_id != APPLICATION_ID
+                || !matches!(version, 1 | 2 | SCHEMA_VERSION | PROTECTED_VERSION))
         {
             return Err(BatchError::Storage("unsupported outbox database".into()));
         }
@@ -180,8 +211,27 @@ impl Outbox {
             transaction
                 .pragma_update(None, "application_id", APPLICATION_ID)
                 .map_err(storage)?;
+            if let Some((digest, origin)) = protection {
+                transaction
+                    .execute_batch(PROTECTION_SCHEMA)
+                    .map_err(storage)?;
+                transaction
+                    .execute(
+                        "INSERT INTO protection VALUES(1,?1,?2)",
+                        params![digest, origin],
+                    )
+                    .map_err(storage)?;
+            }
             transaction
-                .pragma_update(None, "user_version", SCHEMA_VERSION)
+                .pragma_update(
+                    None,
+                    "user_version",
+                    if protection.is_some() {
+                        PROTECTED_VERSION
+                    } else {
+                        SCHEMA_VERSION
+                    },
+                )
                 .map_err(storage)?;
             transaction.commit().map_err(storage)?;
         }
@@ -197,7 +247,7 @@ impl Outbox {
                 "outbox is bound to another producer or resource".into(),
             ));
         }
-        if !initialize && version < SCHEMA_VERSION {
+        if !initialize && protection.is_none() && version < SCHEMA_VERSION {
             let transaction = conn.transaction().map_err(storage)?;
             if version == 1 {
                 transaction.execute_batch(TIMING_SCHEMA).map_err(storage)?;
@@ -210,11 +260,26 @@ impl Outbox {
                 .map_err(storage)?;
             transaction.commit().map_err(storage)?;
         }
+        let held = if let Some((digest, origin)) = protection {
+            let matches: bool = conn
+                .query_row(
+                    "SELECT policy_digest=?1 AND origin=?2 FROM protection WHERE singleton=1",
+                    params![digest, origin],
+                    |row| row.get(0),
+                )
+                .map_err(storage)?;
+            !matches
+        } else {
+            false
+        };
         owner.sync_all().map_err(storage)?;
-        Ok(Self {
-            conn,
-            _owner: owner,
-        })
+        Ok((
+            Self {
+                conn,
+                _owner: owner,
+            },
+            held,
+        ))
     }
 
     pub fn lease(&self) -> Result<Option<Lease>, BatchError> {

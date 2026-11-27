@@ -7,6 +7,9 @@ use crate::{
     run::{RunContext, validate_id},
     spindle::{ORIGIN_MISMATCH, custody::Receipt, transport},
 };
+use fabric_evidence::capture_policy::{
+    CapturePolicy, CapturePolicyDigest, CapturedArtifactDigest, Omission,
+};
 use fabric_evidence::{
     ReportScope,
     application_result::{ApplicationPayloadDigest, ApplicationResult},
@@ -108,7 +111,28 @@ pub struct ApplicationReceipt {
     pub original_artifact_digest: OriginalArtifactDigest,
     pub application_payload_digest: ApplicationPayloadDigest,
     pub application_timing: Option<ApplicationTiming>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capture: Option<CaptureProvenance>,
 }
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CaptureProvenance {
+    pub policy_id: String,
+    pub policy_version: u16,
+    pub policy_source: String,
+    pub policy_digest: CapturePolicyDigest,
+    pub captured_digest: CapturedArtifactDigest,
+    pub omissions: Vec<Omission>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProtectedEnvelope {
+    version: u16,
+    capture: CaptureProvenance,
+    result: serde_json::Value,
+}
+const PROTECTED_MARKER: &str = "fabrico11y.application_result.protected.v2";
 
 const APPLICATION_MARKER: &str = "fabrico11y.application_result.v1";
 
@@ -136,11 +160,65 @@ fn application_digest(
     Ok(hash.finalize().into())
 }
 
+fn protected_digest(
+    context: &RunContext,
+    timestamp_ns: u64,
+    envelope: &ProtectedEnvelope,
+) -> Result<[u8; 32], BatchError> {
+    let mut hash = Sha256::new();
+    hash.update(b"FabricO11y protected application identity v2\0");
+    hash.update(
+        serde_json::to_vec(&(context, timestamp_ns, envelope))
+            .map_err(|_| BatchError::Invalid("invalid protected envelope".into()))?,
+    );
+    Ok(hash.finalize().into())
+}
+fn decode_protected(
+    value: &serde_json::Value,
+) -> Result<(ProtectedEnvelope, ApplicationResult), BatchError> {
+    let envelope: ProtectedEnvelope = serde_json::from_value(value.clone())
+        .map_err(|_| BatchError::Invalid("invalid protected envelope".into()))?;
+    let c = &envelope.capture;
+    if envelope.version != 2
+        || c.policy_version != 1
+        || c.policy_source != "owner_policy_file"
+        || c.policy_digest.0.representation
+            != fabric_evidence::evidence_manifest::DigestRepresentation::ExactBytes
+        || c.policy_id.is_empty()
+        || c.policy_id.len() > 128
+        || !c
+            .policy_id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
+        || c.policy_digest.0.validate().is_err()
+        || c.captured_digest.0.validate().is_err()
+        || c.omissions.len() > 3
+        || c.omissions.windows(2).any(|p| p[0] >= p[1])
+    {
+        return Err(BatchError::Invalid("invalid capture provenance".into()));
+    }
+    let bytes = serde_json::to_vec(&envelope.result)
+        .map_err(|_| BatchError::Invalid("invalid protected result".into()))?;
+    let result = ApplicationResult::decode_bounded(&bytes)
+        .map_err(|_| BatchError::Invalid("invalid protected result".into()))?;
+    let captured = result
+        .canonical_payload()
+        .map_err(|_| BatchError::Invalid("invalid protected payload".into()))?;
+    result
+        .verify_original_artifact(&captured)
+        .map_err(|_| BatchError::Invalid("invalid captured digest".into()))?;
+    if result.original_artifact_digest().0 != c.captured_digest.0 {
+        return Err(BatchError::Invalid("invalid captured digest".into()));
+    }
+    Ok((envelope, result))
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BatchError {
     Invalid(String),
     Conflict,
     Full,
+    PolicyHeld,
     GenerationCapacity { used: u64, limit: u64 },
     Expired,
     OriginMismatch,
@@ -154,6 +232,7 @@ impl BatchError {
             Self::Invalid(_) => "invalid",
             Self::Conflict => "conflict",
             Self::Full => "full",
+            Self::PolicyHeld => "policy_held",
             Self::GenerationCapacity { .. } => "generation_capacity",
             Self::Expired => "expired",
             Self::OriginMismatch => "origin_mismatch",
@@ -173,6 +252,7 @@ impl fmt::Display for BatchError {
                 formatter.write_str("report_id already belongs to a different request")
             }
             Self::Full => formatter.write_str("outbox has a pending report or reached its limit"),
+            Self::PolicyHeld => formatter.write_str("outbox held for policy mismatch"),
             Self::GenerationCapacity { used, limit } => write!(
                 formatter,
                 "Spindle generation capacity exhausted ({used}/{limit}); report not submitted"
@@ -204,6 +284,8 @@ pub struct BatchStatus {
     pub pending_expired: bool,
     pub confirmed: u64,
     pub last_error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy_state: Option<&'static str>,
 }
 
 /// A verified application envelope and the first local verification observation.
@@ -211,6 +293,8 @@ pub struct BatchStatus {
 pub struct VerifiedApplication {
     pub result: ApplicationResult,
     pub first_verified_read: ProvenancedTime,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capture: Option<CaptureProvenance>,
 }
 
 /// Authenticated, bounded view of one reporting boundary.
@@ -250,6 +334,12 @@ pub struct VerifiedAttemptObservation {
     pub observation: AttemptObservation,
 }
 
+struct Protection {
+    policy: CapturePolicy,
+    origin: String,
+    held: bool,
+}
+
 struct CanonicalReader {
     client: crate::query::Client,
     authority: String,
@@ -263,6 +353,7 @@ pub struct BatchClient {
     outbox: Outbox,
     last_error: Option<String>,
     reader: Option<CanonicalReader>,
+    protection: Option<Protection>,
 }
 impl BatchClient {
     /// Opens an owner-only directory and attempts a bounded replay of any pending
@@ -275,6 +366,7 @@ impl BatchClient {
             outbox,
             last_error: None,
             reader: None,
+            protection: None,
         };
         if client.outbox.pending_id()?.is_some() {
             let deadline = Instant::now() + client.config.delivery_timeout;
@@ -283,6 +375,55 @@ impl BatchClient {
             }
         }
         Ok(client)
+    }
+
+    /// Opens a new protected outbox after loading a private, owner-provisioned policy.
+    pub fn open_protected(
+        config: Config,
+        directory: &Path,
+        policy_file: &Path,
+        origin: String,
+    ) -> Result<Self, BatchError> {
+        validate_context_config(&config).map_err(BatchError::Invalid)?;
+        if origin.is_empty() || origin.len() > 128 || origin.contains('\0') {
+            return Err(BatchError::Invalid("invalid protected origin".into()));
+        }
+        let raw = crate::query::read_credential_fd(policy_file, true, 16384)
+            .map_err(|_| BatchError::Invalid("invalid policy file".into()))?;
+        let policy = CapturePolicy::decode(raw.as_bytes())
+            .map_err(|_| BatchError::Invalid("invalid policy file".into()))?;
+        let (outbox, held) = Outbox::open_protected(
+            directory,
+            &config.producer,
+            &config.resource,
+            &policy.digest().0.hex,
+            &origin,
+        )?;
+        let mut client = Self {
+            config,
+            outbox,
+            last_error: None,
+            reader: None,
+            protection: Some(Protection {
+                policy,
+                origin,
+                held,
+            }),
+        };
+        if !held && client.outbox.pending_id()?.is_some() {
+            let deadline = Instant::now() + client.config.delivery_timeout;
+            if let Err(error @ BatchError::Storage(_)) = client.flush_local(deadline) {
+                return Err(error);
+            }
+        }
+        Ok(client)
+    }
+    fn require_policy_ready(&self) -> Result<(), BatchError> {
+        if self.protection.as_ref().is_some_and(|p| p.held) {
+            Err(BatchError::PolicyHeld)
+        } else {
+            Ok(())
+        }
     }
 
     /// Configure an independently provisioned canonical reader credential.
@@ -389,19 +530,29 @@ impl BatchClient {
         let Data::JsonLog { fields } = &observation.data else {
             return Err(BatchError::Unavailable("not an application result".into()));
         };
-        let value = fields
-            .get(APPLICATION_MARKER)
-            .ok_or_else(|| BatchError::Unavailable("not an application result".into()))?;
-        let bytes =
-            serde_json::to_vec(value).map_err(|e| BatchError::Unavailable(e.to_string()))?;
-        let result = ApplicationResult::decode_bounded(&bytes)
-            .map_err(|e| BatchError::Unavailable(format!("invalid application result: {e:?}")))?;
+        let (result, capture) = if let Some(value) = fields.get(PROTECTED_MARKER) {
+            let (envelope, result) = decode_protected(value)?;
+            (result, Some(envelope.capture))
+        } else {
+            let value = fields
+                .get(APPLICATION_MARKER)
+                .ok_or_else(|| BatchError::Unavailable("not an application result".into()))?;
+            let bytes =
+                serde_json::to_vec(value).map_err(|e| BatchError::Unavailable(e.to_string()))?;
+            (
+                ApplicationResult::decode_bounded(&bytes).map_err(|e| {
+                    BatchError::Unavailable(format!("invalid application result: {e:?}"))
+                })?,
+                None,
+            )
+        };
         let first_verified_read = self.outbox.record_verified_read(report_id)?;
         check_read_deadline(deadline)?;
         Ok((
             VerifiedApplication {
                 result,
                 first_verified_read,
+                capture,
             },
             receipt,
         ))
@@ -646,6 +797,11 @@ impl BatchClient {
     /// Persists and submits a new report, or returns its previously stored receipt.
     /// The RPC work is limited by `config.delivery_timeout`.
     pub fn record(&mut self, report: BatchReport) -> Result<Receipt, BatchError> {
+        if self.protection.is_some() {
+            return Err(BatchError::Invalid(
+                "protected outbox requires application capture".into(),
+            ));
+        }
         let digest = report.digest()?;
         let deadline = Instant::now() + self.config.delivery_timeout;
         if let Some(saved) = self.outbox.find(&report.report_id)? {
@@ -698,22 +854,65 @@ impl BatchClient {
         &mut self,
         report: ApplicationReport,
     ) -> Result<ApplicationReceipt, BatchError> {
+        self.require_policy_ready()?;
         report.context.validate().map_err(BatchError::Invalid)?;
+        if self
+            .protection
+            .as_ref()
+            .is_some_and(|p| p.origin != report.scope.origin())
+        {
+            return Err(BatchError::OriginMismatch);
+        }
         if report.scope.producer() != self.config.producer {
             return Err(BatchError::Invalid(
                 "application producer does not match outbox".into(),
             ));
         }
+        let captured = self
+            .protection
+            .as_ref()
+            .map(|p| {
+                p.policy
+                    .capture(report.artifact_json.as_bytes())
+                    .map_err(|_| BatchError::Invalid("invalid capture input".into()))
+            })
+            .transpose()?;
+        let artifact = captured
+            .as_ref()
+            .map_or(report.artifact_json.as_bytes(), |c| c.bytes.as_slice());
         let result = ApplicationResult::new(
             report.scope,
             report.report_id.clone(),
             report.parent_report_id,
             report.schema,
             report.producer_completion,
-            report.artifact_json.as_bytes(),
+            artifact,
         )
         .map_err(|e| BatchError::Invalid(format!("invalid application result: {e:?}")))?;
-        let digest = application_digest(&report.context, report.timestamp_ns, &result)?;
+        let capture = captured.map(|c| CaptureProvenance {
+            policy_id: c.policy_id,
+            policy_version: c.policy_version,
+            policy_source: "owner_policy_file".into(),
+            policy_digest: c.policy_digest,
+            captured_digest: c.digest,
+            omissions: c.omissions,
+        });
+        let protected = capture
+            .as_ref()
+            .map(|capture| -> Result<ProtectedEnvelope, BatchError> {
+                Ok(ProtectedEnvelope {
+                    version: 2,
+                    capture: capture.clone(),
+                    result: serde_json::to_value(&result)
+                        .map_err(|_| BatchError::Invalid("invalid protected result".into()))?,
+                })
+            })
+            .transpose()?;
+        let digest = if let Some(envelope) = &protected {
+            protected_digest(&report.context, report.timestamp_ns, envelope)?
+        } else {
+            application_digest(&report.context, report.timestamp_ns, &result)?
+        };
         let original_artifact_digest = result.original_artifact_digest().clone();
         let application_payload_digest = result.application_payload_digest().clone();
         let result_id = result.report_id().to_owned();
@@ -755,7 +954,15 @@ impl BatchClient {
             let value = serde_json::from_slice(&envelope)
                 .map_err(|e| BatchError::Invalid(e.to_string()))?;
             let mut fields = serde_json::Map::new();
-            fields.insert(APPLICATION_MARKER.into(), value);
+            if let Some(envelope) = &protected {
+                fields.insert(
+                    PROTECTED_MARKER.into(),
+                    serde_json::to_value(envelope)
+                        .map_err(|_| BatchError::Invalid("invalid protected envelope".into()))?,
+                );
+            } else {
+                fields.insert(APPLICATION_MARKER.into(), value);
+            }
             let observation = ObservationV3 {
                 version: observation::VERSION_V3,
                 registry: observation::REGISTRY_V3.into(),
@@ -787,6 +994,7 @@ impl BatchClient {
             original_artifact_digest,
             application_payload_digest,
             application_timing: self.outbox.application_timing(&result_id)?,
+            capture,
         })
     }
 
@@ -804,6 +1012,10 @@ impl BatchClient {
             pending_expired,
             confirmed: self.outbox.confirmed_count()?,
             last_error: self.last_error.clone(),
+            policy_state: self
+                .protection
+                .as_ref()
+                .map(|p| if p.held { "held" } else { "active" }),
         })
     }
 
@@ -831,6 +1043,7 @@ impl BatchClient {
     /// Retries the only pending report up to the deadline, or returns the most
     /// recent confirmed receipt when the outbox is already quiescent.
     pub fn flush_local(&mut self, deadline: Instant) -> Result<Option<Receipt>, BatchError> {
+        self.require_policy_ready()?;
         let Some(pending) = self.outbox.pending()? else {
             return self.outbox.latest_receipt();
         };
@@ -953,6 +1166,21 @@ impl BatchClient {
                 "outbox payload identity mismatch".into(),
             ));
         }
+        if let Some(protection) = &self.protection {
+            let Data::JsonLog { fields } = &observation.data else {
+                return Err(BatchError::Storage("invalid protected frame".into()));
+            };
+            let value = fields
+                .get(PROTECTED_MARKER)
+                .ok_or_else(|| BatchError::Storage("invalid protected frame".into()))?;
+            let (envelope, _) = decode_protected(value)
+                .map_err(|_| BatchError::Storage("invalid protected frame".into()))?;
+            if envelope.capture.policy_digest != protection.policy.digest()
+                || lease.origin != protection.origin
+            {
+                return Err(BatchError::PolicyHeld);
+            }
+        }
         let receipt = match transport::submit_bytes(&self.config.socket, &pending.bytes, deadline) {
             Ok(receipt) => receipt,
             Err(error) if error == "generation expired" => {
@@ -977,6 +1205,18 @@ fn pending_digest(
     if let Data::JsonLog { fields } = &observation.data {
         if fields.len() != 1 {
             return Err(BatchError::Invalid("invalid application carrier".into()));
+        }
+        if let Some(value) = fields.get(PROTECTED_MARKER) {
+            let (envelope, result) = decode_protected(value)?;
+            if result.report_id() != report_id
+                || result.scope().producer() != observation.identity.producer
+                || result.scope().origin() != origin
+            {
+                return Err(BatchError::Invalid(
+                    "application carrier scope or identity mismatch".into(),
+                ));
+            }
+            return protected_digest(&observation.context, observation.timestamp_ns, &envelope);
         }
         let value = fields
             .get(APPLICATION_MARKER)
@@ -1093,7 +1333,12 @@ pub fn batch_adapter_reply(client: &mut BatchClient, bytes: &[u8]) -> serde_json
             let report_id = report.report_id.clone();
             match client.record_application(report) {
                 Ok(confirmed) => {
-                    serde_json::json!({"report_id":report_id,"delivery_state":"custody_confirmed","durably_staged":true,"projection":"unchecked","receipt":confirmed.receipt,"original_artifact_digest":confirmed.original_artifact_digest,"application_payload_digest":confirmed.application_payload_digest,"application_timing":confirmed.application_timing})
+                    let mut reply = serde_json::json!({"report_id":report_id,"delivery_state":"custody_confirmed","durably_staged":true,"projection":"unchecked","receipt":confirmed.receipt,"original_artifact_digest":confirmed.original_artifact_digest,"application_payload_digest":confirmed.application_payload_digest,"application_timing":confirmed.application_timing});
+                    if let Some(capture) = confirmed.capture {
+                        reply["capture"] =
+                            serde_json::to_value(capture).expect("capture serialization");
+                    }
+                    reply
                 }
                 Err(error) => {
                     let pending = matches!(
@@ -1204,7 +1449,11 @@ pub fn batch_adapter_reply(client: &mut BatchClient, bytes: &[u8]) -> serde_json
             Ok(status) => serde_json::json!({"status":status}),
             Err(error) => error_reply(error),
         },
-        Err(error) => error_reply(BatchError::Invalid(error)),
+        Err(error) => error_reply(BatchError::Invalid(if client.protection.is_some() {
+            "invalid protected command".into()
+        } else {
+            error
+        })),
     }
 }
 

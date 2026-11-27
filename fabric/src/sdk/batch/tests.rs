@@ -1013,3 +1013,208 @@ fn authenticated_exact_readback_rejects_mismatches_and_preserves_first_time() {
     );
     peer.join().unwrap();
 }
+
+#[test]
+fn protected_outbox_holds_policy_changes_and_replays_sanitized_frame() {
+    use fabric_evidence::capture_policy::{CapturePolicy, FieldRule, ScalarType};
+    use std::{net::TcpListener, sync::mpsc};
+    let base = directory();
+    let socket = base.path().join("spindle.sock");
+    let outbox = base.path().join("protected");
+    let policy = CapturePolicy::new(
+        "trusted".into(),
+        4096,
+        65536,
+        vec![FieldRule {
+            name: "allowed".into(),
+            scalar_type: ScalarType::Text,
+        }],
+    )
+    .unwrap();
+    let path = base.path().join("policy");
+    fs::write(&path, policy.canonical_bytes()).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+    let bad = base.path().join("bad-policy");
+    fs::write(&bad, policy.canonical_bytes()).unwrap();
+    fs::set_permissions(&bad, fs::Permissions::from_mode(0o644)).unwrap();
+    let mut config = Config::local(socket.clone(), "batch-test".into()).unwrap();
+    config.delivery_timeout = Duration::from_secs(3);
+    assert!(
+        BatchClient::open_protected(
+            config.clone(),
+            &base.path().join("never-created"),
+            &bad,
+            "origin".into()
+        )
+        .is_err()
+    );
+    assert!(!base.path().join("never-created").exists());
+    let listener = UnixListener::bind(&socket).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let (sender, receiver) = mpsc::sync_channel(1);
+    let first = thread::spawn(move || {
+        let (stream, request) = recv(&listener);
+        assert!(matches!(
+            serde_json::from_slice(&request).unwrap(),
+            Request::FabricProgress
+        ));
+        send(
+            stream,
+            &Reply::FabricProgress {
+                authority: None,
+                origin: "origin".into(),
+                through: 0,
+            },
+        );
+        let (stream, request) = recv(&listener);
+        assert!(matches!(
+            serde_json::from_slice(&request).unwrap(),
+            Request::LeaseForOrigin { .. }
+        ));
+        send(
+            stream,
+            &Reply::Lease {
+                generation: "lease".into(),
+                expires_unix_s: wall_time().unwrap() + 3600,
+            },
+        );
+        let (stream, bytes) = recv(&listener);
+        sender.send(bytes).unwrap();
+        drop(stream);
+        listener
+    });
+    let mut client =
+        BatchClient::open_protected(config.clone(), &outbox, &path, "origin".into()).unwrap();
+    let mut report = application_report(1, "batch-test", "origin");
+    report.artifact_json = "{\"allowed\":\"public\",\"FORBIDDEN-NAME\":\"FORBIDDEN-VALUE\"}".into();
+    assert!(matches!(
+        client.record_application(report.clone()),
+        Err(BatchError::Unavailable(_))
+    ));
+    let raw_hash = format!("{:x}", Sha256::digest(report.artifact_json.as_bytes()));
+    let original = receiver.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert!(!std::str::from_utf8(&original).unwrap().contains(&raw_hash));
+    let listener = first.join().unwrap();
+    let text = std::str::from_utf8(&original).unwrap();
+    assert!(!text.contains("FORBIDDEN-NAME") && !text.contains("FORBIDDEN-VALUE"));
+    let frame = observation::decode_versioned(&original).unwrap();
+    let identity = frame.identity().clone();
+    let Data::JsonLog { fields } = frame.data() else {
+        panic!("expected protected carrier")
+    };
+    let (envelope, result) = decode_protected(&fields[PROTECTED_MARKER]).unwrap();
+    assert_eq!(
+        result.canonical_payload().unwrap(),
+        br#"{"allowed":"public"}"#
+    );
+    assert_eq!(envelope.capture.policy_digest, policy.digest());
+    assert_eq!(envelope.capture.omissions, vec![Omission::PolicyExcluded]);
+    drop(client);
+    for name in ["outbox.sqlite", "outbox.sqlite-journal"] {
+        let p = outbox.join(name);
+        if p.exists() {
+            let bytes = fs::read(p).unwrap();
+            assert!(!bytes.windows(b"FORBIDDEN".len()).any(|w| w == b"FORBIDDEN"));
+        }
+    }
+    assert!(BatchClient::open(config.clone(), &outbox).is_err());
+    let wrong = CapturePolicy::new("different".into(), 4096, 65536, vec![]).unwrap();
+    let wrong_path = base.path().join("wrong");
+    fs::write(&wrong_path, wrong.canonical_bytes()).unwrap();
+    fs::set_permissions(&wrong_path, fs::Permissions::from_mode(0o600)).unwrap();
+    let mut held =
+        BatchClient::open_protected(config.clone(), &outbox, &wrong_path, "origin".into()).unwrap();
+    assert_eq!(held.status().unwrap().policy_state, Some("held"));
+    assert_eq!(
+        held.flush_local(Instant::now() + Duration::from_secs(1)),
+        Err(BatchError::PolicyHeld)
+    );
+    assert!(matches!(listener.accept(),Err(e) if e.kind()==std::io::ErrorKind::WouldBlock));
+    drop(held);
+    let origin_held =
+        BatchClient::open_protected(config.clone(), &outbox, &path, "other-origin".into()).unwrap();
+    assert_eq!(origin_held.status().unwrap().policy_state, Some("held"));
+    assert!(matches!(listener.accept(),Err(e) if e.kind()==std::io::ErrorKind::WouldBlock));
+    drop(origin_held);
+    let peer = thread::spawn(move || {
+        let (stream, replay) = recv(&listener);
+        assert_eq!(replay, original);
+        send(
+            stream,
+            &Reply::Receipt {
+                receipt: Receipt {
+                    id: 44,
+                    identity,
+                    duplicate: false,
+                },
+            },
+        );
+    });
+    let mut client =
+        BatchClient::open_protected(config.clone(), &outbox, &path, "origin".into()).unwrap();
+    peer.join().unwrap();
+    let mut equivalent = report;
+    equivalent.artifact_json = "{\"allowed\":\"public\",\"OTHER-SECRET\":\"DIFFERENT\"}".into();
+    let confirmed = client.record_application(equivalent).unwrap();
+    assert_eq!(confirmed.receipt.id, 44);
+    assert_eq!(confirmed.capture.unwrap().policy_digest, policy.digest());
+    // A separately authenticated exact canonical response retains the protected metadata.
+    let canonical = TcpListener::bind("127.0.0.1:0").unwrap();
+    let endpoint = canonical.local_addr().unwrap().to_string();
+    let credential = base.path().join("reader");
+    fs::write(&credential, "reader-secret-for-capture-test").unwrap();
+    fs::set_permissions(&credential, fs::Permissions::from_mode(0o600)).unwrap();
+    let original_result = result.clone();
+    let peer = thread::spawn(move || {
+        let (mut stream, _) = canonical.accept().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let (_, request) = crate::canonical::accept_authenticated_sync(
+            &mut stream,
+            ["reader-secret-for-capture-test"],
+            deadline,
+        )
+        .unwrap();
+        let crate::canonical::Request::ExactReceiptLookup { request } = request else {
+            panic!("wrong request")
+        };
+        let mut fields = serde_json::Map::new();
+        fields.insert(
+            PROTECTED_MARKER.into(),
+            serde_json::to_value(&envelope).unwrap(),
+        );
+        let frame = ObservationV3 {
+            version: observation::VERSION_V3,
+            registry: observation::REGISTRY_V3.into(),
+            context: RunContext {
+                run_id: "aaaa0000-0000-0000-0000-000000000001".into(),
+            },
+            identity: request.identity,
+            timestamp_ns: 123,
+            resource: "local".into(),
+            data: Data::JsonLog { fields },
+        };
+        let response = crate::canonical::Response::ExactReceiptFound {
+            authority: "authority".into(),
+            row: Some(crate::canonical::CanonicalRow {
+                canonical_id: 1,
+                origin: "origin".into(),
+                source_id: 44,
+                raw: serde_json::to_string(&frame).unwrap(),
+            }),
+        };
+        crate::canonical::write_frame(
+            &mut stream,
+            &serde_json::to_vec(&response).unwrap(),
+            deadline,
+        )
+        .unwrap();
+    });
+    client
+        .configure_reader(endpoint, "authority".into(), &credential)
+        .unwrap();
+    let verified = client
+        .verify_application(original_result.report_id())
+        .unwrap();
+    assert_eq!(verified.capture.unwrap().policy_digest, policy.digest());
+    peer.join().unwrap();
+}

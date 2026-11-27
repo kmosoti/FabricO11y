@@ -230,6 +230,13 @@ optional parent boundary against its owner outbox and canonical reader before
 returning a summary. It shares one deadline across the reads, rejects deeper
 parent chains and retains unknown cases.
 
+A policy-protected batch outbox loads trusted owner configuration before any
+replay and binds its policy digest and expected origin in a distinct schema
+version. A changed policy holds pending frames; an ordinary open cannot replay
+that store. Protected application envelopes carry only permitted captured
+bytes, their digest and policy provenance. This boundary applies to that batch
+ingress; direct Spindle, ordinary batch and other collectors are separate.
+
 ### Application result envelope
 
 `fabric-evidence` defines a bounded application-result envelope (also re-exported

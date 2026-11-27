@@ -497,3 +497,12 @@ type = "decision"
 date = 2026-11-27
 added_by = "agent"
 human_ratified = false
+
+[[records]]
+id = "D-0203"
+source_path = "knowledge/decisions/D-0203-protected-capture.md"
+title = "Protected application capture"
+type = "decision"
+date = 2026-11-27
+added_by = "agent"
+human_ratified = false

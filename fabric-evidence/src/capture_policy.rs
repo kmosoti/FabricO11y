@@ -8,7 +8,7 @@ use crate::{
     },
     evidence_manifest::{DigestAlgorithm, DigestClaim, DigestRepresentation},
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -19,7 +19,7 @@ pub const MAX_CAPTURE_TEXT_BYTES: usize = 512;
 pub const MAX_CAPTURE_WORK: usize = 65_536;
 
 /// Version 1 only captures explicitly permitted top-level scalars.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ScalarType {
     Null,
@@ -28,7 +28,7 @@ pub enum ScalarType {
     Text,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FieldRule {
     pub name: String,
@@ -56,7 +56,7 @@ pub enum CaptureError {
 }
 
 /// Fixed classes reveal neither omitted names, values, counts nor exact lengths.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Omission {
     PolicyExcluded,
@@ -65,11 +65,11 @@ pub enum Omission {
 }
 
 /// SHA-256 of canonical policy bytes; this role is not an artifact digest.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct CapturePolicyDigest(pub DigestClaim);
 /// SHA-256 of permitted captured UTF-8 bytes, never of the suppressed input.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct CapturedArtifactDigest(pub DigestClaim);
 
@@ -121,6 +121,32 @@ impl CapturePolicy {
             max_work,
             rules,
         })
+    }
+
+    /// Decode an owner-supplied bounded policy and reapply all constructor checks.
+    pub fn decode(bytes: &[u8]) -> Result<Self, CaptureError> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Wire {
+            version: u16,
+            policy_id: String,
+            max_input_bytes: usize,
+            max_work: usize,
+            rules: Vec<FieldRule>,
+        }
+        if bytes.len() > 16384 {
+            return Err(CaptureError::InvalidPolicy);
+        }
+        let wire: Wire = serde_json::from_slice(bytes).map_err(|_| CaptureError::InvalidPolicy)?;
+        if wire.version != CAPTURE_POLICY_VERSION {
+            return Err(CaptureError::InvalidPolicy);
+        }
+        Self::new(
+            wire.policy_id,
+            wire.max_input_bytes,
+            wire.max_work,
+            wire.rules,
+        )
     }
 
     pub fn canonical_bytes(&self) -> Vec<u8> {
