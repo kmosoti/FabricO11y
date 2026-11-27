@@ -290,6 +290,16 @@ semantic_directive = false
 historical_evidence = false
 
 [[files]]
+path = "frontend/README.md"
+classification = "maintained-prose"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = false
+
+[[files]]
 path = "knowledge/README.md"
 classification = "knowledge-index-and-guidance"
 presentation_metadata = "none-found"

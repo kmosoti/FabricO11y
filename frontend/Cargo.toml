@@ -1,0 +1,4 @@
+[workspace]
+members = ["fabric-app-core", "parity"]
+default-members = ["fabric-app-core"]
+resolver = "3"
