@@ -443,11 +443,10 @@ impl Projection {
                 if s.origin == row.origin
                     && s.min_source <= row.source_id
                     && row.source_id <= s.max_source
+                    && matched.replace(segment).is_some()
                 {
-                    if matched.replace(segment).is_some() {
-                        ambiguous = true;
-                        break;
-                    }
+                    ambiguous = true;
+                    break;
                 }
             }
             if !ambiguous {
@@ -503,7 +502,7 @@ impl Projection {
         check()?;
         use rustix::fs::{Mode, OFlags};
         let handle = rustix::fs::open(
-            &self.dir.join(&segment.file),
+            self.dir.join(&segment.file),
             OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
             Mode::empty(),
         )

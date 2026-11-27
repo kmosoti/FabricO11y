@@ -1,8 +1,6 @@
 //! Bounded canonical receipt-list readiness at an explicit source barrier.
 use fabric::{
-    canonical::{
-        self, ReceiptBatchItem, ReceiptBatchRequest, ReceiptBatchStatus, Request, Response,
-    },
+    canonical::{ReceiptBatchItem, ReceiptBatchRequest, ReceiptBatchStatus, Request, Response},
     spindle::custody::Receipt,
 };
 use std::{
