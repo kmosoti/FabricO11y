@@ -6,6 +6,7 @@
 //! or numeric coercion is performed. See `docs/corpus-contract.md`.
 
 pub mod as_of;
+pub mod portable;
 
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
