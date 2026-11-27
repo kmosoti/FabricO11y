@@ -354,6 +354,7 @@ mod tests {
     fn grants() -> Auth {
         Auth {
             reader: "reader".into(),
+            writers: Default::default(),
             nodes: [
                 ("service-telemetry".into(), "separate-telemetry-key".into()),
                 ("workload".into(), "node-key".into()),

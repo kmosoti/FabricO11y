@@ -208,12 +208,12 @@ fn competing_acceptance_lost_reply_new_head_and_restart() {
         .query_row("SELECT count(*) FROM plan_decision", [], |r| r.get(0))
         .unwrap();
     assert_eq!(count, 0);
-    let head: Option<i64> = db
+    let initial_head: Option<i64> = db
         .query_row("SELECT head FROM plan_scope WHERE scope='plan'", [], |r| {
             r.get(0)
         })
         .unwrap();
-    assert!(head.is_none());
+    assert!(initial_head.is_none());
     db.execute_batch("DROP TRIGGER abort_plan; UPDATE records SET published=1 WHERE origin='origin' AND source_id=1;").unwrap();
     drop(db);
     let barrier = Arc::new(Barrier::new(3));
