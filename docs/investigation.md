@@ -18,7 +18,8 @@ JSON
 Use `fabric-query plan` with the same input to inspect conservative selected
 segment and row counts. `fabric-query evidence ID` retrieves original canonical
 JSON for an authorized source. `fabric-query progress` reads canonical source
-frontiers. `fabric-query cancel QUERY_ID` requests cancellation. Start
+frontiers. `fabric-query capabilities` reports receiver identity and protocol
+limits. `fabric-query cancel QUERY_ID` requests cancellation. Start
 `fabric-mcp` with the same environment to expose these operations over standard
 MCP stdio. Standard output carries protocol results; diagnostics use stderr.
 

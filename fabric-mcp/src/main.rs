@@ -247,6 +247,22 @@ async fn main() {
     }
 }
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
+    const USAGE: &str = "Usage: fabric-mcp [-h | --help]
+
+Serve read-only investigations over MCP stdio.
+Environment:
+  FABRIC_ENDPOINT         Canonical fabric-server host:port
+  FABRIC_CREDENTIAL_FILE  Private, owned reader credential file
+  FABRIC_CREDENTIAL       Inline alternative to FABRIC_CREDENTIAL_FILE";
+    let mut args = std::env::args().skip(1);
+    match args.next().as_deref() {
+        None => {}
+        Some("--help" | "-h") if args.next().is_none() => {
+            println!("{USAGE}");
+            return Ok(());
+        }
+        Some(_) => return Err(USAGE.into()),
+    }
     let (endpoint, credential) = fabric::query::connection_from_env()?;
     let reader = FramedRead::new(
         tokio::io::stdin(),
