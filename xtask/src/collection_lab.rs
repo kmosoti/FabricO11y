@@ -9,6 +9,37 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// Fixed collection resource scenarios used by the executable runner and its
+/// declaration tests. These are experimental workload inputs, not policy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ResourceWorkload {
+    pub case: &'static str,
+    pub slots: usize,
+    pub record_capacity_bytes: usize,
+    pub producers: usize,
+}
+
+pub const RESOURCE_WORKLOADS: [ResourceWorkload; 3] = [
+    ResourceWorkload {
+        case: "short-record",
+        slots: 1,
+        record_capacity_bytes: 1024,
+        producers: 1,
+    },
+    ResourceWorkload {
+        case: "full-width",
+        slots: 8,
+        record_capacity_bytes: 4096,
+        producers: 4,
+    },
+    ResourceWorkload {
+        case: "sequence-width",
+        slots: 17,
+        record_capacity_bytes: 2048,
+        producers: 3,
+    },
+];
+
 pub fn config(root: &Path) -> spindle::Config {
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(root, std::fs::Permissions::from_mode(0o700)).unwrap();
