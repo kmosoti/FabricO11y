@@ -1,5 +1,7 @@
 use chrono::Utc;
-use fabric_core::{HostSnapshot, LogRecord, MetricPoint, UnitRecord};
+use fabric_core::{
+    AgentSessionRecord, FsEventRecord, HostSnapshot, LogRecord, MetricPoint, UnitRecord,
+};
 use fabric_query::unified::{
     QueryDomain, UnifiedQuerySpec, execute_unified_query, parse_duration_ms,
 };
@@ -122,6 +124,144 @@ async fn unified_query_supports_metrics_logs_units_and_aggregations() {
         units_res.rows[0]["name"].as_str(),
         Some("fabric-synth-load-test.scope")
     );
+}
+
+#[tokio::test]
+async fn unified_predicates_use_the_selected_domains_field_types() {
+    let dir = non_tmp_dir();
+    let catalog = CatalogStore::open(dir.path()).unwrap();
+    let olap = OlapParquetStore::new(catalog.layout().clone());
+    let now = Utc::now().timestamp_millis();
+    olap.write_logs(&[LogRecord {
+        timestamp_ms: now,
+        message: "007's status is true".into(),
+        ..Default::default()
+    }])
+    .unwrap();
+    olap.write_fs_events(&[FsEventRecord {
+        timestamp_ms: now,
+        path: "/data/work/file".into(),
+        delta_bytes: -4096,
+        owner_pid: Some(42),
+        ..Default::default()
+    }])
+    .unwrap();
+    let snapshot = HostSnapshot {
+        units: vec![
+            UnitRecord {
+                name: "007".into(),
+                transient: true,
+                main_pid: Some(42),
+                cpu_usage_usec: u64::MAX,
+                populated: true,
+                ..Default::default()
+            },
+            UnitRecord {
+                name: "inactive.service".into(),
+                main_pid: Some(43),
+                cpu_usage_usec: u64::MAX - 1,
+                ..Default::default()
+            },
+        ],
+        agents: vec![AgentSessionRecord {
+            session_id: "agent-fixture".into(),
+            pids: vec![42, 43],
+            write_bytes: 9_007_199_254_740_993,
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    for (domain, predicates, field, expected) in [
+        (
+            QueryDomain::Units,
+            vec![
+                "transient=TRUE",
+                "populated!=false",
+                "MAIN_PID=42",
+                "name=007",
+            ],
+            "name",
+            "007",
+        ),
+        (
+            QueryDomain::Units,
+            vec![
+                "transient=false",
+                "main_pid>42",
+                "collect_mode_enabled=false",
+            ],
+            "name",
+            "inactive.service",
+        ),
+        (
+            QueryDomain::Units,
+            vec!["cpu_usage_usec=18446744073709551615"],
+            "name",
+            "007",
+        ),
+        (
+            QueryDomain::Logs,
+            vec!["message=007's status is true"],
+            "message",
+            "007's status is true",
+        ),
+        (
+            QueryDomain::Fs,
+            vec!["delta_bytes=-4096", "owner_pid=42"],
+            "path",
+            "/data/work/file",
+        ),
+        (
+            QueryDomain::Agents,
+            vec!["pid_count=2", "write_bytes=9007199254740993"],
+            "session_id",
+            "agent-fixture",
+        ),
+    ] {
+        let result = execute_unified_query(
+            dir.path(),
+            &UnifiedQuerySpec {
+                domain,
+                where_clauses: predicates.into_iter().map(str::to_owned).collect(),
+                ..Default::default()
+            },
+            &[],
+            Some(&snapshot),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.row_count, 1);
+        assert_eq!(result.rows[0][field].as_str(), Some(expected));
+    }
+
+    for (predicate, expected) in [
+        ("transient=maybe", "invalid Boolean value"),
+        ("populated<true", "invalid for Boolean"),
+        ("main_pid=-1", "invalid UInt32 value"),
+        ("main_pid=42.5", "invalid UInt32 value"),
+        (
+            "cpu_usage_usec=18446744073709551616",
+            "invalid UInt64 value",
+        ),
+        ("owner_pid=42", "unknown units field"),
+    ] {
+        let Err(error) = execute_unified_query(
+            dir.path(),
+            &UnifiedQuerySpec {
+                domain: QueryDomain::Units,
+                where_clauses: vec![predicate.into()],
+                ..Default::default()
+            },
+            &[],
+            Some(&snapshot),
+        )
+        .await
+        else {
+            panic!("accepted {predicate}");
+        };
+        assert!(error.contains(expected), "{predicate}: {error}");
+    }
 }
 
 #[cfg(unix)]
