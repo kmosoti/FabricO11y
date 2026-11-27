@@ -778,6 +778,23 @@ fn handle(
     if !reader && node.is_none() {
         return Err("unauthorized".into());
     }
+    // Normalize the additive command only after authentication and reader
+    // authorization, and before telemetry, preparation or analytical admission.
+    let request = match request {
+        Request::QueryWithOperationVersion {
+            request,
+            operation_version,
+        } => {
+            if !reader {
+                return Err("read credential required".into());
+            }
+            let request = fabric::query::contracts::negotiate_v1(request, operation_version)
+                .map_err(|_| "unsupported query operation contract")?
+                .into_request();
+            Request::Query { request }
+        }
+        request => request,
+    };
     let allows =
         |origin: &str| reader && auth.nodes.contains_key(origin) || node.as_deref() == Some(origin);
     let mut measurement = reads
@@ -930,6 +947,7 @@ fn handle(
             };
             Ok(Response::Plan { plan })
         }
+        Request::QueryWithOperationVersion { .. } => unreachable!("normalized above"),
         Request::Query { mut request } => {
             if !reader {
                 return Err("read credential required".into());
@@ -1184,6 +1202,40 @@ mod receipt_tests {
             Response::ProjectionReady { readiness } => readiness,
             other => panic!("unexpected probe response {other:?}"),
         }
+    }
+
+    #[test]
+    fn rejected_operation_version_does_not_reserve_query_slot() {
+        let (_root, server) = fixture();
+        let request = QueryRequest {
+            version: 1,
+            query_id: "version-check".into(),
+            authority: None,
+            scope: vec!["not-granted".into()],
+            snapshot: Default::default(),
+            filter: Default::default(),
+            operation: fabric::query::Operation::ListRuns,
+            budgets: Default::default(),
+            cursor: None,
+        };
+        let mut lease = None;
+        let result = handle(
+            true,
+            None,
+            Request::QueryWithOperationVersion {
+                request,
+                operation_version: 2,
+            },
+            &server.ledger,
+            &server.projection,
+            &server.auth,
+            &server.projection_error,
+            &server.reads,
+            &mut lease,
+        );
+        assert!(matches!(result, Err(error) if error == "unsupported query operation contract"));
+        assert!(lease.is_none());
+        assert!(!server.reads.queries.lock().unwrap().active);
     }
 
     #[test]

@@ -641,9 +641,23 @@ pub mod contracts {
         request: QueryRequest,
     }
     impl NegotiatedQuery {
+        /// Return the exact request whose operation and versions were checked.
+        pub fn into_request(self) -> QueryRequest {
+            self.request
+        }
+
         pub fn call(self, handler: impl FnOnce(QueryRequest) -> QueryResponse) -> QueryResponse {
             handler(self.request)
         }
+    }
+
+    /// Negotiate against the built-in query inventory.
+    pub fn negotiate_v1(
+        request: QueryRequest,
+        operation_version: u32,
+    ) -> Result<NegotiatedQuery, RegistryError> {
+        let registry = Registry::new(&QUERY_V1)?;
+        negotiate(&registry, request, operation_version)
     }
 
     /// This local gate does not authenticate, deserialize, or dispatch a wire call.

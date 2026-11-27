@@ -93,7 +93,10 @@ validates independent protocol and operation versions before returning a typed
 handler token. Registry metadata conveys no authority; adapters retain request
 and response types and choose their own transport and compatibility policy.
 The `fabric::query` adapter binds its seven v1 operations to its existing query
-DTOs, without changing their wire representation. The architecture check also
+DTOs, without changing their wire representation. An additive authenticated
+canonical query command carries an operation version separately from the
+existing request body; reader authorization and version checking precede
+query preparation and resource reservation. Legacy query remains supported. The architecture check also
 checks explicit native x86-64 and wasm32 normal/build dependency allowlists for
 `fabric-ops`, `fabric-colloquium`, and `fabric-corpus`.
 Batch construction is atomic with the in-memory transition; an adapter owns
