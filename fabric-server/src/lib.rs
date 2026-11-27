@@ -1342,14 +1342,14 @@ mod receipt_tests {
             cursor: None,
         };
         let mut lease = None;
+        let request = Request::QueryWithOperationVersion {
+            request,
+            operation_version: 2,
+        };
+        let grant = test_grant(&server, "reader", &request);
         let result = handle(
-            true,
-            None,
-            None,
-            Request::QueryWithOperationVersion {
-                request,
-                operation_version: 2,
-            },
+            &grant,
+            request,
             &server.ledger,
             &server.projection,
             &server.auth,
