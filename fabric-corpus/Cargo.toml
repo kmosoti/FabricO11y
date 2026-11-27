@@ -1,0 +1,8 @@
+[package]
+name = "fabric-corpus"
+version = "0.1.1-alpha.2"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+sha2 = "0.10"
