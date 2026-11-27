@@ -1043,6 +1043,8 @@ fn receipt_bench_command(bins: &Path, root: &Path, args: &[&str]) -> (Value, u64
     let output = Command::new("/usr/bin/time")
         .args(["-f", "%U %S %M", "-o"])
         .arg(&timing)
+        .arg("timeout")
+        .arg("45")
         .arg(bins.join("fabric"))
         .arg("--tmp-dir")
         .arg(root)
@@ -1129,6 +1131,40 @@ fn compare_receipt_batches(
     let reader = root.join("reader");
     let receipt_file = receipt_path.to_str().unwrap();
     let reader_file = reader.to_str().unwrap();
+    let proxy = TcpListener::bind("127.0.0.1:0").unwrap();
+    proxy.set_nonblocking(true).unwrap();
+    let proxy_address = proxy.local_addr().unwrap().to_string();
+    let proxy_target = endpoint.to_owned();
+    let proxy_stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let proxy_count = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let running = proxy_stop.clone();
+    let count = proxy_count.clone();
+    let proxy_thread = thread::spawn(move || {
+        while !running.load(std::sync::atomic::Ordering::Acquire) {
+            match proxy.accept() {
+                Ok((mut client, _)) => {
+                    count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let target = proxy_target.clone();
+                    thread::spawn(move || {
+                        let mut upstream = std::net::TcpStream::connect(target).unwrap();
+                        let mut upload = upstream.try_clone().unwrap();
+                        let mut download = client.try_clone().unwrap();
+                        let forward = thread::spawn(move || {
+                            let _ = std::io::copy(&mut client, &mut upload);
+                            let _ = upload.shutdown(std::net::Shutdown::Write);
+                        });
+                        let _ = std::io::copy(&mut upstream, &mut download);
+                        let _ = download.shutdown(std::net::Shutdown::Write);
+                        let _ = forward.join();
+                    });
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    thread::sleep(Duration::from_millis(2))
+                }
+                Err(e) => panic!("receipt proxy: {e}"),
+            }
+        }
+    });
     let batch_args = [
         "receipt-batch-ready",
         "--json",
@@ -1143,7 +1179,7 @@ fn compare_receipt_batches(
         "--reader-credential-file",
         reader_file,
         "--server-endpoint",
-        endpoint,
+        &proxy_address,
         "--timeout-ms",
         "30000",
     ];
@@ -1159,8 +1195,9 @@ fn compare_receipt_batches(
         assert_eq!(outcome["status"], "ready");
         assert_eq!(outcome["canonical_sha256"], digests[i]);
     }
-    let manifest: Value =
-        serde_json::from_slice(&fs::read(root.join("projection/manifest.json")).unwrap()).unwrap();
+    let manifest_path = root.join("projection/manifest.json");
+    let manifest_bytes = fs::read(&manifest_path).unwrap();
+    let manifest: Value = serde_json::from_slice(&manifest_bytes).unwrap();
     let segments: Vec<_> = manifest["manifest"]["segments"]
         .as_array()
         .unwrap()
@@ -1196,8 +1233,27 @@ fn compare_receipt_batches(
     .trim()
     .parse::<u64>()
     .unwrap();
+    let fixed_frontier = || match canonical::exchange(
+        endpoint,
+        READER,
+        &Request::Progress,
+        Instant::now() + Duration::from_secs(5),
+    )
+    .unwrap()
+    {
+        Response::Progress {
+            authority: observed,
+            frontiers,
+        } => {
+            assert_eq!(observed, authority);
+            frontiers[origin]
+        }
+        other => panic!("progress: {other:?}"),
+    };
+    let initial_frontier = fixed_frontier();
+    assert_eq!(initial_frontier, 182);
     let mut samples = Vec::new();
-    for temperature in ["segment_cold", "warm"] {
+    for temperature in ["segment_cold_start", "warm"] {
         for pair in 0..3 {
             let order = if pair % 2 == 0 {
                 ["single", "batch"]
@@ -1205,11 +1261,22 @@ fn compare_receipt_batches(
                 ["batch", "single"]
             };
             for arm in order {
-                let eviction = if temperature == "segment_cold" {
+                assert_eq!(
+                    fs::read(&manifest_path).unwrap(),
+                    manifest_bytes,
+                    "manifest changed between arms"
+                );
+                assert_eq!(
+                    fixed_frontier(),
+                    initial_frontier,
+                    "custody frontier changed"
+                );
+                let eviction = if temperature == "segment_cold_start" {
                     Some(receipt_bench_evict(&paths))
                 } else {
                     None
                 };
+                let connections_before = proxy_count.load(std::sync::atomic::Ordering::Relaxed);
                 let before = receipt_bench_receiver(server.0.id());
                 let start = Instant::now();
                 let mut output_bytes = 0u64;
@@ -1217,11 +1284,17 @@ fn compare_receipt_batches(
                 let mut max_client_rss_kib = 0u64;
                 let (requests, scanned_rows, segment_attempts) = if arm == "single" {
                     for (receipt, path) in receipts.iter().zip(&inputs) {
+                        assert!(
+                            start.elapsed() < Duration::from_secs(300),
+                            "single arm deadline"
+                        );
                         let args = [
                             "projection-ready",
                             "--json",
                             "--target",
                             "canonical",
+                            "--wait",
+                            "30s",
                             "--authority",
                             authority,
                             "--origin",
@@ -1231,7 +1304,7 @@ fn compare_receipt_batches(
                             "--reader-credential-file",
                             reader_file,
                             "--server-endpoint",
-                            endpoint,
+                            &proxy_address,
                         ];
                         let (report, bytes, cpu, rss) = receipt_bench_command(bins, root, &args);
                         output_bytes += bytes;
@@ -1269,13 +1342,45 @@ fn compare_receipt_batches(
                         report["data"]["segment_attempts"].as_u64().unwrap(),
                     )
                 };
+                assert!(
+                    start.elapsed() < Duration::from_secs(300),
+                    "measurement arm deadline"
+                );
                 let elapsed_ns = start.elapsed().as_nanos() as u64;
                 let after = receipt_bench_receiver(server.0.id());
-                samples.push(json!({"temperature":temperature,"pair":pair,"arm":arm,"eviction":eviction,"requests":requests,"client_invocations":requests,"elapsed_ns":elapsed_ns,"receiver_cpu_ticks":after.0-before.0,"receiver_clk_tck":hz,"receiver_read_chars":after.1-before.1,"receiver_storage_read_bytes":after.2-before.2,"client_cpu_seconds":client_cpu,"max_client_rss_kib":max_client_rss_kib,"stdout_bytes":output_bytes,"segment_rows":scanned_rows,"segment_attempts":segment_attempts}));
+                let connections =
+                    proxy_count.load(std::sync::atomic::Ordering::Relaxed) - connections_before;
+                assert_eq!(connections, requests, "unexpected polling/requests");
+                assert_eq!(
+                    fs::read(&manifest_path).unwrap(),
+                    manifest_bytes,
+                    "manifest changed during arm"
+                );
+                assert_eq!(
+                    fixed_frontier(),
+                    initial_frontier,
+                    "custody frontier changed"
+                );
+                let status = fs::read_to_string(format!("/proc/{}/status", server.0.id())).unwrap();
+                let receiver_vm_hwm_kib = status
+                    .lines()
+                    .find_map(|line| line.strip_prefix("VmHWM:"))
+                    .unwrap()
+                    .split_whitespace()
+                    .next()
+                    .unwrap()
+                    .parse::<u64>()
+                    .unwrap();
+                samples.push(json!({"temperature":temperature,"pair":pair,"arm":arm,"eviction":eviction,"connections_observed":connections,"client_invocations":requests,"elapsed_ns":elapsed_ns,"receiver_cpu_ticks_with_background":after.0-before.0,"receiver_clk_tck":hz,"receiver_read_chars":after.1-before.1,"receiver_storage_read_bytes":after.2-before.2,"receiver_vm_hwm_kib":receiver_vm_hwm_kib,"client_cpu_seconds":client_cpu,"max_client_rss_kib":max_client_rss_kib,"stdout_bytes":output_bytes,"segment_rows_manifest_derived_or_reserved":scanned_rows,"segment_attempts_manifest_derived_or_reserved":segment_attempts}));
+                if let Some(path) = std::env::var_os("FABRIC_TEST_199_METRICS") {
+                    fs::write(path, serde_json::to_vec_pretty(&samples).unwrap()).unwrap();
+                }
             }
         }
     }
-    let result = json!({"source_barrier":182,"single_rows_are_manifest_derived":true,"cold_scope":"projection segment pages only; verified mincore after eviction","samples":samples});
+    proxy_stop.store(true, std::sync::atomic::Ordering::Release);
+    proxy_thread.join().unwrap();
+    let result = json!({"source_barrier":182,"manifest_and_custody_unchanged":true,"segment_counts":"manifest-derived single; batch reserved","cold_scope":"projection segment pages at arm start only; verified mincore after eviction","restart_scope":"adapter and receiver restarted; Spindle remains running","samples":samples});
     if let Some(path) = std::env::var_os("FABRIC_TEST_199_METRICS") {
         fs::write(path, serde_json::to_vec_pretty(&result).unwrap()).unwrap();
     }
