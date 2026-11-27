@@ -2122,10 +2122,9 @@ fn open_protected_reader(
     outbox: &Path,
     policy: &Path,
     origin: &str,
-    endpoint: &str,
-    authority: &str,
-    credential: &Path,
+    reader: (&str, &str, &Path),
 ) -> (OwnedChild, mpsc::Receiver<Value>) {
+    let (endpoint, authority, credential) = reader;
     let mut child = OwnedChild(
         Command::new(bins.join("fabric-adapter"))
             .arg(socket)
@@ -2225,9 +2224,7 @@ fn protected_application_real_custody_and_policy_hold() {
         &outbox,
         &policy,
         &source.origin,
-        &endpoint,
-        &authority,
-        &reader,
+        (&endpoint, &authority, &reader),
     );
     let raw = r#"{"allowed":"visible","FORBIDDEN-NAME":"FORBIDDEN-VALUE"}"#;
     let report = json!({"command":"record_application","report_id":"00000000-0000-4001-8000-000000000001","context":{"run_id":"00000000-0000-4000-8000-000000000001"},"scope":{"origin":source.origin,"producer":"batch-fixture"},"parent_report_id":null,"schema":"example.result.v1","producer_completion":{"unix_ms":42,"clock":{"clock_id":"producer","source":"fixture","uncertainty_ms":null}},"artifact_json":raw,"timestamp_ns":123});
@@ -2263,9 +2260,7 @@ fn protected_application_real_custody_and_policy_hold() {
         &outbox,
         &wrong,
         &source.origin,
-        &endpoint,
-        &authority,
-        &reader,
+        (&endpoint, &authority, &reader),
     );
     batch_send(&mut held, &json!({"command":"status"}));
     assert_eq!(batch_reply(&replies)["status"]["policy_state"], "held");
@@ -2299,9 +2294,7 @@ fn protected_application_real_custody_and_policy_hold() {
         &outbox,
         &policy,
         &source.origin,
-        &endpoint,
-        &authority,
-        &reader,
+        (&endpoint, &authority, &reader),
     );
     batch_send(&mut adapter, &report);
     let confirmed = batch_reply(&replies);
