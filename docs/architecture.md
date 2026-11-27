@@ -136,7 +136,11 @@ bound input and reject duplicate keys before constructing sets and maps. A
 separate `fabric.snapshot.v1` application payload carries at most 16 ordered
 case references and must also fit the application-result 4 KiB and shape
 limits. Parent and case digests are claims until authenticated readback; the
-pure codec checks same-source cutoff ordinals without comparing clocks.
+pure codec checks same-source cutoff ordinals without comparing clocks. The
+batch adapter can authenticate the root, its known case references and one
+optional parent boundary against its owner outbox and canonical reader before
+returning a summary. It shares one deadline across the reads, rejects deeper
+parent chains and retains unknown cases.
 
 ### Application result envelope
 

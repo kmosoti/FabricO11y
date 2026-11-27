@@ -30,3 +30,12 @@ same scope, population and definition, and a strictly increasing ordinal on
 the same immutable cutoff source. Provenanced timestamps are retained but are
 not compared to establish ordering. The pure matcher cannot authenticate a
 result or establish a receipt; adapters must do so before using the match.
+
+The batch adapter can verify a snapshot through the owner's configured
+canonical reader. It authenticates the root and every known case, and, for a
+supplement, the directly named parent and its known cases, before returning a
+bounded summary. Parent chains beyond one boundary are refused. Each lookup
+uses the exact outbox receipt and one shared deadline; synchronous local disk
+operations are checked around calls but cannot be interrupted midway. An
+unknown case stays unknown. These checks do not establish corpus or review
+bindings or analytical projection visibility.
