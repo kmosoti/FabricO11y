@@ -1,6 +1,22 @@
 use proc_macro2::{TokenStream, TokenTree};
 use serde::Deserialize;
 use std::{collections::BTreeMap, fs, path::Path};
+const PORTABLE_QUERY_ALLOW: &[&str] = &[
+    "fabric-query-contract",
+    "fabric-ops",
+    "serde",
+    "serde_core",
+    "serde_derive",
+    "serde_json",
+    "proc-macro2",
+    "quote",
+    "syn",
+    "unicode-ident",
+    "itoa",
+    "memchr",
+    "zmij",
+];
+
 #[derive(Deserialize)]
 struct Policy {
     crates: BTreeMap<String, Vec<String>>,
@@ -151,6 +167,7 @@ pub fn check(root: &Path) -> Result<(), String> {
         }
     }
     for (package, allowed) in [
+        ("fabric-query-contract", PORTABLE_QUERY_ALLOW),
         ("fabric-ops", &["fabric-ops"][..]),
         ("fabric-colloquium", &["fabric-colloquium"][..]),
         (
@@ -209,6 +226,25 @@ mod tests {
                 .is_err()
         );
         assert!(super::check_profile_graph("fabric-ops", "", &["fabric-ops"]).is_err());
+        assert!(
+            super::check_profile_graph(
+                "fabric-query-contract",
+                "fabric-query-contract v1\nserde v1\n",
+                super::PORTABLE_QUERY_ALLOW
+            )
+            .is_ok()
+        );
+        for forbidden in ["fabric", "tokio", "rusqlite", "schemars"] {
+            let graph = format!("fabric-query-contract v1\n{forbidden} v1\n");
+            assert!(
+                super::check_profile_graph(
+                    "fabric-query-contract",
+                    &graph,
+                    super::PORTABLE_QUERY_ALLOW
+                )
+                .is_err()
+            );
+        }
     }
     #[test]
     fn rejects_verification_escapes_not_comments() {
