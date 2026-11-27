@@ -319,3 +319,12 @@ status = "working contract"
 date = 2026-11-27
 added_by = "agent"
 human_ratified = false
+
+[[records]]
+id = "D-0197"
+source_path = "knowledge/decisions/D-0197-typed-operation-contracts.md"
+title = "Typed operation contracts"
+type = "decision"
+date = 2026-11-27
+added_by = "agent"
+human_ratified = false

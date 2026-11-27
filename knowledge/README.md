@@ -49,6 +49,7 @@ TOML-native records without changing that cohort or its count.
 | [D-0190 · Zero-UI Typed Consumer Crate (`fabric-client`)](decisions/D-0190-zero-ui-fabric-client.md) | `agent` | `false` | Zero-UI `fabric.cli.v1` schema crate (`fabric-client`), `FABRIC_CREDENTIAL_FILE`-only `FabricQueryClient`, env stripping, redaction, and `kill_on_drop` |
 | [D-0191 · Verified develop integration and human release promotion](decisions/D-0191-verified-develop-integration.md) | `agent` | `false` | Current-base integration, exact promotion and final artifact qualification |
 | [D-0194 · Causal contribution projection](decisions/D-0194-causal-contributions.md) | `agent` | `false` | Bounded runtime-neutral contribution and proposal heads |
+| [D-0197 · Typed operation contracts](decisions/D-0197-typed-operation-contracts.md) | `agent` | `false` | Versioned typed registry and payload-free outcome categories |
 | [D-0195 · Runtime-neutral operation lifecycles](decisions/D-0195-operation-lifecycle.md) | `agent` | `false` | Bounded lifecycle transitions and adapter-established trust context |
 | [D-0193 · Research corpus revision identity](decisions/D-0193-corpus-revisions.md) | `agent` | `false` | Transport-free immutable revision and claim boundaries |
 | [D-0192 · Headless defaults and an optional frontend](decisions/D-0192-optional-frontend.md) | `agent` | `false` | Supersedes D-0002's product-wide UI prohibition and retains the D-0190 client boundary |

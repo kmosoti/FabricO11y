@@ -4,6 +4,8 @@
 //! ticks. This crate neither parses wire claims nor performs I/O. A tick is only
 //! meaningful in the adapter's local clock domain.
 
+pub mod registry;
+
 /// Milliseconds on an adapter-provided monotonic clock; the epoch is local.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Tick(pub u64);
