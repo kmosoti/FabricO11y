@@ -197,13 +197,21 @@ sequenceDiagram
     participant Gate as main-release
     Author->>CI: Open issue PR or dependent stack layer
     CI-->>Develop: Verify the current base and head
-    Author->>Develop: Integrate reviewed layers bottom-up
+    Author->>Develop: Integrate reviewed layers bottom-up via trusted controller
     Develop->>Owner: Main PR with frozen head, base, tree and digest
     Owner->>Gate: Approve the candidate
     Owner->>Main: Merge the approved promotion
     Main->>CI: Qualify the actual main SHA and artifact bytes
     Owner->>Gate: Tag the qualified SHA and approve publication
 ```
+
+The trusted develop integration controller validates authenticated live PR,
+merge-preview, hosted checkout and independent review facts using the read-only
+`cargo xtask integration verify` predicate from trusted develop. It serializes
+landing and refreshes evidence on changes; the predicate does not authenticate
+facts or mutate GitHub. The [contributor procedure](../CONTRIBUTING.md#current-base-integration-evidence)
+defines the trust boundary and protected-path baseline. GitHub enforces the two
+named development checks; independent review is enforced by this procedure.
 
 The [promotion runbook](release-promotion.md) covers ref checks, the existing
 branch divergence, and the release evidence required before tagging.

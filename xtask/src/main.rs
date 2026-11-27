@@ -10,6 +10,7 @@ use xtask::evidence;
 mod extraction;
 mod fuzz;
 mod guide;
+mod integration;
 mod profile;
 mod proof;
 mod registry;
@@ -377,10 +378,11 @@ fn main() -> ExitCode {
         ["profile", rest @ ..] => profile::cli(rest, &root),
         ["benchmark", "compare", rest @ ..] => benchmark::compare(rest),
         ["benchmark", out] => profile::cli(&["benchmark", out], &root),
+        ["integration", "verify", file] => integration::cli(Path::new(file)),
         ["candidate", "capture", file] => capture_to(&root, Path::new(file)),
         ["candidate", "verify", file] => verify(&root, Path::new(file)),
         _ => Err(
-            "usage: doctor | prove | check --tier fast|medium|extensive|acceptance | check --group workspace|workflow|native | candidate capture|verify FILE | coverage validate|check | guide wiki REVISION"
+            "usage: integration verify FILE | doctor | prove | check --tier fast|medium|extensive|acceptance | check --group workspace|workflow|native | candidate capture|verify FILE | coverage validate|check | guide wiki REVISION"
                 .into(),
         ),
     };

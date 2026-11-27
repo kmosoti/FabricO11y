@@ -32,6 +32,61 @@ its dependents and rerun their evidence. Integrate one layer at a time by rebase
 then retarget the next PR and recheck its actual base and head. Require an
 independent review for agent-authored work.
 
+### Current-base integration evidence
+
+The integration controller serializes landings and runs the validator from a
+clean, trusted `develop` checkout, never from the candidate. The version 1 input
+shape is illustrated by [the synthetic fixture](xtask/tests/fixtures/integration-v1.json);
+its IDs are examples, not evidence. Collect facts independently using the
+authenticated GitHub API, Git objects and hosted Actions job logs; candidate-provided
+facts and review assertions are not trusted. Store the evidence outside the candidate.
+
+1. Query the live repository and PR: require an open, non-draft PR targeting
+   `develop`, capture its current base and head, and reject conflicts or an
+   unavailable merge preview. Inspect the preview Git commit and tree: its two
+   ordered parents must be the live base and head. Derive changed paths from
+   the base to the preview tree, including both old and new paths for renames.
+2. Identify the implementation author independently of the GitHub account that
+   posts the PR. Obtain a review in a separate context by a distinct reviewer,
+   bound to repository, PR, base, head and preview tree. Record the reviewer,
+   implementation author, independent context and review receipt reference.
+   Review the complete diff for protected semantics, including changes outside
+   the inventory; set `semantic_review_required` when that inspection identifies
+   protected semantics, and record the specific semantics reviewed when relevant. A shared
+   public GitHub identity used to post work is not itself independent approval.
+3. Identify the `pull_request` run of `.github/workflows/development-checks.yml`
+   for the candidate and the same run attempt's successful `verify` and
+   `native-acceptance` jobs. Record their unique job IDs and the checkout commit
+   from each hosted job's checkout log, not the run summary's head SHA. Correlate
+   the run's source branch/head and checkout preview with the PR and ordered
+   parents when the run API's PR association is empty. The hosted jobs check
+   those parents. Supply only facts verified by the controller.
+4. Run `cargo xtask integration verify /absolute/path/to/facts.json`. Inventory
+   matches require a nonempty semantic review scope. The baseline covers
+   `registry/`, `proofs/`, `verification/`, `.github/`, `.codex/`,
+   `admission-kernel/`, `docs/contracts/`, `schemas/`, `spec/`, `specs/`, filenames
+   containing `auth`, `schema`, `policy`, `spec`, `contract`, or `gate`
+   (case-insensitive), path components named
+   `auth`, `authorization`, `schema`, `schemas`, `policy` or `policies`, and
+   `AGENTS.md`, `CONTRIBUTING.md`, root Cargo manifests/lock and toolchain,
+   architecture/direction documents, and the integration validator and its
+   dispatcher and manifest. This inventory is a conservative floor, not a
+   complete classifier of semantic changes.
+5. While holding the integration serialization lock, re-query the PR, develop,
+   merge preview, run and review immediately before landing. If any bound fact
+   changes, stop and repeat collection, review and checks. Land one PR using
+   `gh pr merge <number> --rebase --match-head-commit <verified-head>` and
+   verify the resulting develop ref before proceeding. If an actor can update
+   develop outside the lock, serialization is not assured: stop and coordinate
+   that actor. The head guard alone is not a base compare-and-swap.
+
+GitHub requires the named checks on `develop`; the trusted controller enforces
+this procedure and independent review. The validator checks consistency of
+supplied facts, not their authenticity or cryptographic independence of models.
+Only the owner review and `main-release` gate apply to the protected main
+promotion. A changed base or head invalidates the evidence rather than carrying
+review or checks forward.
+
 Only the owner promotes `develop` into `main` and publishes releases. Follow the
 [promotion runbook](docs/release-promotion.md).
 
