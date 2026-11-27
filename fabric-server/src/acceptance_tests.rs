@@ -823,6 +823,8 @@ fn scoped_cursor_survives_restart_and_hints_coalesce() {
     assert!(head(&changed) > frontier);
     stop.store(true, Ordering::SeqCst);
     server.join().unwrap();
+    drop(ledger);
+    drop(reads);
     let (address, stop, server) = start(&config);
     assert!(matches!(
         exchange(&address, WRITER, &poll()),
