@@ -150,10 +150,10 @@ impl Payload {
                 return Err(DurableError::InvalidCases);
             }
             prior = Some(&case.id);
-            if let CaseEvidence::Known { reference } = &case.evidence {
-                if !reports.insert(&reference.report_id) || !digest(&reference.payload_digest) {
-                    return Err(DurableError::InvalidReference);
-                }
+            if let CaseEvidence::Known { reference } = &case.evidence
+                && (!reports.insert(&reference.report_id) || !digest(&reference.payload_digest))
+            {
+                return Err(DurableError::InvalidReference);
             }
         }
         if self
