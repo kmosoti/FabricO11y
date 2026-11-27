@@ -1,11 +1,3 @@
----
-id: D-0194
-title: Bounded MCP status scheduling
-added_by: agent
-human_ratified: false
-date: 2026-11-27
----
-
 The stdio adapter used one fail-fast work slot for all reads. An in-flight
 capabilities call could therefore reject a pipelined progress call, and a query
 could prevent clients from reading receiver status.

@@ -85,7 +85,9 @@ rows, which consumers decode as the documented row type for the operation.
 ### MCP request scheduling
 
 The stdio adapter uses the same credential-bound canonical exchanges as the CLI.
-It admits one analytical or evidence exchange at a time. The adapter reserves a
+Each Reader process admits one work exchange at a time, including analytical,
+evidence, live metrics and segment inspection requests. A separate Writer
+process admits one acceptance exchange at a time. The adapter reserves a
 separate exchange for cancellation and keeps the analytical slot occupied until
 the blocking exchange ends. Status calls queue in the order they start waiting
 for the single status worker, with a 16-request total limit and a shared
@@ -96,7 +98,9 @@ assignments and overload behavior.
 flowchart LR
     Host["MCP stdio host"]
     Host -->|"capabilities, progress"| Status["Status · FIFO, 16 total"]
-    Host -->|"query, plan, evidence"| Work["Work · one active"]
+    Host -->|"query, plan, evidence, live metrics, segment inspection"| Work["Reader work · one active"]
+    Writer["Writer host"] -->|"plan acceptance"| WriterWork["Writer work · one active"]
+    WriterWork --> Canonical
     Host -->|"cancel or cancellation notification"| Cancel["Cancellation · one active"]
     Status --> Canonical["Authenticated canonical receiver"]
     Work --> Canonical
