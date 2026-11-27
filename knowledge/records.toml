@@ -373,3 +373,12 @@ type = "decision"
 date = 2026-11-27
 added_by = "agent"
 human_ratified = false
+
+[[records]]
+id = "D-0270"
+source_path = "knowledge/decisions/D-0270-conditional-plan-acceptance.md"
+title = "Conditional canonical plan acceptance"
+type = "decision"
+date = 2026-11-27
+added_by = "agent"
+human_ratified = false
