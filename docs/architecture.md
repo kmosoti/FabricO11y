@@ -430,6 +430,15 @@ flowchart LR
     RESOLVE --> SETTINGS["fabric settings"]
 ```
 
+### Lineage and process attribution
+
+Lineage in both directions is the union of separate upstream and downstream
+traversals from the matched roots, each bounded by the requested depth. Agent
+attribution checks known browser identities first, then the executable or process
+name, a direct script invoked by a supported interpreter, and finally the unit
+name. Arbitrary arguments do not establish agent identity. Unrecognized
+processes in `agent.slice` retain the process-name fallback.
+
 ## 3. Integration and release
 
 ```mermaid

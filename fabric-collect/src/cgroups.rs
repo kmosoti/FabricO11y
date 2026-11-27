@@ -231,21 +231,8 @@ fn read_process_sample(
     let comm = fs::read_to_string(proc_dir.join("comm"))
         .map(|s| s.trim().to_owned())
         .ok()?;
-    let cmdline = fs::read(proc_dir.join("cmdline"))
-        .map(|bytes| {
-            let parts: Vec<String> = bytes
-                .split(|&b| b == 0)
-                .filter(|s| !s.is_empty())
-                .map(|s| String::from_utf8_lossy(s).into_owned())
-                .collect();
-            let joined = parts.join(" ");
-            if joined.len() > 240 {
-                joined.chars().take(240).collect()
-            } else {
-                joined
-            }
-        })
-        .unwrap_or_default();
+    let cmdline_bytes = fs::read(proc_dir.join("cmdline")).unwrap_or_default();
+    let (argv, cmdline) = parse_process_cmdline(&cmdline_bytes);
 
     let (ppid, cpu_time_ticks) = read_proc_stat(&proc_dir.join("stat"));
     let rss_bytes = read_proc_rss(&proc_dir.join("statm"));
@@ -255,7 +242,13 @@ fn read_process_sample(
         .map(|p| p.to_string_lossy().into_owned());
 
     let (open_fds, unlinked_fds, open_paths) = scan_proc_fds(&proc_dir.join("fd"));
-    let agent_hint = detect_agent_hint(&slice, unit.as_deref(), &comm, &cmdline);
+    let agent_hint = detect_agent_hint(
+        &slice,
+        unit.as_deref(),
+        &comm,
+        argv.first().map_or("", AsRef::as_ref),
+        argv.get(1).map_or("", AsRef::as_ref),
+    );
 
     Some(ProcessSample {
         pid,
@@ -276,25 +269,137 @@ fn read_process_sample(
     })
 }
 
-fn detect_agent_hint(slice: &str, unit: Option<&str>, comm: &str, cmdline: &str) -> Option<String> {
-    let haystack = format!("{comm} {cmdline} {}", unit.unwrap_or_default()).to_ascii_lowercase();
-    for marker in [
-        "synthetic_agent",
-        "antigravity",
-        "agy",
-        "codex",
-        "metron",
-        "dsh",
-        "fabric",
-    ] {
-        if haystack.contains(marker) {
-            return Some(marker.to_owned());
+fn parse_process_cmdline(bytes: &[u8]) -> (Vec<std::borrow::Cow<'_, str>>, String) {
+    let argv: Vec<_> = bytes
+        .split(|&byte| byte == 0)
+        .map(String::from_utf8_lossy)
+        .collect();
+    let joined = argv
+        .iter()
+        .filter(|arg| !arg.is_empty())
+        .map(AsRef::as_ref)
+        .collect::<Vec<&str>>()
+        .join(" ");
+    let cmdline = if joined.len() > 240 {
+        joined.chars().take(240).collect()
+    } else {
+        joined
+    };
+    (argv, cmdline)
+}
+
+const AGENTS: &[&str] = &[
+    "synthetic_agent",
+    "antigravity",
+    "agy",
+    "codex",
+    "metron",
+    "dsh",
+    "fabric",
+];
+const BROWSER_UNITS: &[&str] = &[
+    "com.google.chrome",
+    "org.chromium.chromium",
+    "gnome-chatgpt",
+    "google-chrome",
+    "chrome",
+    "chromium",
+    "org.mozilla.firefox",
+    "firefox",
+    "com.brave.browser",
+    "brave",
+    "vivaldi",
+    "microsoft-edge",
+    "org.gnome.epiphany",
+];
+const BROWSER_PROCESSES: &[&str] = &[
+    "chrome",
+    "google-chrome",
+    "google-chrome-stable",
+    "google-chrome-beta",
+    "google-chrome-unstable",
+    "chromium",
+    "chromium-browser",
+    "chrome_crashpad",
+    "crashpad_handler",
+    "firefox",
+    "firefox-bin",
+    "brave",
+    "brave-browser",
+    "vivaldi-bin",
+    "msedge",
+    "epiphany",
+    "webkitwebprocess",
+    "webkitnetworkprocess",
+    "web content",
+    "isolated web co",
+];
+
+fn unit_has_name(unit: &str, name: &str) -> bool {
+    unit.strip_prefix(name)
+        .is_some_and(|suffix| suffix.is_empty() || suffix.starts_with(['-', '.', '@']))
+}
+
+fn executable_name(path: &str) -> &str {
+    path.rsplit('/').next().unwrap_or_default()
+}
+
+fn known_agent(executable: &str) -> Option<&'static str> {
+    let name = match executable {
+        "synthetic_agent_load" => "synthetic_agent",
+        _ => executable,
+    };
+    AGENTS.iter().copied().find(|&agent| agent == name)
+}
+
+fn detect_agent_hint(
+    slice: &str,
+    unit: Option<&str>,
+    comm: &str,
+    argv0: &str,
+    argv1: &str,
+) -> Option<String> {
+    let unit = unit.unwrap_or_default().to_ascii_lowercase();
+    let desktop_unit = unit
+        .strip_prefix("app-flatpak-")
+        .or_else(|| unit.strip_prefix("app-"));
+    let command = comm.to_ascii_lowercase();
+    let executable = executable_name(argv0).to_ascii_lowercase();
+    if BROWSER_PROCESSES.contains(&executable.as_str())
+        || BROWSER_PROCESSES.contains(&command.as_str())
+        || desktop_unit
+            .is_some_and(|unit| BROWSER_UNITS.iter().any(|name| unit_has_name(unit, name)))
+    {
+        return None;
+    }
+
+    if let Some(agent) = known_agent(&executable).or_else(|| known_agent(&command)) {
+        return Some(agent.to_owned());
+    }
+    // Only a direct script invocation is evidence. Flags, their values, URLs, and later
+    // arguments can describe arbitrary work unrelated to the process executable.
+    if matches!(
+        executable.as_str(),
+        "node" | "nodejs" | "python" | "python3" | "bun" | "deno"
+    ) && !argv1.starts_with('-')
+        && !argv1.contains("://")
+    {
+        let script = executable_name(argv1).to_ascii_lowercase();
+        let script = [".js", ".mjs", ".cjs", ".py"]
+            .into_iter()
+            .find_map(|extension| script.strip_suffix(extension))
+            .unwrap_or(&script);
+        if let Some(agent) = known_agent(script) {
+            return Some(agent.to_owned());
         }
     }
-    if slice == "agent.slice" {
-        return Some(comm.to_owned());
-    }
-    None
+    let unit = desktop_unit.unwrap_or(&unit);
+    AGENTS
+        .iter()
+        .copied()
+        .find(|name| unit_has_name(unit, name))
+        .map(str::to_owned)
+        .or_else(|| (slice == "agent.slice" && !comm.is_empty()).then(|| comm.to_owned()))
 }
 
 fn aggregate_agent_sessions(processes: &[ProcessSample]) -> Vec<AgentSessionRecord> {
@@ -480,4 +585,145 @@ fn read_cgroup_populated(path: PathBuf) -> bool {
         }
     }
     true
+}
+
+#[cfg(test)]
+mod attribution_tests {
+    use super::detect_agent_hint;
+
+    #[test]
+    fn argv_preserves_display_and_limits_attribution_to_identity_positions() {
+        let bytes = b"/bin/node\0/work/main.js\0codex\0\0";
+        let (argv, display) = super::parse_process_cmdline(bytes);
+        assert_eq!(display, "/bin/node /work/main.js codex");
+        assert_eq!(
+            super::detect_agent_hint("app.slice", None, "node", &argv[0], &argv[1]),
+            None
+        );
+        let unicode = format!("/bin/worker\0{}\0", "é".repeat(130));
+        let (_, display) = super::parse_process_cmdline(unicode.as_bytes());
+        assert_eq!(display, format!("/bin/worker {}", "é".repeat(130)));
+        let long = format!("/bin/worker\0{}\0", "x".repeat(300));
+        let (_, display) = super::parse_process_cmdline(long.as_bytes());
+        assert_eq!(display.chars().count(), 240);
+    }
+
+    #[test]
+    fn attribution_uses_executable_script_or_scope_identity() {
+        for (slice, unit, comm, program, argument, expected) in [
+            (
+                "app.slice",
+                Some("app-com.google.Chrome-codex.scope"),
+                "ThreadPoolForeg",
+                "/bin/chrome",
+                "--app=https://example.com/codex",
+                None,
+            ),
+            (
+                "agent.slice",
+                None,
+                "chrome",
+                "/bin/chrome",
+                "https://example.com/codex",
+                None,
+            ),
+            (
+                "app.slice",
+                Some("app-gnome-chatgpt-42.scope"),
+                "helper",
+                "/bin/helper",
+                "codex",
+                None,
+            ),
+            ("app.slice", None, "mycodex", "/bin/mycodex", "", None),
+            (
+                "app.slice",
+                Some("app-chrome-42.scope"),
+                "codex",
+                "/bin/codex",
+                "",
+                None,
+            ),
+            (
+                "app.slice",
+                Some("mycodex.service"),
+                "worker",
+                "/bin/worker",
+                "",
+                None,
+            ),
+            ("app.slice", None, "worker", "/bin/worker", "", None),
+            (
+                "app.slice",
+                None,
+                "node",
+                "/bin/node",
+                "/work/mycodex.js",
+                None,
+            ),
+            (
+                "app.slice",
+                None,
+                "editor",
+                "/bin/editor",
+                "/var/work/codex",
+                None,
+            ),
+            (
+                "app.slice",
+                None,
+                "node",
+                "/bin/node",
+                "https://example.com/codex",
+                None,
+            ),
+            (
+                "app.slice",
+                None,
+                "node",
+                "/bin/node",
+                "--require=/var/work/codex",
+                None,
+            ),
+            (
+                "app.slice",
+                None,
+                "node",
+                "/bin/node",
+                "/var/work area/codex.mjs",
+                Some("codex"),
+            ),
+            (
+                "agent.slice",
+                Some("codex-remote.service"),
+                "worker",
+                "/bin/worker",
+                "",
+                Some("codex"),
+            ),
+            (
+                "agent.slice",
+                Some("codex-remote.service"),
+                "metron",
+                "/bin/metron",
+                "",
+                Some("metron"),
+            ),
+            (
+                "agent.slice",
+                None,
+                "custom-worker",
+                "/bin/custom-worker",
+                "",
+                Some("custom-worker"),
+            ),
+            ("agent.slice", None, "", "", "", None),
+        ] {
+            assert_eq!(
+                detect_agent_hint(slice, unit, comm, program, argument).as_deref(),
+                expected,
+                "{slice} {unit:?} {comm} {program} {argument}",
+            );
+        }
+    }
 }

@@ -330,6 +330,16 @@ added_by = "agent"
 human_ratified = false
 
 [[records]]
+id = "D-0250"
+source_path = "knowledge/decisions/D-0250-lineage-attribution.md"
+title = "Bound lineage and attribute process identity"
+type = "decision"
+status = "active"
+date = 2026-11-27
+added_by = "agent"
+human_ratified = false
+
+[[records]]
 id = "D-0399"
 source_path = "knowledge/decisions/D-0399-bounded-receipt-batch.md"
 title = "Fixed-barrier exact receipt batches"
