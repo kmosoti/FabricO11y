@@ -49,6 +49,7 @@ TOML-native records without changing that cohort or its count.
 | [D-0190 · Zero-UI Typed Consumer Crate (`fabric-client`)](decisions/D-0190-zero-ui-fabric-client.md) | `agent` | `false` | Zero-UI `fabric.cli.v1` schema crate (`fabric-client`), `FABRIC_CREDENTIAL_FILE`-only `FabricQueryClient`, env stripping, redaction, and `kill_on_drop` |
 | [D-0191 · Verified develop integration and human release promotion](decisions/D-0191-verified-develop-integration.md) | `agent` | `false` | Current-base integration, exact promotion and final artifact qualification |
 | [D-0194 · Causal contribution projection](decisions/D-0194-causal-contributions.md) | `agent` | `false` | Bounded runtime-neutral contribution and proposal heads |
+| [D-0201 · Explicit corpus as-of views](decisions/D-0201-corpus-as-of.md) | `agent` | `false` | Bounded frozen membership and conjunctive support claims |
 | [D-0200 · Frozen experiment snapshots](decisions/D-0200-frozen-snapshots.md) | `agent` | `false` | Fixed roster, explicit boundaries and missingness-aware comparisons |
 | [D-0270 · Conditional canonical plan acceptance](decisions/D-0270-conditional-plan-acceptance.md) | `agent` | `false` | Authenticated single-owner scope and atomic decision retry |
 | [D-0199 · Canonical query operation negotiation](decisions/D-0199-query-negotiation.md) | `agent` | `false` | Authenticated opt-in per-operation version gate |

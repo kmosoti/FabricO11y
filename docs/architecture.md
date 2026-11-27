@@ -82,7 +82,7 @@ that path does not activate the native transport. Optional `query-schema`
 forwards to the contract package. Query responses still carry generic JSON
 rows, which consumers decode as the documented row type for the operation.
 
-The independent [`fabric-corpus` contract](corpus-contract.md) defines research revision identities and attributed claims without a collector, transport, or storage dependency.
+The independent [`fabric-corpus` contract](corpus-contract.md) defines research revision identities and attributed claims without a collector, transport, or storage dependency. Its bounded as-of view freezes explicit revision and relation membership and attributed conjunctive support groups. It retains missing selections, dissent and other relation claims; a group resolves only when its conclusion, every premise and each exact support edge are present. Resolution is not an entailment or custody claim.
 
 Canonical plan acceptance uses a separately provisioned decision-writer grant.
 The local SQLite transaction checks its persisted scope owner, recovers an
