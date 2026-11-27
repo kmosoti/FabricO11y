@@ -264,6 +264,7 @@ fn spindle_forwards_to_server_and_unifies_into_collector_olap() {
             origin: origin.clone(),
             credential_file: node_cred.clone(),
         }],
+        decision_writers: Vec::new(),
         node_quota_bytes: Default::default(),
         engine_endpoint: None,
         engine_auth_token_file: None,
