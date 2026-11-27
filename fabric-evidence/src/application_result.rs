@@ -77,7 +77,7 @@ impl ApplicationPayloadDigest {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(untagged)]
-enum Json {
+pub(crate) enum Json {
     Null(()),
     Bool(bool),
     I64(i64),
@@ -339,7 +339,7 @@ struct Parser<'a> {
     max_depth: usize,
     max_nodes: usize,
 }
-fn parse(
+pub(crate) fn parse(
     bytes: &[u8],
     max_bytes: usize,
     max_depth: usize,

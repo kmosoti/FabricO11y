@@ -349,6 +349,15 @@ observation time; neither time is a custody timestamp.
 {"command":"record_application","report_id":"edd65cef-e5aa-4f95-8ae6-6b30f9edb662","context":{"run_id":"f404b128-2c19-412f-bcd0-823f9c1f1b31"},"scope":{"origin":"SPINDLE_ORIGIN","producer":"batch"},"parent_report_id":null,"schema":"example.result.v1","producer_completion":{"unix_ms":1795014000000,"clock":{"clock_id":"producer-wall","source":"worker","uncertainty_ms":null}},"artifact_json":"{\"label\":\"caf\\u00e9\"}\n","timestamp_ns":1795014000000000000}
 ```
 
+The `fabric-evidence` capture policy utility can prepare a separate,
+default-deny captured artifact before submission. Its version 1 profile permits
+only explicitly listed top-level scalar fields; it omits nested objects and
+arrays. The utility returns canonical permitted bytes, their distinct digest,
+a policy digest and fixed omission classes. The policy must be supplied by a
+trusted caller. This utility is not wired into batch intake: producers remain
+responsible for applying it before passing bytes to the adapter. Existing v1
+commands, direct Spindle submission and other collectors do not enforce it.
+
 The adapter validates the bounded application profile and actual v3 frame
 before staging. It persists the canonical application envelope and original
 artifact digest, not a separate copy of `artifact_json`. Select the fields to
