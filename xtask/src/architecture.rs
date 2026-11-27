@@ -70,6 +70,27 @@ fn files(path: &Path) -> Result<(), String> {
     }
     Ok(())
 }
+// These small Sans-I/O profiles are deliberately allowlisted transitively.
+fn check_profile_graph(root_name: &str, graph: &str, allowed: &[&str]) -> Result<(), String> {
+    for package in graph
+        .lines()
+        .filter_map(|line| line.split_whitespace().next())
+    {
+        if !allowed.contains(&package) {
+            return Err(format!(
+                "unreviewed transitive dependency for {root_name}: {package}"
+            ));
+        }
+    }
+    if !graph
+        .lines()
+        .any(|line| line.split_whitespace().next() == Some(root_name))
+    {
+        return Err(format!("missing profile root {root_name}"));
+    }
+    Ok(())
+}
+
 pub fn check(root: &Path) -> Result<(), String> {
     let policy: Policy = toml::from_str(
         &fs::read_to_string(root.join("verification/architecture.toml"))
@@ -129,12 +150,66 @@ pub fn check(root: &Path) -> Result<(), String> {
             ));
         }
     }
+    for (package, allowed) in [
+        ("fabric-ops", &["fabric-ops"][..]),
+        ("fabric-colloquium", &["fabric-colloquium"][..]),
+        (
+            "fabric-corpus",
+            &[
+                "fabric-corpus",
+                "sha2",
+                "cfg-if",
+                "cpufeatures",
+                "libc",
+                "digest",
+                "block-buffer",
+                "crypto-common",
+                "generic-array",
+                "typenum",
+                "version_check",
+            ][..],
+        ),
+    ] {
+        for target in ["x86_64-unknown-linux-gnu", "wasm32-unknown-unknown"] {
+            let graph = super::output(
+                "cargo",
+                &[
+                    "tree",
+                    "--locked",
+                    "--offline",
+                    "--edges",
+                    "normal,build",
+                    "--prefix",
+                    "none",
+                    "--format",
+                    "{p}",
+                    "--target",
+                    target,
+                    "--package",
+                    package,
+                ],
+                root,
+            )?;
+            check_profile_graph(package, &graph, allowed)?;
+        }
+    }
     files(&root.join("admission-kernel/src"))?;
     println!("Architecture boundaries passed");
     Ok(())
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn profile_graph_rejects_unreviewed_transitive_dependency() {
+        assert!(
+            super::check_profile_graph("fabric-ops", "fabric-ops v1\n", &["fabric-ops"]).is_ok()
+        );
+        assert!(
+            super::check_profile_graph("fabric-ops", "fabric-ops v1\ntokio v1\n", &["fabric-ops"])
+                .is_err()
+        );
+        assert!(super::check_profile_graph("fabric-ops", "", &["fabric-ops"]).is_err());
+    }
     #[test]
     fn rejects_verification_escapes_not_comments() {
         assert!(super::audit("fn a(){ assume(false); }".parse().unwrap()).is_err());
