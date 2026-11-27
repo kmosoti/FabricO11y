@@ -105,7 +105,7 @@ fn overlong_unterminated_input_is_rejected_before_json_decode() {
 }
 
 #[test]
-fn cancellation_reaches_canonical_and_capacity_waits_for_actual_exchange() {
+fn status_queue_is_bounded_and_query_cancellation_survives_status_pressure() {
     use fabric::canonical::{self, Authenticated, Request, Response};
     use std::{
         net::TcpListener,
@@ -119,9 +119,11 @@ fn cancellation_reaches_canonical_and_capacity_waits_for_actual_exchange() {
     let address = listener.local_addr().unwrap();
     listener.set_nonblocking(true).unwrap();
     let release = Arc::new(AtomicBool::new(false));
+    let release_status = Arc::new(AtomicBool::new(false));
     let stop = Arc::new(AtomicBool::new(false));
     let (tx_events, events) = mpsc::channel();
     let release_server = release.clone();
+    let release_status_server = release_status.clone();
     let stop_server = stop.clone();
     let server = std::thread::spawn(move || {
         let mut workers = Vec::new();
@@ -129,6 +131,7 @@ fn cancellation_reaches_canonical_and_capacity_waits_for_actual_exchange() {
             match listener.accept() {
                 Ok((mut stream, _)) => {
                     let release = release_server.clone();
+                    let release_status = release_status_server.clone();
                     let tx = tx_events.clone();
                     workers.push(std::thread::spawn(move || {
                         let deadline = Instant::now() + Duration::from_secs(8);
@@ -147,6 +150,21 @@ fn cancellation_reaches_canonical_and_capacity_waits_for_actual_exchange() {
                             Request::Cancel { query_id } => {
                                 tx.send("cancel").unwrap();
                                 Response::Cancelled { query_id }
+                            }
+                            Request::Capabilities => {
+                                tx.send("capabilities").unwrap();
+                                while !release_status.load(Ordering::SeqCst)
+                                    && Instant::now() < deadline
+                                {
+                                    std::thread::sleep(Duration::from_millis(5));
+                                }
+                                Response::Capabilities {
+                                    authority: "status-fixture".into(),
+                                    schemas: vec![2, 3],
+                                    origins: vec![],
+                                    max_frame: 1024 * 1024,
+                                    max_batch_records: 128,
+                                }
                             }
                             Request::Progress => Response::Progress {
                                 authority: "test".into(),
@@ -210,6 +228,21 @@ fn cancellation_reaches_canonical_and_capacity_waits_for_actual_exchange() {
         events.recv_timeout(Duration::from_secs(5)).unwrap(),
         "query"
     );
+    writeln!(input,"{}",json!({"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"capabilities","arguments":{}}})).unwrap();
+    input.flush().unwrap();
+    assert_eq!(
+        events.recv_timeout(Duration::from_secs(2)).unwrap(),
+        "capabilities"
+    );
+    for id in 20..36 {
+        writeln!(input,"{}",json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"name":"progress","arguments":{}}})).unwrap();
+    }
+    input.flush().unwrap();
+    let overflow = rx.recv_timeout(Duration::from_secs(2)).unwrap();
+    let overflow_id = overflow["id"].as_u64().unwrap();
+    assert!((20..36).contains(&overflow_id));
+    assert_eq!(overflow["error"]["message"], "MCP status queue full");
+
     writeln!(input,"{}",json!({"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":3,"reason":"test cancellation"}})).unwrap();
     input.flush().unwrap();
     assert_eq!(
@@ -228,8 +261,28 @@ fn cancellation_reaches_canonical_and_capacity_waits_for_actual_exchange() {
         }
     };
     assert!(busy.to_string().contains("MCP worker busy"));
-    release.store(true, Ordering::SeqCst);
-    std::thread::sleep(Duration::from_millis(100));
+    release_status.store(true, Ordering::SeqCst);
+
+    let mut expected = (20..36)
+        .filter(|id| *id != overflow_id)
+        .collect::<std::collections::BTreeSet<_>>();
+    expected.insert(10);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !expected.is_empty() {
+        let value = rx
+            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            .unwrap();
+        let Some(id) = value["id"].as_u64() else {
+            continue;
+        };
+        if expected.remove(&id) {
+            assert!(
+                value.get("error").is_none(),
+                "status call {id} failed: {value}"
+            );
+            assert_eq!(value["result"]["isError"].as_bool(), Some(false));
+        }
+    }
     writeln!(input,"{}",json!({"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"progress","arguments":{}}})).unwrap();
     input.flush().unwrap();
     let deadline = Instant::now() + Duration::from_secs(5);
@@ -243,6 +296,7 @@ fn cancellation_reaches_canonical_and_capacity_waits_for_actual_exchange() {
     };
     assert!(progress.to_string().contains("test"));
     assert!(!progress.to_string().contains("MCP worker busy"));
+    release.store(true, Ordering::SeqCst);
     let _ = child.kill();
     let _ = child.wait();
     drop(input);

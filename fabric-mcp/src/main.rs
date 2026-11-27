@@ -23,12 +23,18 @@ use std::{
 };
 use tokio::sync::Semaphore;
 use tokio_util::codec::{FramedRead, FramedWrite};
+
+const MAX_STATUS_REQUESTS: usize = 16;
+const STATUS_TIMEOUT: Duration = Duration::from_secs(5);
+
 #[derive(Clone)]
 struct Investigation {
     endpoint: String,
     credential: String,
     tool_router: ToolRouter<Self>,
     work: Arc<Semaphore>,
+    status_capacity: Arc<Semaphore>,
+    status_work: Arc<Semaphore>,
     control: Arc<Semaphore>,
 }
 #[derive(Deserialize, JsonSchema)]
@@ -50,6 +56,8 @@ impl Investigation {
             credential,
             tool_router: Self::tool_router(),
             work: Arc::new(Semaphore::new(1)),
+            status_capacity: Arc::new(Semaphore::new(MAX_STATUS_REQUESTS)),
+            status_work: Arc::new(Semaphore::new(1)),
             control: Arc::new(Semaphore::new(1)),
         }
     }
@@ -66,13 +74,37 @@ impl Investigation {
             .clone()
             .try_acquire_owned()
             .map_err(|_| ErrorData::internal_error("MCP worker busy", None))?;
+        Ok(self.spawn_exchange(request, permit, Instant::now() + Duration::from_secs(35)))
+    }
+    async fn start_status_exchange(
+        &self,
+        request: Request,
+    ) -> Result<tokio::task::JoinHandle<Result<Response, String>>, ErrorData> {
+        let capacity = self
+            .status_capacity
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| ErrorData::internal_error("MCP status queue full", None))?;
+        let deadline = Instant::now() + STATUS_TIMEOUT;
+        let worker =
+            tokio::time::timeout_at(deadline.into(), self.status_work.clone().acquire_owned())
+                .await
+                .map_err(|_| ErrorData::internal_error("MCP status queue timed out", None))?
+                .map_err(|_| ErrorData::internal_error("MCP status worker closed", None))?;
+        Ok(self.spawn_exchange(request, (capacity, worker), deadline))
+    }
+    fn spawn_exchange(
+        &self,
+        request: Request,
+        permit: impl Send + 'static,
+        deadline: Instant,
+    ) -> tokio::task::JoinHandle<Result<Response, String>> {
         let endpoint = self.endpoint.clone();
         let credential = self.credential.clone();
-        Ok(tokio::task::spawn_blocking(move || {
+        tokio::task::spawn_blocking(move || {
             let _permit = permit;
-            Client::new(endpoint, credential)
-                .exchange(&request, Instant::now() + Duration::from_secs(35))
-        }))
+            Client::new(endpoint, credential).exchange(&request, deadline)
+        })
     }
     fn render(result: Result<Response, String>) -> Result<CallToolResult, ErrorData> {
         let result = match result {
@@ -103,8 +135,14 @@ impl Investigation {
         Ok(result)
     }
     async fn exchange(&self, request: Request) -> Result<CallToolResult, ErrorData> {
-        let response = self
-            .start_exchange(request)?
+        // Planning holds a receiver query lease and evidence can block on storage.
+        let exchange = match request {
+            Request::Capabilities | Request::Progress => {
+                self.start_status_exchange(request).await?
+            }
+            _ => self.start_exchange(request)?,
+        };
+        let response = exchange
             .await
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
         Self::render(response)
