@@ -138,7 +138,7 @@ separate outbound canonical credential does not authenticate the local caller.
 Policy-at-commit and broader authorization remain separate work.
 
 The canonical TCP server maps a verified credential proof to the configured
-reader or node-origin scope, then checks the request MAC before minting a
+reader, node-origin or decision-writer scope, then checks the request MAC before minting a
 private grant for dispatch. The grant carries that scope and the server's
 canonical authority; request fields cannot supply either. The grant establishes
 credential possession under the configured scope, not a human or application
