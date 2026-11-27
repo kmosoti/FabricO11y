@@ -37,6 +37,7 @@ mod guide;
 mod live_cursor;
 mod production_ready;
 mod projection_ready;
+mod receipt_batch;
 mod settings;
 mod table;
 
@@ -106,6 +107,8 @@ enum Commands {
     Custody(CustodyArgs),
     /// Check whether an exact Spindle receipt is queryable from committed projection.
     ProjectionReady(projection_ready::Args),
+    /// Inspect a bounded list of receipts at one canonical source barrier.
+    ReceiptBatchReady(receipt_batch::Args),
     /// Check current local services and, optionally, canonical progress for this origin.
     ProductionReady(production_ready::Args),
     /// Run the converged telemetry daemon (inside fabrico11y.slice).
@@ -253,6 +256,9 @@ async fn run() -> Result<(), String> {
             cli.arrow || cli.table,
         ));
     }
+    if let Commands::ReceiptBatchReady(args) = cli.command {
+        std::process::exit(receipt_batch::run(args, cli.arrow || cli.table));
+    }
     if let Commands::Settings(args) = &cli.command {
         let effective = settings::effective(&cli, &matches, &profile, args)?;
         return settings::print(&cli, args, effective, profile_path.as_deref());
@@ -263,6 +269,7 @@ async fn run() -> Result<(), String> {
     match &cli.command {
         Commands::Guide(_)
         | Commands::ProjectionReady(_)
+        | Commands::ReceiptBatchReady(_)
         | Commands::ProductionReady(_)
         | Commands::Settings(_) => {
             unreachable!("commands dispatched before storage access")

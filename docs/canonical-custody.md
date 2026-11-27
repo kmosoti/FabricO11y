@@ -268,3 +268,6 @@ verification of the current manifest segment; missing, changed, ambiguous or
 corrupt artifacts are unavailable. A resumed request must present the ticket
 again and is verified independently. Segments are rebuildable projection data;
 a ticket and a successful transfer do not constitute canonical custody.
+## Check a bounded receipt list
+
+`fabric receipt-batch-ready --authority "$FABRIC_AUTHORITY" --origin "$SPINDLE_ORIGIN" --barrier 182 --receipts receipts.json --include-digest --json` reads a JSON array of Spindle receipts. The caller chooses the source barrier and a single request deadline. Results retain input order and identify ready, pending, missing, mismatched, or unavailable receipts. Optional SHA-256 values bind exact canonical observation bytes; they are not source-artifact digests. A ready result includes a complete projected-row check. Use the captured custody and projection frontiers to interpret partial progress. A successful command means a response was received, not that every item was ready.
