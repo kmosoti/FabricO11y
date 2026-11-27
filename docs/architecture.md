@@ -1,10 +1,10 @@
 # FabricO11y Architecture
 
-`FabricO11y` is a **CLI-first, zero-UI Linux host, autonomous-agent, and OTLP observability sensory plane** built in pure Rust (Edition 2024, Rust 1.100.0). It combines strictly bounded live Linux telemetry collection (`cgroups` v2, `/proc` PSI/swap/zram0, systemd unit hygiene, `inotify`/fd filesystem churn, optional GPU sysfs, and local Spindle/OTLP ingest) with an embedded pure-Rust converged storage and causal attribution engine rooted under `/data/fabrico11y`.
+`FabricO11y` is a **headless-by-default, CLI-first Linux host, autonomous-agent, and OTLP observability sensory plane** built in pure Rust (Edition 2024, Rust 1.100.0). It combines strictly bounded live Linux telemetry collection (`cgroups` v2, `/proc` PSI/swap/zram0, systemd unit hygiene, `inotify`/fd filesystem churn, optional GPU sysfs, and local Spindle/OTLP ingest) with an embedded pure-Rust converged storage and causal attribution engine rooted under `/data/fabrico11y`.
 
 ## 1. Crate & Authority Boundaries
 
-Pure domain logic, schema contracts, statistical sketches, causal graph traversal, and formal admission arithmetic live in **Sans-I/O** crates (`admission-kernel`, `fabric-core`, `fabric-graph`). All Linux kernel probing, embedded disk/memory custody, DataFusion query execution, and CLI rendering are isolated in dedicated I/O crates (`fabric-store`, `fabric-collect`, `fabric-query`, `fabric-cli`, plus preserved custody/protocol crates `fabric`, `fabric-server`, and `fabric-mcp`). Downstream Rust integrators consume `fabric.cli.v1` JSON outputs and `fabric-query` over bounded subprocess pipes via the lightweight, zero-UI [`fabric-client`](../fabric-client/Cargo.toml) crate without pulling in Arrow, DataFusion, or UI crates. Dependency boundaries are machine-verified by [`verification/architecture.toml`](../verification/architecture.toml) via `cargo xtask architecture`.
+Pure domain logic, schema contracts, statistical sketches, causal graph traversal, and formal admission arithmetic live in **Sans-I/O** crates (`admission-kernel`, `fabric-core`, `fabric-graph`). All Linux kernel probing, embedded disk/memory custody, DataFusion query execution, and CLI rendering are isolated in dedicated I/O crates (`fabric-store`, `fabric-collect`, `fabric-query`, `fabric-cli`, plus preserved custody/protocol crates `fabric`, `fabric-server`, and `fabric-mcp`). Downstream Rust integrators consume `fabric.cli.v1` JSON outputs and `fabric-query` over bounded subprocess pipes via the lightweight, headless [`fabric-client`](../fabric-client/Cargo.toml) crate without pulling in Arrow, DataFusion, or UI crates. Dependency boundaries are machine-verified by [`verification/architecture.toml`](../verification/architecture.toml) via `cargo xtask architecture`.
 
 ```mermaid
 flowchart TD
@@ -45,7 +45,7 @@ flowchart TD
         CLI --> FAB
     end
 
-    subgraph ZeroUIClient["Zero-UI Typed Consumer Crate"]
+    subgraph HeadlessClient["Headless Typed Consumer Crate"]
         FCL["fabric-client (fabric.cli.v1 schemas, FabricClient, FabricQueryClient; no Arrow/UI deps)"]
         FCL -. "subprocess (--json)" .-> CLI
         FCL -. "FABRIC_CREDENTIAL_FILE only" .-> FQBIN["fabric-query CLI"]
@@ -63,12 +63,37 @@ flowchart TD
     end
 ```
 
-### Zero-UI Consumer Client (`fabric-client`)
+### Headless Consumer Client (`fabric-client`)
 
 `fabric-client` isolates downstream Rust callers from Arrow, DataFusion, UI rendering crates, and direct storage locks:
 
 - **Optional runtime feature (`default = ["cli"]`):** Callers can disable default features (`default-features = false`) for pure `serde` schema deserialization (`fabric.cli.v1`), or use `FabricClient` and `FabricQueryClient` asynchronously under `tokio`.
 - **Credential-file-only reader auth (`FabricQueryClient`):** Rejects missing, empty, oversized (`> 4096 B`), or symlinked credential files before spawning `fabric-query`, injects `FABRIC_CREDENTIAL_FILE` and `FABRIC_ENDPOINT`, explicitly clears `FABRIC_CREDENTIAL` via `env_remove`, enables `kill_on_drop(true)` on every subprocess, and redacts any credential bytes from error output.
+
+### Optional frontend boundary
+
+The proposed frontend crates consume typed, authorized query results. The shared
+app core owns models, navigation state, reducers, and transformations. Its
+native and wasm builds must run identical reducer fixtures. Thin web and desktop
+roots adapt transport and platform integration. Renderer dependencies stay in
+the opt-in frontend graph.
+
+```mermaid
+flowchart LR
+    CLI["Fabric CLI and typed client"] --> PORT["Authorized query adapter"]
+    PORT --> CORE["fabric-app-core (target-independent state and reducers)"]
+    CORE --> DOM["fabric-ui-dom (Leptos)"]
+    CORE --> GPU["fabric-ui-gpu (wgpu)"]
+    DOM --> WEB["Web root"]
+    DOM --> DESKTOP["Desktop root (Tauri)"]
+    GPU --> WEB
+    GPU --> DESKTOP
+```
+
+The backend currently ships headless packages. `cargo xtask architecture`
+checks the declared direct dependencies and the default headless runtime and
+build graphs. See the [frontend decision](../knowledge/decisions/D-0192-optional-frontend.md)
+for the proposed crate boundaries and qualification requirements.
 
 ## 2. Converged Telemetry Engine & Self-Preservation Pipeline
 
@@ -160,30 +185,28 @@ flowchart LR
     RESOLVE --> SETTINGS["fabric settings"]
 ```
 
-## 3. Two-Branch Stacked Development Workflow & Release Gate
-
-Following the repository workflow anchored in [`knowledge/decisions/D-0001-development-workflow.md`](../knowledge/decisions/D-0001-development-workflow.md):
-
-1. Agent authors develop linear atomic stacks via colocated Jujutsu (`jj`) bookmarks (`stack/<topic>/01-...`).
-2. Every PR targeting `develop` runs CI (`development-checks.yml`), requires an updated Mermaid diagram for structural changes, and undergoes independent review (preferring an alternate model family or fresh standard/medium reasoning context) before linear rebase integration onto `develop`.
-3. Only explicit promotion PRs from `develop` to `main` may update `main`, gated by the human-approved `main-release` environment in [`.github/workflows/main-human-gate.yml`](../.github/workflows/main-human-gate.yml).
+## 3. Integration and release
 
 ```mermaid
 sequenceDiagram
-    participant Author as Author Agent (jj stack/*)
-    participant CI as CI (development-checks.yml)
-    participant Reviewer as Independent Reviewer (Standard/Medium)
-    participant Develop as develop Branch
-    participant Gate as main-release Human Gate
-    participant Main as main Branch
-
-    Author->>CI: Push stack/topic/01..N PR -> develop
-    CI-->>Author: fmt, check, test, clippy, architecture, doc tests
-    Author->>Reviewer: Request review (with Mermaid diff + fabric doctor proof)
-    Reviewer-->>Develop: Approve & rebase-merge linear stack onto develop
-    Develop->>Gate: Open promotion PR (develop -> main)
-    Gate-->>Main: Human explicitly approves main-human-approval & merges
+    participant Author
+    participant CI
+    participant Develop as develop
+    participant Owner as Release owner
+    participant Main as main
+    participant Gate as main-release
+    Author->>CI: Open issue PR or dependent stack layer
+    CI-->>Develop: Verify the current base and head
+    Author->>Develop: Integrate reviewed layers bottom-up
+    Develop->>Owner: Main PR with frozen head, base, tree and digest
+    Owner->>Gate: Approve the candidate
+    Owner->>Main: Merge the approved promotion
+    Main->>CI: Qualify the actual main SHA and artifact bytes
+    Owner->>Gate: Tag the qualified SHA and approve publication
 ```
+
+The [promotion runbook](release-promotion.md) covers ref checks, the existing
+branch divergence, and the release evidence required before tagging.
 
 The development workflow runs the common workspace validation and release
 restart smoke in `verify`. The parallel `native-acceptance` job exercises

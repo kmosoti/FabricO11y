@@ -4,6 +4,13 @@ use std::{collections::BTreeMap, fs, path::Path};
 #[derive(Deserialize)]
 struct Policy {
     crates: BTreeMap<String, Vec<String>>,
+    headless: HeadlessPolicy,
+}
+
+#[derive(Deserialize)]
+struct HeadlessPolicy {
+    roots: Vec<String>,
+    renderer_families: Vec<String>,
 }
 fn audit(tokens: TokenStream) -> Result<(), String> {
     let mut declaration = false;
@@ -91,6 +98,35 @@ pub fn check(root: &Path) -> Result<(), String> {
             if !allowed.iter().any(|a| a == dep) {
                 return Err(format!("unreviewed dependency {name} -> {dep}"));
             }
+        }
+    }
+    let mut args = vec![
+        "tree",
+        "--locked",
+        "--edges",
+        "normal,build",
+        "--prefix",
+        "none",
+        "--format",
+        "{p}",
+    ];
+    for package in &policy.headless.roots {
+        args.extend(["--package", package]);
+    }
+    let graph = super::output("cargo", &args, root)?;
+    for package in graph
+        .lines()
+        .filter_map(|line| line.split_whitespace().next())
+    {
+        if policy.headless.renderer_families.iter().any(|family| {
+            package == family
+                || package
+                    .strip_prefix(family)
+                    .is_some_and(|suffix| suffix.starts_with('-') || suffix.starts_with('_'))
+        }) {
+            return Err(format!(
+                "renderer dependency in default headless graph: {package}"
+            ));
         }
     }
     files(&root.join("admission-kernel/src"))?;

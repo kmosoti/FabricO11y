@@ -1,5 +1,7 @@
 # FabricO11y
 
+The backend runs headless by default. Optional frontends are separately packaged.
+
 FabricO11y is a Linux observability toolkit you use from the command line.
 See where CPU, memory, or disk pressure comes from, and investigate host and
 application activity alongside telemetry from jobs and agents. Start on one
@@ -53,7 +55,7 @@ tracks received records and query visibility separately for each origin.
   Run `fabric settings` to see the resolved settings on your host.
 - **Automate investigations.** Find typed queries and output formats in the
   [investigation guide](docs/investigation.md) and [CLI guide](docs/guide.md).
-- **Integrate from Rust.** Depend on the zero-UI [`fabric-client`](fabric-client/Cargo.toml)
+- **Integrate from Rust.** Depend on the headless [`fabric-client`](fabric-client/Cargo.toml)
   workspace crate (`FabricClient` for `fabric.cli.v1` JSON subcommands and
   `FabricQueryClient` for `FABRIC_CREDENTIAL_FILE`-only `fabric-query` calls).
 - **Work on FabricO11y.** See the [architecture](docs/architecture.md) and

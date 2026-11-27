@@ -6,9 +6,15 @@ on:
       - 'v*'
   workflow_dispatch:
     inputs:
+      mode:
+        description: Package preflight or exact main release qualification
+        required: true
+        type: choice
+        default: preflight
+        options: [preflight, qualify]
       tag:
-        description: Release tag or version label for manual build verification
-        required: false
+        description: Version label for package builds
+        required: true
         type: string
 
 permissions:
@@ -25,7 +31,40 @@ env:
   TMPDIR: /var/tmp
 
 jobs:
+  package-source:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      tree: ${{ steps.source.outputs.tree }}
+    steps:
+      - name: Confirm dispatch mode, source revision and version
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          PACKAGE_MODE: ${{ inputs.mode }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]
+          api="repos/$GITHUB_REPOSITORY"
+          case "$PACKAGE_MODE:$GITHUB_REF" in
+            qualify:refs/heads/main|preflight:refs/heads/*) ;;
+            *)
+              printf '::error::Use a branch for preflight and main for release qualification.\n'
+              exit 1
+              ;;
+          esac
+          live=$(gh api "$api/git/ref/${GITHUB_REF#refs/}" --jq .object.sha)
+          test "$live" = "$GITHUB_SHA"
+          tree=$(gh api "$api/git/commits/$GITHUB_SHA" --jq .tree.sha)
+          [[ "$tree" =~ ^[0-9a-f]{40}$ ]]
+          printf 'tree=%s\n' "$tree" >> "$GITHUB_OUTPUT"
+          printf '### Package source\n\nMode `%s`\n\nRef `%s`\n\nCommit `%s`\n\nTree `%s`\n' \
+            "$PACKAGE_MODE" "$GITHUB_REF" "$GITHUB_SHA" "$tree" >> "$GITHUB_STEP_SUMMARY"
+
   fedora-rpm:
+    needs: [package-source]
     name: Fedora x86_64 RPM
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -37,17 +76,11 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Enforce protected-main ancestry on release tags
-        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'push'
-        run: |
-          set -eu
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
-          git merge-base --is-ancestor "${GITHUB_SHA}" refs/remotes/origin/main
       - name: Trust workspace and verify pinned Rust 1.100.0
         run: |
           set -eu
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           expected=$(sed -En 's/^channel = "([0-9]+\.[0-9]+\.[0-9]+)"$/\1/p' rust-toolchain.toml)
           actual=$(rustc --version | cut -d' ' -f2)
           test "$actual" = "$expected"
@@ -103,6 +136,7 @@ jobs:
           path: dist-rpm/*.rpm
 
   debian-deb-and-tarball:
+    needs: [package-source]
     name: Debian 12/13 .deb and Linux tar.zst (glibc <= 2.36)
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -122,17 +156,11 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Enforce protected-main ancestry on release tags
-        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'push'
-        run: |
-          set -eu
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
-          git merge-base --is-ancestor "${GITHUB_SHA}" refs/remotes/origin/main
       - name: Install pinned Rust 1.100.0 from rust-toolchain.toml
         run: |
           set -eu
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           rust_version=$(sed -En 's/^channel = "([0-9]+\.[0-9]+\.[0-9]+)"$/\1/p' rust-toolchain.toml)
           test -n "$rust_version"
           rustup_version="1.29.3"
@@ -201,30 +229,21 @@ jobs:
             dist-deb/*.deb
             dist-deb/*.tar.zst
 
-  release:
-    name: Attest and publish release
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    environment: main-release
-    needs: [fedora-rpm, debian-deb-and-tarball]
+  qualify-bundle:
+    name: Record exact main artifact qualification
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.mode == 'qualify'
+    needs: [package-source, fedora-rpm, debian-deb-and-tarball]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
-      contents: write
+      contents: read
       id-token: write
       attestations: write
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 0
           persist-credentials: false
-      - name: Enforce protected-main ancestry on release tags
-        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'push'
-        run: |
-          set -eu
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
-          git merge-base --is-ancestor "${GITHUB_SHA}" refs/remotes/origin/main
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: rpm-dist
@@ -235,7 +254,8 @@ jobs:
           path: incoming
       - name: Stage release artifacts, SHA256SUMS, and RELEASE-EVIDENCE.json
         env:
-          RELEASE_INPUT_TAG: ${{ inputs.tag }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          SOURCE_TREE: ${{ needs.package-source.outputs.tree }}
         run: |
           set -eu
           mkdir -p release
@@ -245,31 +265,39 @@ jobs:
             cp "$f" "release/$safe_name"
           done
           (cd release && sha256sum -- *.rpm *.deb *.tar.zst > SHA256SUMS)
-          tag="${RELEASE_INPUT_TAG:-${GITHUB_REF_NAME}}"
+          notes_file="docs/releases/${RELEASE_TAG}.md"
+          if [ -f "$notes_file" ]; then
+            cp "$notes_file" release/NOTES.md
+          else
+            printf '# FabricO11y %s\n\nCommit: `%s`\n' "$RELEASE_TAG" "$GITHUB_SHA" > release/NOTES.md
+          fi
+          notes_sha256=$(sha256sum release/NOTES.md | cut -d' ' -f1)
           rust_version=$(sed -En 's/^channel = "([0-9]+\.[0-9]+\.[0-9]+)"$/\1/p' rust-toolchain.toml)
           artifacts_json=$(jq -Rn '[inputs | split("  ") | {sha256: .[0], file: .[1]}]' < release/SHA256SUMS)
           jq -n \
-            --arg tag "$tag" \
+            --arg tag "$RELEASE_TAG" \
             --arg commit "$GITHUB_SHA" \
+            --arg tree "$SOURCE_TREE" \
+            --arg notes_sha256 "$notes_sha256" \
             --arg rust_version "$rust_version" \
             --arg debian_glibc_floor "2.36" \
             --argjson artifacts "$artifacts_json" \
             '{
-              schema: "fabrico11y.release.evidence.v1",
+              schema: "fabrico11y.release.evidence.v2",
               tag: $tag,
               commit: $commit,
+              tree: $tree,
+              notes_sha256: $notes_sha256,
               rust_version: $rust_version,
               debian_glibc_floor: $debian_glibc_floor,
-              zero_ui: true,
+              profile: "headless",
               zero_tmp: true,
               artifacts: $artifacts
             }' > release/RELEASE-EVIDENCE.json
-          notes_file="docs/releases/${tag}.md"
-          if [ -f "$notes_file" ]; then
-            cp "$notes_file" release/NOTES.md
-          else
-            printf '# FabricO11y %s\n\nCommit: `%s`\n' "$tag" "$GITHUB_SHA" > release/NOTES.md
-          fi
+          test "$(git rev-parse HEAD^{tree})" = "$SOURCE_TREE"
+          digest=$(sha256sum release/RELEASE-EVIDENCE.json | cut -d' ' -f1)
+          printf '### Qualified headless bundle\n\nRun %s\n\nCommit `%s`\n\nManifest SHA-256 `%s`\n' \
+            "$GITHUB_RUN_ID" "$GITHUB_SHA" "$digest" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
@@ -282,8 +310,97 @@ jobs:
         with:
           name: release-bundle
           path: release/*
+          if-no-files-found: error
+
+  verify-tag:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      run-id: ${{ steps.binding.outputs.run-id }}
+      digest: ${{ steps.binding.outputs.digest }}
+      tree: ${{ steps.binding.outputs.tree }}
+      tag-oid: ${{ steps.binding.outputs.tag-oid }}
+    steps:
+      - name: Verify annotated tag and successful main qualification
+        id: binding
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]
+          api="repos/$GITHUB_REPOSITORY"
+          test "$(gh api "$api/git/ref/heads/main" --jq .object.sha)" = "$GITHUB_SHA"
+          tag_ref=$(gh api "$api/git/ref/tags/$GITHUB_REF_NAME")
+          tag_oid=$(jq -er '.object | select(.type == "tag") | .sha' <<< "$tag_ref")
+          tag=$(gh api "$api/git/tags/$tag_oid")
+          jq -e --arg tag "$GITHUB_REF_NAME" --arg sha "$GITHUB_SHA" \
+            '.tag == $tag and .object.type == "commit" and .object.sha == $sha' <<< "$tag" >/dev/null
+          binding=$(jq -er '.message | fromjson' <<< "$tag")
+          run_id=$(jq -er '.qualification_run_id | strings | select(test("^[1-9][0-9]*$"))' <<< "$binding")
+          digest=$(jq -er '.manifest_sha256 | strings | select(test("^[0-9a-f]{64}$"))' <<< "$binding")
+          workflow_id=$(gh api "$api/actions/workflows/release.yml" --jq .id)
+          gh api "$api/actions/runs/$run_id" | jq -e \
+            --arg repo "$GITHUB_REPOSITORY" --arg sha "$GITHUB_SHA" --argjson id "$workflow_id" \
+            '.workflow_id == $id and .repository.full_name == $repo and .head_repository.full_name == $repo
+             and .head_branch == "main" and .head_sha == $sha and .event == "workflow_dispatch"
+             and .status == "completed" and .conclusion == "success"' >/dev/null
+          tree=$(gh api "$api/git/commits/$GITHUB_SHA" --jq .tree.sha)
+          printf 'run-id=%s\ndigest=%s\ntree=%s\ntag-oid=%s\n' "$run_id" "$digest" "$tree" "$tag_oid" >> "$GITHUB_OUTPUT"
+          printf '### Release tag binding\n\nQualification run %s\n\nCommit `%s`\n\nManifest SHA-256 `%s`\n' \
+            "$run_id" "$GITHUB_SHA" "$digest" >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    name: Attest and publish qualified release
+    needs: [verify-tag]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    environment: main-release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: write
+      attestations: read
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.verify-tag.outputs.run-id }}
+          name: release-bundle
+          path: release
+      - name: Verify the qualified manifest and exact artifact bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MANIFEST_SHA256: ${{ needs.verify-tag.outputs.digest }}
+          SOURCE_TREE: ${{ needs.verify-tag.outputs.tree }}
+          EXPECTED_TAG_OID: ${{ needs.verify-tag.outputs.tag-oid }}
+        run: |
+          set -euo pipefail
+          api="repos/$GITHUB_REPOSITORY"
+          test "$(gh api "$api/git/ref/heads/main" --jq .object.sha)" = "$GITHUB_SHA"
+          test "$(gh api "$api/git/ref/tags/$GITHUB_REF_NAME" --jq .object.sha)" = "$EXPECTED_TAG_OID"
+          cd release
+          printf '%s  RELEASE-EVIDENCE.json\n' "$MANIFEST_SHA256" | sha256sum --check --strict
+          jq -e --arg tag "$GITHUB_REF_NAME" --arg commit "$GITHUB_SHA" --arg tree "$SOURCE_TREE" \
+            '.schema == "fabrico11y.release.evidence.v2" and .tag == $tag and .commit == $commit
+             and .tree == $tree and .profile == "headless" and (.artifacts | length > 0)
+             and all(.artifacts[];
+                 (.sha256 | test("^[0-9a-f]{64}$"))
+                 and (.file | test("^[0-9A-Za-z][0-9A-Za-z._+-]*\\.(rpm|deb|tar\\.zst)$")))' \
+            RELEASE-EVIDENCE.json >/dev/null
+          notes_sha256=$(jq -er '.notes_sha256 | select(test("^[0-9a-f]{64}$"))' RELEASE-EVIDENCE.json)
+          printf '%s  NOTES.md\n' "$notes_sha256" | sha256sum --check --strict
+          jq -r '.artifacts[] | "\(.sha256)  \(.file)"' RELEASE-EVIDENCE.json | cmp - SHA256SUMS
+          gh attestation verify RELEASE-EVIDENCE.json --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+            --source-ref refs/heads/main --source-digest "$GITHUB_SHA" --deny-self-hosted-runners
+          sha256sum --strict --check SHA256SUMS
+          printf '%s\n' *.rpm *.deb *.tar.zst | LC_ALL=C sort > "$RUNNER_TEMP/fabric-release-files"
+          jq -r '.artifacts[].file' RELEASE-EVIDENCE.json | LC_ALL=C sort | cmp - "$RUNNER_TEMP/fabric-release-files"
       - uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
-        if: startsWith(github.ref, 'refs/tags/v')
         with:
           prerelease: true
           body_path: release/NOTES.md

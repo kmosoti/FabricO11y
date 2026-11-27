@@ -1,6 +1,8 @@
 name: Development checks
 on:
   pull_request:
+    branches: [main, develop, 'stack/**']
+    types: [opened, synchronize, reopened, ready_for_review, edited]
   push:
     branches: [develop]
   workflow_dispatch:
@@ -13,6 +15,9 @@ env:
   CARGO_INCREMENTAL: '0'
   CARGO_PROFILE_DEV_DEBUG: '0'
   CARGO_PROFILE_TEST_DEBUG: '0'
+  PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+  PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+  PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
   LEAN_NUM_THREADS: '4'
   RUSTUP_AUTO_INSTALL: '0'
   TMPDIR: /var/tmp
@@ -30,6 +35,7 @@ jobs:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ github.sha }}
+          fetch-depth: 2
           persist-credentials: false
       - name: Trust the checked-out workspace for job Git commands
         run: &trust-ci-workspace |
@@ -39,6 +45,32 @@ jobs:
           if [ "$(GIT_CONFIG_GLOBAL="$config" git rev-parse HEAD)" != "$GITHUB_SHA" ]; then
             printf 'Checkout does not match the tested source revision.\n' >&2
             exit 1
+          fi
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            parents_of() {
+              GIT_CONFIG_GLOBAL="$config" git cat-file commit "$1" | sed -n '1,/^$/s/^parent //p'
+            }
+            reject_merge() {
+              printf 'The tested merge does not match the event base and head.\n' >&2
+              exit 1
+            }
+            parents=$(parents_of HEAD)
+            expected_base="$PR_BASE_SHA"
+            case "$PR_BASE_REF" in
+              stack/*)
+                synthetic_base=$(printf '%s\n' "$parents" | sed -n '1p')
+                if [ "$synthetic_base" != "$expected_base" ]; then
+                  # GitHub stacks use the predecessor PR's synthetic merge as the first parent.
+                  predecessor_parents=$(parents_of "$synthetic_base")
+                  predecessor_base=$(printf '%s\n' "$predecessor_parents" | sed -n '1p')
+                  [ -n "$predecessor_base" ] &&
+                    [ "$predecessor_parents" = "$(printf '%s\n%s' "$predecessor_base" "$PR_BASE_SHA")" ] ||
+                    reject_merge
+                  expected_base="$synthetic_base"
+                fi
+                ;;
+            esac
+            [ "$parents" = "$(printf '%s\n%s' "$expected_base" "$PR_HEAD_SHA")" ] || reject_merge
           fi
           printf 'GIT_CONFIG_GLOBAL=%s\n' "$config" >> "$GITHUB_ENV"
       - name: Check installed native verification tools and source pins
@@ -136,6 +168,7 @@ jobs:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ github.sha }}
+          fetch-depth: 2
           persist-credentials: false
       - name: Trust the checked-out workspace for job Git commands
         run: *trust-ci-workspace

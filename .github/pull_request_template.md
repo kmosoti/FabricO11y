@@ -14,7 +14,7 @@
 
 ## Architectural & Boundary Check
 - [ ] Sans-I/O separation preserved (`admission-kernel`, `fabric-core`, and `fabric-graph` stay free of OS/filesystem/network I/O)
-- [ ] Zero UI/frontend assets or web servers introduced (CLI `--json` / `--arrow` / `--table` only)
+- [ ] Headless defaults and the typed client boundary remain intact. Frontends are opt-in packages.
 - [ ] Zero `/tmp` or `/dev/shm` writes at build or runtime (`CARGO_BUILD_TARGET_DIR=/data/cargo-target`, `TMPDIR=/data/tmp`, `FABRIC_DATA_DIR=/data/fabrico11y`)
 - [ ] Self-preservation invariants respected (`fabrico11y.slice`, `rss_bytes < 100 MiB`, `open_fds < 64`, `tmp_files_created == 0`)
 
