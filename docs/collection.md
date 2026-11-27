@@ -392,6 +392,35 @@ inventing timestamps. The completion time, local stage observation, receipt,
 and first verified visibility are separate facts; Spindle acknowledgement and
 visibility timestamps are not recorded here.
 
+To verify a confirmed application at a canonical authority, start batch mode
+with `--canonical-reader ENDPOINT AUTHORITY CREDENTIAL_FILE` after the outbox
+argument. The endpoint must be loopback or an authenticated loopback tunnel;
+the private credential file must hold an independently provisioned reader
+grant. Pin the expected canonical authority from trusted configuration. The
+reader grant is separate from the Spindle forwarding credential.
+
+```json
+{"command":"verify_application","report_id":"edd65cef-e5aa-4f95-8ae6-6b30f9edb662"}
+{"command":"read_application_parent","report_id":"edd65cef-e5aa-4f95-8ae6-6b30f9edb662"}
+```
+
+The adapter resolves the confirmed local receipt, checks the authenticated
+response authority, origin, source and identity, then validates the application
+carrier and its stored request digest. Parent lookup uses the verified child's
+parent ID and a confirmed parent in the same owner outbox. This confines local
+selection; a canonical reader grant covers its configured origins and is not a
+per-parent access policy. A caller must retain the original artifact bytes to
+independently check the returned original-byte digest.
+
+`report_status.first_verified_read` is null until a successful exact read is
+recorded. It is a local wall-clock sample inside the first successful recording
+transaction, before commit. It does not claim the first actual visibility time,
+commit/fsync time, or analytical projection visibility. Repeated reads still
+verify content and preserve the original sample. Older v1 and v2 outboxes
+migrate without fabricated times. Failed, missing or unauthorized reads do not
+record success. The original raw artifact and canonical response are not retained
+by the outbox.
+
 The outbox can report that it is full, locked, or waiting for custody. Preserve
 an unresolved outbox after lease expiry. Automatic replay uses the original
 lease and stops at expiry. Inspect custody using the original origin and

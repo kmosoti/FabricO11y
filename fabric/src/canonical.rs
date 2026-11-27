@@ -47,18 +47,54 @@ pub struct ProjectionReadyRequest {
     pub timeout_ms: u32,
     pub wait: bool,
 }
+fn valid_receipt_fields(
+    authority: &str,
+    origin: &str,
+    source_id: u64,
+    identity: &observation::Identity,
+) -> bool {
+    let valid = |value: &str| !value.is_empty() && value.len() <= 128 && !value.contains('\0');
+    valid(authority)
+        && valid(origin)
+        && valid(&identity.producer)
+        && valid(&identity.generation)
+        && identity.sequence != 0
+        && source_id != 0
+        && source_id <= i64::MAX as u64
+}
 impl ProjectionReadyRequest {
     pub fn validate(&self) -> Result<(), String> {
-        let valid = |value: &str| !value.is_empty() && value.len() <= 128 && !value.contains('\0');
-        if !valid(&self.authority)
-            || !valid(&self.origin)
-            || !valid(&self.identity.producer)
-            || !valid(&self.identity.generation)
-            || self.identity.sequence == 0
-            || self.source_id == 0
-            || self.source_id > i64::MAX as u64
-            || !(1..=MAX_PROJECTION_READY_TIMEOUT_MS).contains(&self.timeout_ms)
+        if !valid_receipt_fields(
+            &self.authority,
+            &self.origin,
+            self.source_id,
+            &self.identity,
+        ) || !(1..=MAX_PROJECTION_READY_TIMEOUT_MS).contains(&self.timeout_ms)
         {
+            return Err("invalid canonical projection readiness request".into());
+        }
+        Ok(())
+    }
+}
+
+/// Exact canonical lookup bound to the expected authority and custody receipt.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExactReceiptRequest {
+    pub authority: String,
+    pub origin: String,
+    #[serde(with = "query::decimal")]
+    pub source_id: u64,
+    pub identity: observation::Identity,
+}
+impl ExactReceiptRequest {
+    pub fn validate(&self) -> Result<(), String> {
+        if !valid_receipt_fields(
+            &self.authority,
+            &self.origin,
+            self.source_id,
+            &self.identity,
+        ) {
             return Err("invalid canonical projection readiness request".into());
         }
         Ok(())
@@ -118,6 +154,9 @@ pub enum Request {
         identity: observation::Identity,
     },
     Progress,
+    ExactReceiptLookup {
+        request: ExactReceiptRequest,
+    },
     ProjectionReady {
         request: ProjectionReadyRequest,
     },
@@ -152,6 +191,10 @@ pub enum Response {
         rows: Vec<CanonicalRow>,
     },
     Found {
+        row: Option<CanonicalRow>,
+    },
+    ExactReceiptFound {
+        authority: String,
         row: Option<CanonicalRow>,
     },
     Progress {
