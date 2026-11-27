@@ -515,3 +515,12 @@ type = "decision"
 date = 2026-11-27
 added_by = "agent"
 human_ratified = false
+
+[[records]]
+id = "D-0271"
+source_path = "knowledge/decisions/D-0271-scoped-decision-pages.md"
+title = "Durable scoped decision pages"
+type = "decision"
+date = 2026-11-27
+added_by = "agent"
+human_ratified = false

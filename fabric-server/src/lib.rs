@@ -8,6 +8,7 @@ mod handshake;
 mod handshake_io;
 pub mod ledger;
 mod segment_ticket;
+mod plan_cursor;
 mod self_observation;
 mod worker_pool;
 use fabric::{
@@ -149,6 +150,7 @@ struct ReadState {
     frontiers: RwLock<BTreeMap<String, u64>>,
     engine: Option<engine::Greptime>,
     telemetry: Option<ServerTelemetry>,
+    plan_hints: Mutex<plan_cursor::Hints>,
 }
 pub struct Server {
     listener: TcpListener,
@@ -333,6 +335,7 @@ impl Server {
                 frontiers: RwLock::new(frontiers),
                 engine: state.engine(),
                 telemetry,
+                plan_hints: Mutex::new(plan_cursor::Hints::default()),
             })
         };
         let listener = TcpListener::bind(address).map_err(|e| e.to_string())?;
@@ -1019,7 +1022,16 @@ fn handle(
     let reader = grant.is_reader();
     let node = grant.node();
     let writer = grant.writer();
-    if writer.is_some() && !matches!(&request, Request::AcceptPlan { .. }) {
+    if writer.is_some()
+        && !matches!(
+            &request,
+            Request::AcceptPlan { .. }
+                | Request::PlanPage { .. }
+                | Request::RevokePlanCursors { .. }
+                | Request::SubscribePlan { .. }
+                | Request::PollPlanHint { .. }
+        )
+    {
         return Err("decision writer cannot read or ingest".into());
     }
     // Normalize the additive command only after authentication and reader
@@ -1059,7 +1071,64 @@ fn handle(
                 return Err("unauthorized plan scope".into());
             }
             let result = canonical_state(ledger, reads)?.accept_plan(writer, &body)?;
+            if let Ok(command) = serde_json::from_str::<canonical::AcceptPlan>(&body) {
+                if let Ok(mut hints) = reads.plan_hints.lock() {
+                    hints.signal(&command.scope.0);
+                }
+            }
             Ok(Response::PlanAccepted { decision: result })
+        }
+        Request::PlanPage { request } => {
+            let writer = writer
+                .as_deref()
+                .ok_or("decision writer credential required")?;
+            match canonical_state(ledger, reads)?.plan_page(writer, &request)? {
+                Ok(page) => Ok(Response::PlanPage { page }),
+                Err(reason) => Ok(Response::PlanCursorFailure { reason }),
+            }
+        }
+        Request::RevokePlanCursors { scope } => {
+            let writer = writer
+                .as_deref()
+                .ok_or("decision writer credential required")?;
+            let mut state = canonical_state(ledger, reads)?;
+            state.revoke_plan_cursors(writer, &scope.0)?;
+            if let Ok(mut hints) = reads.plan_hints.lock() {
+                hints.revoke(&scope.0);
+            }
+            Ok(Response::PlanCursorsRevoked)
+        }
+        Request::SubscribePlan { scope } => {
+            let writer = writer
+                .as_deref()
+                .ok_or("decision writer credential required")?;
+            let state = canonical_state(ledger, reads)?;
+            let (epoch, frontier) = state.plan_cursor_identity(writer, &scope.0)?;
+            let mut hints = reads.plan_hints.lock().map_err(|_| "hint lock")?;
+            match hints.subscribe(writer, &scope.0, epoch)? {
+                Some(subscription) => Ok(Response::PlanSubscribed {
+                    subscription,
+                    frontier,
+                }),
+                None => Ok(Response::PlanCursorFailure {
+                    reason: canonical::PlanCursorFailure::Capacity,
+                }),
+            }
+        }
+        Request::PollPlanHint {
+            scope,
+            subscription,
+        } => {
+            let writer = writer
+                .as_deref()
+                .ok_or("decision writer credential required")?;
+            let state = canonical_state(ledger, reads)?;
+            let (epoch, _) = state.plan_cursor_identity(writer, &scope.0)?;
+            let mut hints = reads.plan_hints.lock().map_err(|_| "hint lock")?;
+            match hints.poll(writer, &scope.0, epoch, &subscription) {
+                Ok(pending) => Ok(Response::PlanHint { pending }),
+                Err(reason) => Ok(Response::PlanCursorFailure { reason }),
+            }
         }
         Request::Ingest { origin, records } => {
             if node != Some(origin.as_str()) {

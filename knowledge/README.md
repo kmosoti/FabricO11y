@@ -61,6 +61,7 @@ TOML-native records without changing that cohort or its count.
 | [D-0200 · Frozen experiment snapshots](decisions/D-0200-frozen-snapshots.md) | `agent` | `false` | Fixed roster, explicit boundaries and missingness-aware comparisons |
 | [D-0270 · Conditional canonical plan acceptance](decisions/D-0270-conditional-plan-acceptance.md) | `agent` | `false` | Authenticated single-owner scope and atomic decision retry |
 | [D-0223 · Live cursor cadence](decisions/D-0223-live-cursor-cadence.md) | `agent` | `false` | Bounded opt-in Spindle polling |
+| [D-0271 · Durable scoped decision pages](decisions/D-0271-scoped-decision-pages.md) | `agent` | `false` | Fixed-frontier cursors and coalesced advisory hints |
 | [D-0199 · Canonical query operation negotiation](decisions/D-0199-query-negotiation.md) | `agent` | `false` | Authenticated opt-in per-operation version gate |
 | [D-0304 · Portable query operation contracts](decisions/D-0304-portable-query-contracts.md) | `agent` | `false` | Shared pure query DTOs and native compatibility |
 | [D-0198 · Operation dispatch profiles](decisions/D-0198-dispatch-profiles.md) | `agent` | `false` | Scoped dependency profiles and matched dispatch measurement |
