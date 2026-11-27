@@ -7,6 +7,7 @@
 
 pub mod as_of;
 pub mod portable;
+pub mod source;
 
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
