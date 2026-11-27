@@ -568,12 +568,13 @@ fn grouped_receipt_proofs_match_single_and_scan_each_segment_once() {
 fn grouped_receipt_corruption_isolated_to_one_segment() {
     let dir = private_tempdir();
     let mut p = Projection::open(dir.path(), 32 * 1024 * 1024).unwrap();
-    let rows: Vec<_> = records()
+    let mut rows: Vec<_> = records()
         .into_iter()
         .filter(|r| r.origin == "a")
         .take(2)
         .collect();
     assert_eq!(rows.len(), 2);
+    rows[1].canonical_id = 2;
     p.apply(&rows[..1]).unwrap();
     p.apply(&rows[1..]).unwrap();
     let manifest: Value =
