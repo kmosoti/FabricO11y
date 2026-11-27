@@ -435,6 +435,7 @@ impl Server {
             reader: self.auth.reader.clone(),
             nodes: self.auth.nodes.clone(),
             writers: self.auth.writers.clone(),
+            authority: self.reads.authority.clone(),
         });
         let preauth_limit = (connection_limit * 4).clamp(16, 128);
         let preauth =
@@ -464,21 +465,24 @@ impl Server {
                     let reads = Arc::clone(&reads);
                     let _ = pool.try_submit(move || {
                         let _connection_lease = guard;
-                        let mut socket = session.stream;
+                        let handshake::AuthenticatedSession {
+                            stream: mut socket,
+                            peer,
+                            client_nonce,
+                            server_nonce,
+                            request_mac,
+                        } = session;
                         let request = canonical::read_frame(
                             &mut socket,
                             Instant::now() + Duration::from_secs(2),
                         )
                         .and_then(|bytes| {
-                            if !canonical::verify_request_mac(
-                                &session.peer.secret,
-                                &session.client_nonce,
-                                &session.server_nonce,
+                            let grant = peer.verify_request(
+                                &client_nonce,
+                                &server_nonce,
                                 &bytes,
-                                &session.request_mac,
-                            ) {
-                                return Err("unauthorized".into());
-                            }
+                                &request_mac,
+                            )?;
                             observation::check_json_depth(
                                 &bytes,
                                 canonical::MAX_FRAME,
@@ -486,12 +490,7 @@ impl Server {
                             )?;
                             let req: Request =
                                 serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
-                            Ok((
-                                session.peer.reader,
-                                session.peer.node,
-                                session.peer.writer,
-                                req,
-                            ))
+                            Ok((grant, req))
                         });
                         respond(
                             request,
@@ -785,7 +784,7 @@ fn receipt_readiness(
 }
 
 fn respond(
-    request: Result<(bool, Option<String>, Option<String>, Request), String>,
+    request: Result<(handshake::AuthenticatedGrant, Request), String>,
     ledger: &Arc<Mutex<Ledger>>,
     projection: &Arc<Mutex<Projection>>,
     auth: &Auth,
@@ -796,11 +795,9 @@ fn respond(
     // The query lease covers execution, encoding, the write attempt and response cleanup.
     let mut query_lease = None;
     let response = request
-        .and_then(|(reader, node, writer, req)| {
+        .and_then(|(grant, req)| {
             handle(
-                reader,
-                node,
-                writer,
+                &grant,
                 req,
                 ledger,
                 projection,
@@ -827,9 +824,7 @@ fn respond(
 
 #[allow(clippy::too_many_arguments)]
 fn handle(
-    reader: bool,
-    node: Option<String>,
-    writer: Option<String>,
+    grant: &handshake::AuthenticatedGrant,
     request: Request,
     ledger: &Arc<Mutex<Ledger>>,
     projection: &Arc<Mutex<Projection>>,
@@ -838,9 +833,12 @@ fn handle(
     reads: &ReadState,
     query_lease: &mut Option<QueryGuard>,
 ) -> Result<Response, String> {
-    if !reader && node.is_none() && writer.is_none() {
+    if grant.authority() != reads.authority {
         return Err("unauthorized".into());
     }
+    let reader = grant.is_reader();
+    let node = grant.node();
+    let writer = grant.writer();
     if writer.is_some() && !matches!(&request, Request::AcceptPlan { .. }) {
         return Err("decision writer cannot read or ingest".into());
     }
@@ -861,22 +859,20 @@ fn handle(
         }
         request => request,
     };
-    let allows =
-        |origin: &str| reader && auth.nodes.contains_key(origin) || node.as_deref() == Some(origin);
+    let allows = |origin: &str| reader && auth.nodes.contains_key(origin) || node == Some(origin);
+
     let mut measurement = reads
         .telemetry
         .as_ref()
-        .and_then(|telemetry| telemetry.measure(&request, node.as_deref(), reader, auth));
+        .and_then(|telemetry| telemetry.measure(&request, node, reader, auth));
     match request {
         Request::AcceptPlan { body } => {
-            let writer = writer
-                .as_deref()
-                .ok_or("decision writer credential required")?;
+            let writer = writer.ok_or("decision writer credential required")?;
             let result = canonical_state(ledger, reads)?.accept_plan(writer, &body)?;
             Ok(Response::PlanAccepted { decision: result })
         }
         Request::Ingest { origin, records } => {
-            if node.as_deref() != Some(&origin) {
+            if node != Some(origin.as_str()) {
                 return Err("unauthorized origin".into());
             }
             let mut ledger = canonical_state(ledger, reads)?;
@@ -1276,15 +1272,29 @@ mod receipt_tests {
     }
 
     fn call(server: &Server, credential: &str, request: Request) -> Result<Response, String> {
-        let (reader, node) = if credential == "reader" {
-            (true, None)
-        } else {
-            (false, Some(credential.to_owned()))
+        let auth = handshake::HandshakeAuth {
+            reader: server.auth.reader.clone(),
+            nodes: server.auth.nodes.clone(),
+            writers: server.auth.writers.clone(),
+            authority: server.reads.authority.clone(),
         };
+        let secret = if credential == "reader" {
+            &auth.reader
+        } else {
+            auth.nodes.get(credential).unwrap()
+        };
+        let client_nonce = canonical::random_nonce_hex().unwrap();
+        let server_nonce = canonical::random_nonce_hex().unwrap();
+        let bytes = serde_json::to_vec(&request).unwrap();
+        let proof = canonical::build_client_proof(secret, &client_nonce, &server_nonce, &bytes);
+        let peer = auth
+            .verify_proof(&client_nonce, &server_nonce, &proof.proof)
+            .unwrap();
+        let grant = peer
+            .verify_request(&client_nonce, &server_nonce, &bytes, &proof.request_mac)
+            .unwrap();
         handle(
-            reader,
-            node,
-            None,
+            &grant,
             request,
             &server.ledger,
             &server.projection,

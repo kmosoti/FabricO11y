@@ -137,6 +137,14 @@ fact is not forwarded as authenticated application identity, and Spindle's
 separate outbound canonical credential does not authenticate the local caller.
 Policy-at-commit and broader authorization remain separate work.
 
+The canonical TCP server maps a verified credential proof to the configured
+reader or node-origin scope, then checks the request MAC before minting a
+private grant for dispatch. The grant carries that scope and the server's
+canonical authority; request fields cannot supply either. The grant establishes
+credential possession under the configured scope, not a human or application
+principal or the locality of a caller behind a proxy. It is not a substitute
+for commit-time policy and authority revalidation.
+
 ```mermaid
 flowchart LR
     Wire["Transport input"] --> Adapter["Authenticate and bound input"]

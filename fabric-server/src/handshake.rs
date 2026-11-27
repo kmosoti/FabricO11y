@@ -22,6 +22,7 @@ pub(crate) struct HandshakeAuth {
     pub reader: String,
     pub nodes: BTreeMap<String, String>,
     pub writers: BTreeMap<String, String>,
+    pub authority: String,
 }
 
 impl HandshakeAuth {
@@ -36,32 +37,29 @@ impl HandshakeAuth {
         client_nonce: &str,
         server_nonce: &str,
         proof: &str,
-    ) -> Option<VerifiedPeer> {
+    ) -> Option<ProofPeer> {
         if verify_client_proof(&self.reader, client_nonce, server_nonce, proof) {
-            return Some(VerifiedPeer {
-                reader: true,
-                node: None,
-                writer: None,
+            return Some(ProofPeer {
+                scope: CredentialScope::Reader,
                 secret: self.reader.clone(),
+                authority: self.authority.clone(),
             });
         }
         for (origin, secret) in &self.nodes {
             if verify_client_proof(secret, client_nonce, server_nonce, proof) {
-                return Some(VerifiedPeer {
-                    reader: false,
-                    node: Some(origin.clone()),
-                    writer: None,
+                return Some(ProofPeer {
+                    scope: CredentialScope::Node(origin.clone()),
                     secret: secret.clone(),
+                    authority: self.authority.clone(),
                 });
             }
         }
         for (writer, secret) in &self.writers {
             if verify_client_proof(secret, client_nonce, server_nonce, proof) {
-                return Some(VerifiedPeer {
-                    reader: false,
-                    node: None,
-                    writer: Some(writer.clone()),
+                return Some(ProofPeer {
+                    scope: CredentialScope::Writer(writer.clone()),
                     secret: secret.clone(),
+                    authority: self.authority.clone(),
                 });
             }
         }
@@ -69,16 +67,73 @@ impl HandshakeAuth {
     }
 }
 
-pub(crate) struct VerifiedPeer {
-    pub reader: bool,
-    pub node: Option<String>,
-    pub writer: Option<String>,
-    pub secret: String,
+enum CredentialScope {
+    Reader,
+    Node(String),
+    Writer(String),
+}
+
+// A handshake proof alone is not a grant for the request body.
+pub(crate) struct ProofPeer {
+    scope: CredentialScope,
+    secret: String,
+    authority: String,
+}
+
+// Only this module can mint a grant, after both authentication checks.
+pub(crate) struct AuthenticatedGrant {
+    scope: CredentialScope,
+    authority: String,
+}
+
+impl ProofPeer {
+    pub(crate) fn verify_request(
+        self,
+        client_nonce: &str,
+        server_nonce: &str,
+        bytes: &[u8],
+        mac: &str,
+    ) -> Result<AuthenticatedGrant, String> {
+        if !fabric::canonical::verify_request_mac(
+            &self.secret,
+            client_nonce,
+            server_nonce,
+            bytes,
+            mac,
+        ) {
+            return Err("unauthorized".into());
+        }
+        Ok(AuthenticatedGrant {
+            scope: self.scope,
+            authority: self.authority,
+        })
+    }
+}
+
+impl AuthenticatedGrant {
+    pub(crate) fn is_reader(&self) -> bool {
+        matches!(self.scope, CredentialScope::Reader)
+    }
+    pub(crate) fn node(&self) -> Option<&str> {
+        match &self.scope {
+            CredentialScope::Reader | CredentialScope::Writer(_) => None,
+            CredentialScope::Node(origin) => Some(origin),
+        }
+    }
+    pub(crate) fn writer(&self) -> Option<&str> {
+        match &self.scope {
+            CredentialScope::Writer(writer) => Some(writer),
+            CredentialScope::Reader | CredentialScope::Node(_) => None,
+        }
+    }
+    pub(crate) fn authority(&self) -> &str {
+        &self.authority
+    }
 }
 
 pub(crate) struct AuthenticatedSession {
     pub stream: TcpStream,
-    pub peer: VerifiedPeer,
+    pub peer: ProofPeer,
     pub client_nonce: String,
     pub server_nonce: String,
     pub request_mac: String,

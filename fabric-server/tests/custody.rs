@@ -191,6 +191,73 @@ impl Drop for Receiver {
         self.shutdown()
     }
 }
+// Exercise proof and MAC through the deployed TCP handshake and dispatch.
+fn raw_authenticated_call(
+    receiver: &Receiver,
+    credential: &str,
+    body: &[u8],
+    mac_body: &[u8],
+) -> Response {
+    let mut stream = std::net::TcpStream::connect(&receiver.endpoint).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let nonce = canonical::random_nonce_hex().unwrap();
+    let hello = canonical::ClientHello {
+        version: canonical::AUTH_HANDSHAKE_VERSION,
+        client_nonce: nonce.clone(),
+    };
+    canonical::write_frame(&mut stream, &serde_json::to_vec(&hello).unwrap(), deadline).unwrap();
+    let challenge: canonical::ServerChallenge =
+        serde_json::from_slice(&canonical::read_frame(&mut stream, deadline).unwrap()).unwrap();
+    let secret = receiver.token(credential);
+    canonical::verify_server_challenge(&secret, &nonce, &challenge).unwrap();
+    let proof = canonical::build_client_proof(&secret, &nonce, &challenge.server_nonce, mac_body);
+    canonical::write_frame(&mut stream, &serde_json::to_vec(&proof).unwrap(), deadline).unwrap();
+    canonical::write_frame(&mut stream, body, deadline).unwrap();
+    serde_json::from_slice(&canonical::read_frame(&mut stream, deadline).unwrap()).unwrap()
+}
+
+#[test]
+fn authenticated_grant_uses_configured_scope_and_checks_request_mac() {
+    let dir = tempfile::tempdir().unwrap();
+    let server = Receiver::new(dir.path(), &["alpha", "beta"]);
+    let forged_role = br#"{"command":"capabilities","reader":true,"node":"beta"}"#;
+    assert!(
+        matches!(raw_authenticated_call(&server, "alpha", forged_role, forged_role),
+        Response::Capabilities { origins, .. } if origins == vec!["alpha"])
+    );
+    let other_origin = Request::Ingest {
+        origin: "beta".into(),
+        records: vec![row(1, raw(1))],
+    };
+    assert!(matches!(
+        server.call("alpha", other_origin),
+        Response::Error { .. }
+    ));
+    let reader_ingest = Request::Ingest {
+        origin: "alpha".into(),
+        records: vec![row(1, raw(1))],
+    };
+    assert!(matches!(
+        server.call("reader", reader_ingest),
+        Response::Error { .. }
+    ));
+    let request = br#"{"command":"progress"}"#;
+    assert!(
+        matches!(raw_authenticated_call(&server, "alpha", request, b"different request"),
+        Response::Error { error } if error == "unauthorized")
+    );
+    let own = Request::Ingest {
+        origin: "alpha".into(),
+        records: vec![row(1, raw(1))],
+    };
+    assert!(
+        matches!(server.call("alpha", own), Response::Committed { origin, through: 1, .. } if origin == "alpha")
+    );
+    assert!(
+        matches!(server.call("reader", Request::Progress), Response::Progress { frontiers, .. } if frontiers.get("alpha") == Some(&1) && !frontiers.contains_key("beta"))
+    );
+}
+
 #[test]
 fn node_payload_quota_preserves_retries_and_other_origins() {
     let dir = tempfile::tempdir().unwrap();
