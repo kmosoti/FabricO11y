@@ -450,6 +450,16 @@ human_ratified = false
 related = []
 
 [[records]]
+id = "D-0312"
+source_path = "knowledge/decisions/D-0312-frontend-design-direction.md"
+title = "Workflow-first frontend design direction"
+type = "decision"
+status = "proposed"
+date = 2026-11-27
+added_by = "agent"
+human_ratified = false
+
+[[records]]
 id = "D-0203"
 source_path = "knowledge/decisions/D-0203-bounded-lexical.md"
 title = "Bounded lexical rebuild"
