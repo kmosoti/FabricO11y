@@ -18,3 +18,15 @@ receipt, durable record, authorization decision, corpus cluster or review input
 binding. Callers must independently bound decoding and reject duplicate keys
 before constructing the ordered roster and outcome maps. Exact cutoff and
 identity persistence and authorized parent readback remain separate work.
+
+The separate reference-only `fabric.snapshot.v1` application payload supports at
+most 16 ordered cases and must also fit the existing 4 KiB application payload
+and shape limits. A known case names a same-owner report UUID, expected
+canonical application-payload digest and optional nonzero source ID; an unknown
+case retains its reason. These are claims, not receipts or authenticated reads.
+The parent report ID comes only from the validated application envelope; the
+payload binds its expected canonical digest. Supplement checking requires the
+same scope, population and definition, and a strictly increasing ordinal on
+the same immutable cutoff source. Provenanced timestamps are retained but are
+not compared to establish ordering. The pure matcher cannot authenticate a
+result or establish a receipt; adapters must do so before using the match.

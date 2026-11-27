@@ -3,6 +3,7 @@
 //! Callers must bound decoding and staging before constructing these values.
 //! Identifiers and digest claims do not establish custody or authenticity.
 use crate::evidence_manifest::ImmutableReference;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub const MAX_CASES: usize = 256;
@@ -24,7 +25,8 @@ pub enum SnapshotError {
 }
 
 /// Aggregation describes the reported measurement; no statistical property is inferred.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Aggregation {
     Count,
     Sum,
@@ -78,7 +80,8 @@ impl MeasurementDefinition {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum UnknownReason {
     Missing,
     Unavailable,
