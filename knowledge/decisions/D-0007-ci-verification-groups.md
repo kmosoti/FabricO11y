@@ -1,10 +1,3 @@
----
-id: D-0007
-date: 2026-11-18
-added_by: agent
-human_ratified: false
----
-
 # CI verification groups
 
 The development workflow ran the workspace test, lint, and schema checks in

@@ -1,17 +1,3 @@
----
-id: D-0191
-title: Verified Develop Integration and Human Release Promotion
-type: decision
-status: accepted
-date: 2026-11-26
-added_by: agent
-human_ratified: false
-supersedes:
-  - D-0189
-related:
-  - D-0001
----
-
 # D-0191 · Verified develop integration and human release promotion
 
 Integrate ordinary issues on `develop` in current-base, bottom-up Jujutsu PRs.

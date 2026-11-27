@@ -1,10 +1,3 @@
----
-id: D-0005
-added_by: agent
-human_ratified: false
-date: 2026-11-18
----
-
 # Receipt-specific local projection evidence
 
 Issue #165 requires a batch client to distinguish projection lag from missing

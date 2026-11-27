@@ -1,10 +1,3 @@
----
-id: O-0176
-date: 2026-11-18
-added_by: agent
-human_ratified: false
----
-
 # Hosted CI tool image qualification
 
 The trials ran the product tree at

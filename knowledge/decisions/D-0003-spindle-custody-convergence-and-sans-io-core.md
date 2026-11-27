@@ -1,16 +1,3 @@
----
-id: D-0003
-title: Spindle Custody Convergence and Sans-I/O Core Extraction
-type: decision
-status: accepted
-date: 2026-11-14
-added_by: agent
-human_ratified: false
-related:
-  - D-0002
-  - R-0001
----
-
 # D-0003 · Spindle Custody Convergence and Sans-I/O Core Extraction
 
 ## Decision

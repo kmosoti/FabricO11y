@@ -1,17 +1,3 @@
----
-id: D-0189
-title: Single-Branch main Workflow with CODEOWNERS and Stacked Jujutsu PRs
-type: decision
-status: accepted
-date: 2026-11-21
-added_by: agent
-human_ratified: false
-supersedes:
-  - D-0001
-related:
-  - D-0002
----
-
 # D-0189 · Single-Branch `main` Workflow with `CODEOWNERS` and Stacked Jujutsu PRs
 
 ## Decision

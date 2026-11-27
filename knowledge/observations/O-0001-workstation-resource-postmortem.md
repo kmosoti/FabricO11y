@@ -1,16 +1,3 @@
----
-id: O-0001
-title: workstation-01 13.2-Day Resource Exhaustion Post-Mortem and Telemetry Mapping
-type: observation
-status: observed
-date: 2026-11-14
-added_by: agent
-human_ratified: false
-related:
-  - D-0002
-  - R-0001
----
-
 # O-0001 · `workstation-01` 13.2-Day Resource Post-Mortem
 
 ## Observed Incident Telemetry (`workstation-01`)

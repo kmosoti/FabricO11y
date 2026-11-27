@@ -1,19 +1,3 @@
----
-id: O-0002
-title: Converged Release Verification Proofs, Fuzz Campaigns, and Coupled User-Stack Install
-type: observation
-status: observed
-date: 2026-11-15
-added_by: agent
-human_ratified: false
-related:
-  - D-0001
-  - D-0002
-  - D-0003
-  - O-0001
-  - R-0002
----
-
 # O-0002 · Converged Release Verification and Coupled Stack Installation
 
 ## Formal Verification & Fuzzing Observations (`develop`)

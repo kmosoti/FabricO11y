@@ -1,10 +1,3 @@
----
-id: O-0182
-date: 2026-11-18
-added_by: agent
-human_ratified: false
----
-
 # Effective resource settings under Linux pressure
 
 The resource-policy candidate was `59505c733adb8b5a66b0d370baa4407373229a9e`.

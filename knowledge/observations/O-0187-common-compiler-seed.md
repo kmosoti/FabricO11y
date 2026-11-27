@@ -1,10 +1,3 @@
----
-id: O-0187
-date: 2026-11-18
-added_by: agent
-human_ratified: false
----
-
 # Common release compiler seed
 
 The tool-only common image missed the cold threshold. The [same-VM trial](https://github.com/kmosoti/FabricO11y/actions/runs/44405946015)

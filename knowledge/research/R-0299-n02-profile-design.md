@@ -1,13 +1,3 @@
----
-id: R-0299
-title: N02 resource and benchmark declaration prototype
-type: research
-status: preliminary
-date: 2026-11-27
-added_by: agent
-human_ratified: false
----
-
 # R-0299 · N02 resource and benchmark declaration prototype
 
 [#299](https://github.com/kmosoti/FabricO11y/issues/299) is the manifest-first

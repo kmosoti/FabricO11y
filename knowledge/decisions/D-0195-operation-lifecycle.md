@@ -1,10 +1,3 @@
----
-id: D-0195
-date: 2026-11-27
-added_by: agent
-human_ratified: false
----
-
 # Runtime-neutral operation lifecycles
 
 The operation seam is a dependency-free `fabric-ops` crate rather than a

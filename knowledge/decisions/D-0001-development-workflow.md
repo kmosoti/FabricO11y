@@ -1,17 +1,3 @@
----
-id: D-0001
-title: Two-Branch Stacked Development Workflow and Human Gate on main
-type: decision
-status: superseded
-date: 2026-11-14
-added_by: agent
-human_ratified: false
-superseded_by: D-0189
-related:
-  - D-0002
-  - O-0001
----
-
 # D-0001 · Two-Branch Stacked Development Workflow and Human Gate on `main`
 
 ## Decision

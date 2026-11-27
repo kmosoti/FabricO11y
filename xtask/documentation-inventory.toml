@@ -1,0 +1,670 @@
+schema_version = 1
+
+[classifications]
+operational-directives = "Repository operating rules; preserve as actionable semantic instructions."
+knowledge-record = "Dated decision, observation, or research body with structured metadata in the sidecar."
+knowledge-index-and-guidance = "Reader guidance and stable index for the knowledge graph."
+published-release-artifact = "Published release history; retain as immutable evidence."
+proof-or-verification-evidence = "Proof scope, contracts, or verification evidence; retain factual detail."
+maintained-prose = "Current product, setup, contribution, or package documentation."
+
+
+[[files]]
+path = ".github/pull_request_template.md"
+classification = "maintained-prose"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = false
+license_notice = false
+semantic_directive = true
+historical_evidence = false
+
+[[files]]
+path = "AGENTS.md"
+classification = "operational-directives"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = false
+license_notice = false
+semantic_directive = true
+historical_evidence = false
+
+[[files]]
+path = "CONTRIBUTING.md"
+classification = "maintained-prose"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = true
+license_notice = false
+semantic_directive = true
+historical_evidence = false
+
+[[files]]
+path = "README.md"
+classification = "maintained-prose"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = true
+license_notice = false
+semantic_directive = false
+historical_evidence = false
+
+[[files]]
+path = "SECURITY.md"
+classification = "maintained-prose"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = false
+license_notice = false
+semantic_directive = true
+historical_evidence = false
+
+[[files]]
+path = "docs/admission.md"
+classification = "maintained-prose"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = true
+license_notice = false
+semantic_directive = false
+historical_evidence = false
+
+[[files]]
+path = "docs/architecture.md"
+classification = "maintained-prose"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = true
+license_notice = false
+semantic_directive = false
+historical_evidence = false
+
+[[files]]
+path = "docs/arrow-evaluation.md"
+classification = "maintained-prose"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = false
+
+[[files]]
+path = "docs/canonical-custody.md"
+classification = "maintained-prose"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = true
+license_notice = false
+semantic_directive = false
+historical_evidence = false
+
+[[files]]
+path = "docs/ci-images.md"
+classification = "maintained-prose"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = true
+license_notice = false
+semantic_directive = false
+historical_evidence = false
+
+[[files]]
+path = "docs/collection-verification.md"
+classification = "maintained-prose"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = true
+license_notice = false
+semantic_directive = false
+historical_evidence = false
+
+[[files]]
+path = "docs/collection.md"
+classification = "maintained-prose"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = true
+license_notice = false
+semantic_directive = false
+historical_evidence = false
+
+[[files]]
+path = "docs/contracts/sdk.md"
+classification = "maintained-prose"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = false
+
+[[files]]
+path = "docs/contracts/spindle.md"
+classification = "maintained-prose"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = false
+
+[[files]]
+path = "docs/dependency-review.md"
+classification = "maintained-prose"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = false
+license_notice = false
+semantic_directive = true
+historical_evidence = false
+
+[[files]]
+path = "docs/deployment-verification.md"
+classification = "maintained-prose"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = true
+license_notice = false
+semantic_directive = false
+historical_evidence = false
+
+[[files]]
+path = "docs/direction.md"
+classification = "maintained-prose"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = false
+
+[[files]]
+path = "docs/fabric-server-evaluation.md"
+classification = "maintained-prose"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = true
+license_notice = false
+semantic_directive = false
+historical_evidence = false
+
+[[files]]
+path = "docs/guide.md"
+classification = "maintained-prose"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = true
+license_notice = false
+semantic_directive = false
+historical_evidence = false
+
+[[files]]
+path = "docs/investigation.md"
+classification = "maintained-prose"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = true
+license_notice = false
+semantic_directive = false
+historical_evidence = false
+
+[[files]]
+path = "docs/local-prototype.md"
+classification = "maintained-prose"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = false
+
+[[files]]
+path = "docs/nix-installation.md"
+classification = "maintained-prose"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = true
+license_notice = false
+semantic_directive = false
+historical_evidence = false
+
+[[files]]
+path = "docs/release-promotion.md"
+classification = "maintained-prose"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = true
+license_notice = false
+semantic_directive = true
+historical_evidence = false
+
+[[files]]
+path = "docs/releases/v0.1.0-alpha.3.md"
+classification = "published-release-artifact"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = true
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "docs/releases/v0.1.1-alpha.2.md"
+classification = "published-release-artifact"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = true
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "docs/settings.md"
+classification = "maintained-prose"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = true
+license_notice = false
+semantic_directive = false
+historical_evidence = false
+
+[[files]]
+path = "examples/generated-tool/README.md"
+classification = "maintained-prose"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = false
+
+[[files]]
+path = "knowledge/README.md"
+classification = "knowledge-index-and-guidance"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = false
+
+[[files]]
+path = "knowledge/decisions/D-0001-development-workflow.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "knowledge/decisions/D-0002-cli-pivot-and-converged-telemetry-engine.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "knowledge/decisions/D-0003-spindle-custody-convergence-and-sans-io-core.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "knowledge/decisions/D-0004-local-collection-and-one-canonical-authority.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "knowledge/decisions/D-0005-receipt-projection-evidence.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "knowledge/decisions/D-0006-verifier-cache-provenance.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "knowledge/decisions/D-0007-ci-verification-groups.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "knowledge/decisions/D-0008-reuse-collected-host-samples-for-fleet-evidence.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "knowledge/decisions/D-0009-service-telemetry-origin.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "knowledge/decisions/D-0010-canonical-receipt-projection.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "knowledge/decisions/D-0011-elastic-collector-memory.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "knowledge/decisions/D-0176-ci-tool-images.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "knowledge/decisions/D-0181-versioned-service-settings.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "knowledge/decisions/D-0185-batch-outbox.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "knowledge/decisions/D-0189-single-branch-main-workflow.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "knowledge/decisions/D-0190-zero-ui-fabric-client.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "knowledge/decisions/D-0191-verified-develop-integration.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "knowledge/decisions/D-0192-optional-frontend.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "knowledge/observations/O-0001-workstation-resource-postmortem.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "knowledge/observations/O-0002-converged-release-verification-and-install.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "knowledge/observations/O-0176-hosted-ci-image-qualification.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "knowledge/observations/O-0180-two-host-tunnel-smoke.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "knowledge/observations/O-0182-resource-pressure.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "knowledge/observations/O-0187-common-compiler-seed.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "knowledge/observations/O-0188-ci-qualification-simulation.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "knowledge/research/R-0001-converged-rust-storage-and-five-pillars.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "knowledge/research/R-0002-converged-telemetry-formal-proofs-and-fuzzing.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "knowledge/research/R-0173-hax-backend-qualification.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "knowledge/research/R-0299-n02-profile-design.md"
+classification = "knowledge-record"
+presentation_metadata = "relocated-to-knowledge/records.toml"
+machine_required_metadata = true
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "packaging/deb/README.md"
+classification = "maintained-prose"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = true
+license_notice = false
+semantic_directive = true
+historical_evidence = false
+
+[[files]]
+path = "packaging/rpm/README.md"
+classification = "maintained-prose"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = true
+license_notice = false
+semantic_directive = true
+historical_evidence = false
+
+[[files]]
+path = "proofs/README.md"
+classification = "proof-or-verification-evidence"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = true
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "registry/README.md"
+classification = "maintained-prose"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = true
+license_notice = false
+semantic_directive = false
+historical_evidence = false
+
+[[files]]
+path = "verification/admission-contract.md"
+classification = "proof-or-verification-evidence"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "verification/collection-contract.md"
+classification = "proof-or-verification-evidence"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "verification/collection-delivery-contract.md"
+classification = "proof-or-verification-evidence"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "verification/readback-contract.md"
+classification = "proof-or-verification-evidence"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true
+
+[[files]]
+path = "verification/representation-contract.md"
+classification = "proof-or-verification-evidence"
+presentation_metadata = "none-found"
+machine_required_metadata = false
+fenced_examples = false
+license_notice = false
+semantic_directive = false
+historical_evidence = true

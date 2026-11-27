@@ -1,10 +1,3 @@
----
-id: R-0173
-date: 2026-11-18
-added_by: agent
-human_ratified: false
----
-
 # Hax 0.4.2 against the pinned frontier proof backend
 
 The pinned direct Charon → Aeneas → Lean pipeline checked the two executable

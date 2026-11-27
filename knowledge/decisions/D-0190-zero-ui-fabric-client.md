@@ -1,17 +1,3 @@
----
-id: D-0190
-title: Zero-UI Typed Consumer Crate (fabric-client)
-type: decision
-status: accepted
-date: 2026-11-21
-added_by: agent
-human_ratified: false
-related:
-  - D-0002
-  - D-0010
-  - D-0181
----
-
 # D-0190 · Zero-UI Typed Consumer Crate (`fabric-client`)
 
 ## Decision

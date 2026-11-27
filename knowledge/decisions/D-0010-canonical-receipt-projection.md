@@ -1,15 +1,3 @@
----
-id: D-0010
-title: Canonical receipt projection readiness
-type: decision
-status: accepted
-date: 2026-11-18
-added_by: agent
-human_ratified: false
-related:
-  - D-0005
----
-
 # D-0010 · Canonical receipt projection readiness
 
 An explicit canonical target has its own authority and per-origin projection

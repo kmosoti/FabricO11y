@@ -1,17 +1,3 @@
----
-id: D-0002
-title: CLI Pivot, Sans-I/O Separation, and Converged Pure-Rust Telemetry Engine
-type: decision
-status: accepted
-date: 2026-11-14
-added_by: agent
-human_ratified: false
-related:
-  - D-0001
-  - O-0001
-  - R-0001
----
-
 # D-0002 · CLI Pivot, Sans-I/O Separation, and Converged Pure-Rust Telemetry Engine
 
 ## Decision

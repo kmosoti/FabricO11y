@@ -1,0 +1,320 @@
+schema_version = 1
+
+[migration]
+source_commit = "64ef1d3e573bf8d05361eea2a1010e99585dc223"
+source_format = "YAML front matter"
+record_count = 29
+
+
+
+[[records]]
+id = "D-0001"
+source_path = "knowledge/decisions/D-0001-development-workflow.md"
+title = "Two-Branch Stacked Development Workflow and Human Gate on main"
+type = "decision"
+status = "superseded"
+date = 2026-11-14
+added_by = "agent"
+human_ratified = false
+superseded_by = "D-0189"
+related = ["D-0002", "O-0001"]
+
+[[records]]
+id = "D-0002"
+source_path = "knowledge/decisions/D-0002-cli-pivot-and-converged-telemetry-engine.md"
+title = "CLI Pivot, Sans-I/O Separation, and Converged Pure-Rust Telemetry Engine"
+type = "decision"
+status = "accepted"
+date = 2026-11-14
+added_by = "agent"
+human_ratified = false
+related = ["D-0001", "O-0001", "R-0001"]
+
+[[records]]
+id = "D-0003"
+source_path = "knowledge/decisions/D-0003-spindle-custody-convergence-and-sans-io-core.md"
+title = "Spindle Custody Convergence and Sans-I/O Core Extraction"
+type = "decision"
+status = "accepted"
+date = 2026-11-14
+added_by = "agent"
+human_ratified = false
+related = ["D-0002", "R-0001"]
+
+[[records]]
+id = "D-0004"
+source_path = "knowledge/decisions/D-0004-local-collection-and-one-canonical-authority.md"
+title = "Local Collection and One Canonical Authority"
+type = "decision"
+status = "accepted"
+date = 2026-11-18
+added_by = "agent"
+human_ratified = false
+related = ["D-0003"]
+
+[[records]]
+id = "D-0005"
+source_path = "knowledge/decisions/D-0005-receipt-projection-evidence.md"
+added_by = "agent"
+human_ratified = false
+date = 2026-11-18
+
+[[records]]
+id = "D-0006"
+source_path = "knowledge/decisions/D-0006-verifier-cache-provenance.md"
+title = "Product Toolchain and Verifier Cache Provenance"
+type = "decision"
+status = "accepted"
+date = 2026-11-18
+added_by = "agent"
+human_ratified = false
+related = ["D-0001", "D-0003"]
+
+[[records]]
+id = "D-0007"
+source_path = "knowledge/decisions/D-0007-ci-verification-groups.md"
+date = 2026-11-18
+added_by = "agent"
+human_ratified = false
+
+[[records]]
+id = "D-0008"
+source_path = "knowledge/decisions/D-0008-reuse-collected-host-samples-for-fleet-evidence.md"
+created = 2026-11-18
+added_by = "agent"
+human_ratified = false
+
+[[records]]
+id = "D-0009"
+source_path = "knowledge/decisions/D-0009-service-telemetry-origin.md"
+title = "Separate Spindle origin for service telemetry"
+type = "decision"
+status = "accepted"
+date = 2026-11-18
+added_by = "agent"
+human_ratified = false
+related = ["D-0003"]
+
+[[records]]
+id = "D-0010"
+source_path = "knowledge/decisions/D-0010-canonical-receipt-projection.md"
+title = "Canonical receipt projection readiness"
+type = "decision"
+status = "accepted"
+date = 2026-11-18
+added_by = "agent"
+human_ratified = false
+related = ["D-0005"]
+
+[[records]]
+id = "D-0011"
+source_path = "knowledge/decisions/D-0011-elastic-collector-memory.md"
+date = 2026-11-18
+added_by = "agent"
+human_ratified = false
+
+[[records]]
+id = "D-0176"
+source_path = "knowledge/decisions/D-0176-ci-tool-images.md"
+added_by = "agent"
+human_ratified = false
+date = 2026-11-18
+
+[[records]]
+id = "D-0181"
+source_path = "knowledge/decisions/D-0181-versioned-service-settings.md"
+title = "Versioned TOML configuration for observability services"
+type = "decision"
+status = "accepted"
+date = 2026-11-18
+added_by = "agent"
+human_ratified = false
+related = ["D-0010"]
+
+[[records]]
+id = "D-0185"
+source_path = "knowledge/decisions/D-0185-batch-outbox.md"
+date = 2026-11-19
+added_by = "agent"
+human_ratified = false
+
+[[records]]
+id = "D-0189"
+source_path = "knowledge/decisions/D-0189-single-branch-main-workflow.md"
+title = "Single-Branch main Workflow with CODEOWNERS and Stacked Jujutsu PRs"
+type = "decision"
+status = "accepted"
+date = 2026-11-21
+added_by = "agent"
+human_ratified = false
+supersedes = ["D-0001"]
+related = ["D-0002"]
+
+[[records]]
+id = "D-0190"
+source_path = "knowledge/decisions/D-0190-zero-ui-fabric-client.md"
+title = "Zero-UI Typed Consumer Crate (fabric-client)"
+type = "decision"
+status = "accepted"
+date = 2026-11-21
+added_by = "agent"
+human_ratified = false
+related = ["D-0002", "D-0010", "D-0181"]
+
+[[records]]
+id = "D-0191"
+source_path = "knowledge/decisions/D-0191-verified-develop-integration.md"
+title = "Verified Develop Integration and Human Release Promotion"
+type = "decision"
+status = "accepted"
+date = 2026-11-26
+added_by = "agent"
+human_ratified = false
+supersedes = ["D-0189"]
+related = ["D-0001"]
+
+[[records]]
+id = "D-0192"
+source_path = "knowledge/decisions/D-0192-optional-frontend.md"
+title = "Headless Defaults and an Optional Frontend"
+type = "decision"
+status = "accepted"
+date = 2026-11-26
+added_by = "agent"
+human_ratified = false
+related = ["D-0002", "D-0190"]
+
+[[records]]
+id = "O-0001"
+source_path = "knowledge/observations/O-0001-workstation-resource-postmortem.md"
+title = "workstation-01 13.2-Day Resource Exhaustion Post-Mortem and Telemetry Mapping"
+type = "observation"
+status = "observed"
+date = 2026-11-14
+added_by = "agent"
+human_ratified = false
+related = ["D-0002", "R-0001"]
+
+[[records]]
+id = "O-0002"
+source_path = "knowledge/observations/O-0002-converged-release-verification-and-install.md"
+title = "Converged Release Verification Proofs, Fuzz Campaigns, and Coupled User-Stack Install"
+type = "observation"
+status = "observed"
+date = 2026-11-15
+added_by = "agent"
+human_ratified = false
+related = ["D-0001", "D-0002", "D-0003", "O-0001", "R-0002"]
+
+[[records]]
+id = "O-0176"
+source_path = "knowledge/observations/O-0176-hosted-ci-image-qualification.md"
+date = 2026-11-18
+added_by = "agent"
+human_ratified = false
+
+[[records]]
+id = "O-0180"
+source_path = "knowledge/observations/O-0180-two-host-tunnel-smoke.md"
+date = 2026-11-18
+added_by = "agent"
+human_ratified = false
+
+[[records]]
+id = "O-0182"
+source_path = "knowledge/observations/O-0182-resource-pressure.md"
+date = 2026-11-18
+added_by = "agent"
+human_ratified = false
+
+[[records]]
+id = "O-0187"
+source_path = "knowledge/observations/O-0187-common-compiler-seed.md"
+date = 2026-11-18
+added_by = "agent"
+human_ratified = false
+
+[[records]]
+id = "O-0188"
+source_path = "knowledge/observations/O-0188-ci-qualification-simulation.md"
+date = 2026-11-18
+added_by = "agent"
+human_ratified = false
+
+[[records]]
+id = "R-0001"
+source_path = "knowledge/research/R-0001-converged-rust-storage-and-five-pillars.md"
+title = "Converged Pure-Rust Storage Engine and Five Observability Pillars"
+type = "research"
+status = "preliminary"
+date = 2026-11-14
+added_by = "agent"
+human_ratified = false
+related = ["D-0002", "O-0001"]
+
+[[records]]
+id = "R-0002"
+source_path = "knowledge/research/R-0002-converged-telemetry-formal-proofs-and-fuzzing.md"
+title = "Formal Proofs and Fuzz Verification for Converged Telemetry Predicates"
+type = "research"
+status = "preliminary"
+date = 2026-11-15
+added_by = "agent"
+human_ratified = false
+related = ["R-0001", "D-0002", "O-0001"]
+
+[[records]]
+id = "R-0173"
+source_path = "knowledge/research/R-0173-hax-backend-qualification.md"
+date = 2026-11-18
+added_by = "agent"
+human_ratified = false
+
+[[records]]
+id = "R-0299"
+source_path = "knowledge/research/R-0299-n02-profile-design.md"
+title = "N02 resource and benchmark declaration prototype"
+type = "research"
+status = "preliminary"
+date = 2026-11-27
+added_by = "agent"
+human_ratified = false
+
+[[records]]
+id = "D-0193"
+source_path = "knowledge/decisions/D-0193-corpus-revisions.md"
+title = "Research corpus revision identity"
+type = "decision"
+status = "active"
+date = 2026-11-27
+added_by = "agent"
+human_ratified = false
+
+[[records]]
+id = "D-0194"
+source_path = "knowledge/decisions/D-0194-causal-contributions.md"
+title = "Causal contribution projection"
+type = "decision"
+status = "active"
+date = 2026-11-27
+added_by = "agent"
+human_ratified = false
+
+[[records]]
+id = "D-0195"
+source_path = "knowledge/decisions/D-0195-operation-lifecycle.md"
+title = "Runtime-neutral operation lifecycles"
+type = "decision"
+date = 2026-11-27
+added_by = "agent"
+human_ratified = false
+
+[[records]]
+id = "D-0236"
+source_path = "knowledge/decisions/D-0236-bounded-run-attempt-manifests.md"
+title = "Bounded run and attempt manifests"
+type = "decision"
+status = "working contract"
+date = 2026-11-27
+added_by = "agent"
+human_ratified = false
