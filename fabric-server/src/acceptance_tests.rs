@@ -123,6 +123,25 @@ fn accept(address: &str, credential: &str, body: &str) -> Response {
         &Request::AcceptPlan { body: body.into() },
     )
 }
+fn wrong_mac_writer(address: &str, request: &Request) -> Response {
+    let mut stream = TcpStream::connect(address).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let nonce = canonical::random_nonce_hex().unwrap();
+    let hello = canonical::ClientHello {
+        version: canonical::AUTH_HANDSHAKE_VERSION,
+        client_nonce: nonce.clone(),
+    };
+    canonical::write_frame(&mut stream, &serde_json::to_vec(&hello).unwrap(), deadline).unwrap();
+    let challenge: canonical::ServerChallenge =
+        serde_json::from_slice(&canonical::read_frame(&mut stream, deadline).unwrap()).unwrap();
+    canonical::verify_server_challenge(WRITER, &nonce, &challenge).unwrap();
+    let proof =
+        canonical::build_client_proof(WRITER, &nonce, &challenge.server_nonce, b"other frame");
+    canonical::write_frame(&mut stream, &serde_json::to_vec(&proof).unwrap(), deadline).unwrap();
+    canonical::write_frame(&mut stream, &serde_json::to_vec(request).unwrap(), deadline).unwrap();
+    serde_json::from_slice(&canonical::read_frame(&mut stream, deadline).unwrap()).unwrap()
+}
+
 fn result(response: Response) -> String {
     match response {
         Response::PlanAccepted { decision } => decision,
@@ -179,6 +198,27 @@ fn transaction_fixture() {
     ));
     let a_cmd = command(&authority, "race-a", None, 1, &a);
     let b_cmd = command(&authority, "race-b", None, 2, &b);
+    // A writer's configured credential grants only AcceptPlan, and its
+    // handshake proof cannot authorize a differently MACed request frame.
+    for request in [
+        Request::Progress,
+        Request::Capabilities,
+        Request::Ingest {
+            origin: "origin".into(),
+            records: vec![],
+        },
+    ] {
+        assert!(matches!(
+            exchange(&address, WRITER, &request),
+            Response::Error { .. }
+        ));
+    }
+    let tampered = Request::AcceptPlan {
+        body: a_cmd.clone(),
+    };
+    assert!(
+        matches!(wrong_mac_writer(&address, &tampered), Response::Error { error } if error == "unauthorized")
+    );
     for token in [READER, NODE, OTHER] {
         assert!(matches!(
             accept(&address, token, &a_cmd),

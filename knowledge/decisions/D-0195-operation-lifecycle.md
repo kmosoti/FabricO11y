@@ -34,8 +34,8 @@ forwarded on that basis. The public runtime-neutral `VerifiedPeer` constructor
 validates its inputs' shape only and cannot serve as an authorization proof.
 Policy and authority revalidation at commit remain separate.
 
-The canonical TCP adapter separately creates a private configured reader or
-node-origin grant only after the credential proof and request MAC both pass.
+The canonical TCP adapter separately creates a private configured reader,
+node-origin or decision-writer grant only after the credential proof and request MAC both pass.
 The grant includes the server's canonical authority. It proves credential
 possession and configured scope, not a human/application identity or end-client
 locality; it does not replace policy and authority checks at commit.
