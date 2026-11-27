@@ -1,0 +1,5 @@
+[package]
+name = "fabric-ops"
+version = "0.1.1-alpha.2"
+edition.workspace = true
+license.workspace = true
