@@ -2115,3 +2115,252 @@ fn snapshot_readback_survives_packaged_restart() {
     wrong.kill_wait();
     server.kill_wait();
 }
+
+fn open_protected_reader(
+    bins: &Path,
+    socket: &Path,
+    outbox: &Path,
+    policy: &Path,
+    origin: &str,
+    endpoint: &str,
+    authority: &str,
+    credential: &Path,
+) -> (OwnedChild, mpsc::Receiver<Value>) {
+    let mut child = OwnedChild(
+        Command::new(bins.join("fabric-adapter"))
+            .arg(socket)
+            .args(["batch-fixture", "--batch-outbox"])
+            .arg(outbox)
+            .arg("--protected-policy")
+            .arg(policy)
+            .arg(origin)
+            .args(["--canonical-reader", endpoint, authority])
+            .arg(credential)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap(),
+    );
+    let stdout = BufReader::new(child.0.stdout.take().unwrap());
+    let (sent, received) = mpsc::sync_channel(1);
+    thread::spawn(move || {
+        for line in stdout.lines() {
+            let value = serde_json::from_str(&line.unwrap()).unwrap();
+            if sent.send(value).is_err() {
+                break;
+            }
+        }
+    });
+    (child, received)
+}
+
+#[test]
+#[ignore = "requires exact release executables and fabrico11y.slice"]
+fn protected_application_real_custody_and_policy_hold() {
+    assert!(
+        fs::read_to_string("/proc/self/cgroup")
+            .unwrap()
+            .contains("/fabrico11y.slice/")
+    );
+    let bins = PathBuf::from(std::env::var_os("FABRIC_TEST_BIN_DIR").unwrap());
+    let sandbox = xtask::evidence::non_tmp_tempdir().unwrap();
+    let root = sandbox.path();
+    let mut source = Node::open(&bins, root, NODE[0].0, NODE[0].1);
+    let beta = Node::open(&bins, root, NODE[1].0, NODE[1].1);
+    let lane = Node::open(&bins, root, NODE[2].0, NODE[2].1);
+    let endpoint = TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .to_string();
+    let reader = root.join("reader");
+    private_file(&reader, READER);
+    let (_server, authority) = receiver(&bins, root, &endpoint, [&source, &beta, &lane], &reader);
+    source.forward(&bins, &endpoint, &authority, None);
+    let policy_text = r#"{"version":1,"policy_id":"fixture","max_input_bytes":4096,"max_work":65536,"rules":[{"name":"allowed","scalar_type":"text"}]}"#;
+    let policy = root.join("policy");
+    private_file(&policy, policy_text);
+    let wrong = root.join("wrong-policy");
+    private_file(
+        &wrong,
+        r#"{"version":1,"policy_id":"other","max_input_bytes":4096,"max_work":65536,"rules":[]}"#,
+    );
+    let proxy_path = root.join("protected-proxy.sock");
+    let proxy = UnixListener::bind(&proxy_path).unwrap();
+    proxy.set_nonblocking(true).unwrap();
+    let real = source.config.socket.clone();
+    let (sent, received) = mpsc::sync_channel(1);
+    let fault = thread::spawn(move || {
+        loop {
+            let mut adapter = until("protected proxy", Duration::from_secs(10), || {
+                match proxy.accept() {
+                    Ok((socket, _)) => Some(socket),
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => None,
+                    Err(e) => panic!("proxy: {e}"),
+                }
+            });
+            let mut spindle = UnixStream::connect(&real).unwrap();
+            for socket in [&adapter, &spindle] {
+                socket
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                socket
+                    .set_write_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+            }
+            let req = read_spindle_frame(&mut adapter);
+            write_spindle_frame(&mut spindle, &req);
+            let response = read_spindle_frame(&mut spindle);
+            if let Reply::Receipt { receipt } = serde_json::from_slice(&response).unwrap() {
+                sent.send(receipt).unwrap();
+                break;
+            }
+            write_spindle_frame(&mut adapter, &response);
+        }
+    });
+    let outbox = root.join("protected-outbox");
+    let (mut adapter, replies) = open_protected_reader(
+        &bins,
+        &proxy_path,
+        &outbox,
+        &policy,
+        &source.origin,
+        &endpoint,
+        &authority,
+        &reader,
+    );
+    let raw = r#"{"allowed":"visible","FORBIDDEN-NAME":"FORBIDDEN-VALUE"}"#;
+    let report = json!({"command":"record_application","report_id":"00000000-0000-4001-8000-000000000001","context":{"run_id":"00000000-0000-4000-8000-000000000001"},"scope":{"origin":source.origin,"producer":"batch-fixture"},"parent_report_id":null,"schema":"example.result.v1","producer_completion":{"unix_ms":42,"clock":{"clock_id":"producer","source":"fixture","uncertainty_ms":null}},"artifact_json":raw,"timestamp_ns":123});
+    batch_send(&mut adapter, &report);
+    let first = received.recv_timeout(Duration::from_secs(15)).unwrap();
+    let unknown = batch_reply(&replies);
+    assert_eq!(unknown["delivery_state"], "outcome_unknown", "{unknown}");
+    let forbidden_hash = independent_sha256(raw.as_bytes());
+    let clean = |bytes: &[u8]| {
+        for sentinel in ["FORBIDDEN-NAME", "FORBIDDEN-VALUE", forbidden_hash.as_str()] {
+            assert!(
+                !bytes
+                    .windows(sentinel.len())
+                    .any(|w| w == sentinel.as_bytes())
+            );
+        }
+    };
+    clean(unknown.to_string().as_bytes());
+    batch_send(&mut adapter, &json!({"command":"FORBIDDEN-NAME"}));
+    let invalid = batch_reply(&replies);
+    clean(invalid.to_string().as_bytes());
+    for name in ["outbox.sqlite", "outbox.sqlite-journal"] {
+        let p = outbox.join(name);
+        if p.exists() {
+            clean(&fs::read(p).unwrap());
+        }
+    }
+    adapter.kill_wait();
+    fault.join().unwrap();
+    let (mut held, replies) = open_protected_reader(
+        &bins,
+        &source.config.socket,
+        &outbox,
+        &wrong,
+        &source.origin,
+        &endpoint,
+        &authority,
+        &reader,
+    );
+    batch_send(&mut held, &json!({"command":"status"}));
+    assert_eq!(batch_reply(&replies)["status"]["policy_state"], "held");
+    batch_send(&mut held, &json!({"command":"flush","timeout_ms":100}));
+    assert_eq!(batch_reply(&replies)["code"], "policy_held");
+    held.kill_wait();
+    let ordinary = Command::new(bins.join("fabric-adapter"))
+        .arg(&source.config.socket)
+        .args(["batch-fixture", "--batch-outbox"])
+        .arg(&outbox)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(!ordinary.status.success());
+    clean(&ordinary.stderr);
+    let other_owner = Command::new(bins.join("fabric-adapter"))
+        .arg(&source.config.socket)
+        .args(["different-producer", "--batch-outbox"])
+        .arg(&outbox)
+        .arg("--protected-policy")
+        .arg(&policy)
+        .arg(&source.origin)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(!other_owner.status.success());
+    clean(&other_owner.stderr);
+    let (mut adapter, replies) = open_protected_reader(
+        &bins,
+        &source.config.socket,
+        &outbox,
+        &policy,
+        &source.origin,
+        &endpoint,
+        &authority,
+        &reader,
+    );
+    batch_send(&mut adapter, &report);
+    let confirmed = batch_reply(&replies);
+    assert_eq!(
+        confirmed["delivery_state"], "custody_confirmed",
+        "{confirmed}"
+    );
+    clean(confirmed.to_string().as_bytes());
+    let receipt: Receipt = serde_json::from_value(confirmed["receipt"].clone()).unwrap();
+    assert_eq!(receipt.id, first.id);
+    assert_eq!(receipt.identity, first.identity);
+    let expected_capture = independent_sha256(br#"{"allowed":"visible"}"#);
+    let expected_policy = independent_sha256(policy_text.as_bytes());
+    assert_eq!(
+        confirmed["capture"]["captured_digest"]["hex"],
+        expected_capture
+    );
+    assert_eq!(
+        confirmed["capture"]["policy_digest"]["hex"],
+        expected_policy
+    );
+    assert_eq!(confirmed["capture"]["policy_source"], "owner_policy_file");
+    assert_eq!(
+        confirmed["capture"]["omissions"],
+        json!(["policy_excluded"])
+    );
+    until(
+        "protected canonical handoff",
+        Duration::from_secs(20),
+        || (source.health().canonical_through >= 1).then_some(()),
+    );
+    batch_send(
+        &mut adapter,
+        &json!({"command":"verify_application","report_id":report["report_id"]}),
+    );
+    let verified = batch_reply(&replies);
+    assert_eq!(
+        verified["verified_application"]["capture"], confirmed["capture"],
+        "{verified}"
+    );
+    clean(verified.to_string().as_bytes());
+    let mut rows = Vec::new();
+    read_lane(&source, 1, &mut rows).unwrap();
+    assert_eq!(rows.len(), 1);
+    clean(&rows[0].1);
+    let response = canonical::exchange(
+        &endpoint,
+        READER,
+        &Request::Lookup {
+            origin: source.origin.clone(),
+            identity: receipt.identity,
+        },
+        Instant::now() + Duration::from_secs(5),
+    )
+    .unwrap();
+    let Response::Found { row: Some(row) } = response else {
+        panic!("canonical row missing")
+    };
+    clean(row.raw.as_bytes());
+    assert_eq!(row.raw.as_bytes(), rows[0].1);
+    adapter.kill_wait();
+}
