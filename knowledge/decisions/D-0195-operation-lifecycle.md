@@ -22,3 +22,14 @@ scheduling, cancellation propagation, or transport behavior. Those boundaries
 remain separately owned. Revisit the shared lifecycle if an operation needs
 half-close semantics or transactional effect ownership that these explicit
 transitions cannot represent.
+
+## Unix peer evidence boundary
+
+Spindle retains a private local-peer witness minted from `SO_PEERCRED` on
+the accepted Unix socket after a same-UID check. Request dispatch requires
+this witness. Its UID is OS credential evidence in the server's namespace,
+not a named application principal or effective authority; a same-UID process,
+FD recipient, or proxy can share the connection. No application identity is
+forwarded on that basis. The public runtime-neutral `VerifiedPeer` constructor
+validates its inputs' shape only and cannot serve as an authorization proof.
+Policy and authority revalidation at commit remain separate.
