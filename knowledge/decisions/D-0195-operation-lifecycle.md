@@ -18,7 +18,9 @@ state transition does not make external effects durable or transactional.
 
 A local adapter establishes peer identity and locality and supplies a
 monotonic clock domain. The context accepts a local duration and a separate
-wire remaining-time cap. It never interprets wire claims as verified identity
+wire remaining-time cap. Clock ticks and durations use milliseconds. Both
+durations default to 10 seconds and have a hard 30-second maximum, matching
+the existing Fabric query budget. It never interprets wire claims as verified identity
 or a remote clock reading as a local instant. Adapters must authenticate the
 peer and supply consistent local ticks; the crate does not perform either task.
 

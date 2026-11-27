@@ -82,7 +82,8 @@ constructing contributions.
 
 `fabric-ops` defines five typed call shapes without a transport or runtime
 dependency. Adapters establish peer identity and locality and provide a local
-monotonic clock; a wire remaining-time budget is a duration capped separately
+monotonic millisecond clock; local and wire durations default to 10 seconds
+and cannot exceed 30 seconds. A wire remaining-time budget is capped separately
 from the local deadline. Each transition either returns a fixed-capacity effect
 batch and commits its state, or returns an error with state unchanged. Message
 counts and effects are bounded; adapters enforce payload byte limits. This
