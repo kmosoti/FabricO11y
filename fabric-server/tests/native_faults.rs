@@ -234,6 +234,7 @@ fn unknown_inflight_write_and_gateway_death_preserve_pending_binding() {
             origin: "owned-fault-origin".into(),
             credential_file: root.path().join("node"),
         }],
+        decision_writers: Vec::new(),
         node_quota_bytes: [("owned-fault-origin".into(), (RAW.len() + raw2.len()) as u64)].into(),
         engine_endpoint: Some(proxy.endpoint.clone()),
         engine_auth_token_file: None,

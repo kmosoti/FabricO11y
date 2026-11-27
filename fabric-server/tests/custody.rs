@@ -135,6 +135,7 @@ impl Receiver {
                     credential_file: key(root, origin),
                 })
                 .collect(),
+            decision_writers: Vec::new(),
             node_quota_bytes: Default::default(),
             engine_endpoint: None,
             engine_auth_token_file: None,
