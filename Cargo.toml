@@ -6,6 +6,7 @@ members = [
     "fabric-corpus",
     "fabric-ops",
     "fabric-colloquium",
+    "fabric-evidence",
     "fabric-graph",
     "fabric-store",
     "fabric-collect",

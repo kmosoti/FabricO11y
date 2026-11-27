@@ -1392,6 +1392,7 @@ name = "fabric"
 version = "0.1.1-alpha.2"
 dependencies = [
  "admission-kernel",
+ "fabric-evidence",
  "fabric-ops",
  "hmac",
  "rusqlite",
@@ -1467,16 +1468,25 @@ dependencies = [
  "admission-kernel",
  "arrow",
  "chrono",
+ "fabric-evidence",
  "proptest",
  "serde",
  "serde_json",
- "sha2",
 ]
 
 [[package]]
 name = "fabric-corpus"
 version = "0.1.1-alpha.2"
 dependencies = [
+ "sha2",
+]
+
+[[package]]
+name = "fabric-evidence"
+version = "0.1.1-alpha.2"
+dependencies = [
+ "serde",
+ "serde_json",
  "sha2",
 ]
 

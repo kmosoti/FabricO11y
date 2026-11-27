@@ -13,6 +13,7 @@ rusqlite.workspace = true
 schemars = { version = "1", optional = true }
 admission-kernel = { path = "../admission-kernel" }
 fabric-ops = { path = "../fabric-ops" }
+fabric-evidence = { path = "../fabric-evidence" }
 
 [dev-dependencies]
 tempfile = "3"

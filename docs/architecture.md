@@ -4,7 +4,7 @@
 
 ## 1. Crate & Authority Boundaries
 
-Pure domain logic, schema contracts, statistical sketches, causal graph traversal, and formal admission arithmetic live in **Sans-I/O** crates (`admission-kernel`, `fabric-core`, `fabric-graph`, `fabric-corpus`, `fabric-colloquium`, `fabric-ops`). All Linux kernel probing, embedded disk/memory custody, DataFusion query execution, and CLI rendering are isolated in dedicated I/O crates (`fabric-store`, `fabric-collect`, `fabric-query`, `fabric-cli`, plus preserved custody/protocol crates `fabric`, `fabric-server`, and `fabric-mcp`). Downstream Rust integrators consume `fabric.cli.v1` JSON outputs and `fabric-query` over bounded subprocess pipes via the lightweight, headless [`fabric-client`](../fabric-client/Cargo.toml) crate without pulling in Arrow, DataFusion, or UI crates. Dependency boundaries are machine-verified by [`verification/architecture.toml`](../verification/architecture.toml) via `cargo xtask architecture`.
+Pure domain logic, schema contracts, statistical sketches, causal graph traversal, and formal admission arithmetic live in **Sans-I/O** crates (`admission-kernel`, `fabric-core`, `fabric-graph`, `fabric-corpus`, `fabric-colloquium`, `fabric-ops`, `fabric-evidence`). All Linux kernel probing, embedded disk/memory custody, DataFusion query execution, and CLI rendering are isolated in dedicated I/O crates (`fabric-store`, `fabric-collect`, `fabric-query`, `fabric-cli`, plus preserved custody/protocol crates `fabric`, `fabric-server`, and `fabric-mcp`). Downstream Rust integrators consume `fabric.cli.v1` JSON outputs and `fabric-query` over bounded subprocess pipes via the lightweight, headless [`fabric-client`](../fabric-client/Cargo.toml) crate without pulling in Arrow, DataFusion, or UI crates. Dependency boundaries are machine-verified by [`verification/architecture.toml`](../verification/architecture.toml) via `cargo xtask architecture`.
 
 ```mermaid
 flowchart TD
@@ -12,10 +12,12 @@ flowchart TD
         CP["fabric-corpus (research revision contracts)"]
         CC["fabric-colloquium (bounded causal contribution projection)"]
         OPS["fabric-ops (bounded operation lifecycles)"]
+        EVID["fabric-evidence (bounded evidence contracts)"]
         AK["admission-kernel (Verus / Charon / Aeneas)"]
         FC["fabric-core (Models, PathPolicy, Gorilla HotMetricRing, UnifiedQuerySpec, run/attempt and application result contracts, DDSketch, EWMA-MAD, Five Pillars, Arrow)"]
         FG["fabric-graph (CausalGraph, BFS lineage, ranked blame)"]
         FC --> AK
+        FC --> EVID
         FG --> FC
     end
 
@@ -60,6 +62,7 @@ flowchart TD
         MCP["fabric-mcp (Typed stdio MCP adapter)"]
         FAB --> AK
         FAB --> OPS
+        FAB --> EVID
         SRV --> FAB
         SRV --> FQ
         SRV --> AK
@@ -113,7 +116,8 @@ flowchart LR
 
 ### Application result envelope
 
-`fabric-core` defines a bounded application-result envelope without changing
+`fabric-evidence` defines a bounded application-result envelope (also re-exported
+through `fabric-core`) without changing
 v2 or v3 custody. It carries a report UUID scoped by producer and origin,
 an optional same-scope parent UUID, a versioned schema, producer completion
 clock provenance, and distinct SHA-256 claims for original artifact bytes and
@@ -423,7 +427,8 @@ diagnostics locally.
 
 ## Bounded run and attempt evidence manifests
 
-`fabric-core::evidence_manifest` defines a versioned Sans-I/O JSON contract for
+`fabric-evidence::evidence_manifest` (also available through the existing
+`fabric-core::evidence_manifest` path) defines a versioned Sans-I/O JSON contract for
 immutable run context, attempt-specific overrides, and observation references.
 An envelope contains one shared run manifest, bounded attempt manifests that
 reference it by ID and digest, and observations that reference an attempt by ID
