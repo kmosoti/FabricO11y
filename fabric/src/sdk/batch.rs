@@ -7,6 +7,11 @@ use crate::{
     run::{RunContext, validate_id},
     spindle::{ORIGIN_MISMATCH, custody::Receipt, transport},
 };
+use fabric_evidence::{
+    ReportScope,
+    application_result::{ApplicationPayloadDigest, ApplicationResult},
+    evidence_manifest::{OriginalArtifactDigest, ProvenancedTime},
+};
 use outbox::{Lease, Outbox, Pending, SavedReport};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -51,6 +56,56 @@ impl BatchReport {
         );
         Ok(hash.finalize().into())
     }
+}
+
+/// A terminal application JSON artifact. `artifact_json` is validated and hashed,
+/// but its original spelling is not retained in the outbox or custody frame.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ApplicationReport {
+    pub report_id: String,
+    pub context: RunContext,
+    pub scope: ReportScope,
+    pub parent_report_id: Option<String>,
+    pub schema: String,
+    pub producer_completion: ProvenancedTime,
+    pub artifact_json: String,
+    /// Outer observation timestamp, distinct from the producer completion claim.
+    pub timestamp_ns: u64,
+}
+
+/// A confirmed local custody receipt and its separately named payload digests.
+#[derive(Clone, Debug, Serialize)]
+pub struct ApplicationReceipt {
+    pub receipt: Receipt,
+    pub original_artifact_digest: OriginalArtifactDigest,
+    pub application_payload_digest: ApplicationPayloadDigest,
+}
+
+const APPLICATION_MARKER: &str = "fabrico11y.application_result.v1";
+
+fn application_digest(
+    context: &RunContext,
+    timestamp_ns: u64,
+    result: &ApplicationResult,
+) -> Result<[u8; 32], BatchError> {
+    #[derive(Serialize)]
+    struct Identity<'a> {
+        context: &'a RunContext,
+        timestamp_ns: u64,
+        result: &'a ApplicationResult,
+    }
+    let mut hash = Sha256::new();
+    hash.update(b"FabricO11y batch application result identity v1\0");
+    hash.update(
+        serde_json::to_vec(&Identity {
+            context,
+            timestamp_ns,
+            result,
+        })
+        .map_err(|e| BatchError::Invalid(e.to_string()))?,
+    );
+    Ok(hash.finalize().into())
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -189,6 +244,101 @@ impl BatchClient {
         self.deliver(&pending, deadline)
     }
 
+    /// Durably stages a validated application result before attempting delivery.
+    /// The outbox retains the canonical envelope and source digest, not source bytes.
+    pub fn record_application(
+        &mut self,
+        report: ApplicationReport,
+    ) -> Result<ApplicationReceipt, BatchError> {
+        report.context.validate().map_err(BatchError::Invalid)?;
+        if report.scope.producer() != self.config.producer {
+            return Err(BatchError::Invalid(
+                "application producer does not match outbox".into(),
+            ));
+        }
+        let result = ApplicationResult::new(
+            report.scope,
+            report.report_id.clone(),
+            report.parent_report_id,
+            report.schema,
+            report.producer_completion,
+            report.artifact_json.as_bytes(),
+        )
+        .map_err(|e| BatchError::Invalid(format!("invalid application result: {e:?}")))?;
+        let digest = application_digest(&report.context, report.timestamp_ns, &result)?;
+        let original_artifact_digest = result.original_artifact_digest().clone();
+        let application_payload_digest = result.application_payload_digest().clone();
+        let receipt = (|| -> Result<Receipt, BatchError> {
+            let deadline = Instant::now() + self.config.delivery_timeout;
+            let prior_lease = self.outbox.lease()?;
+            if let Some(lease) = &prior_lease
+                && lease.origin != result.scope().origin()
+            {
+                return Err(BatchError::OriginMismatch);
+            }
+            if let Some(saved) = self.outbox.find(result.report_id())? {
+                if prior_lease.is_none() {
+                    return Err(BatchError::Storage(
+                        "saved report has no bound origin".into(),
+                    ));
+                }
+                return match saved {
+                    SavedReport::Confirmed(saved_digest, receipt) if saved_digest == digest => {
+                        Ok(receipt)
+                    }
+                    SavedReport::Pending(pending) if pending.digest == digest => {
+                        self.deliver(&pending, deadline)
+                    }
+                    _ => Err(BatchError::Conflict),
+                };
+            }
+            if self.outbox.pending_id()?.is_some() {
+                self.check_pending_expiry(&self.outbox.pending_lease()?)?;
+                return Err(BatchError::Full);
+            }
+            self.outbox.check_capacity()?;
+            let mut lease =
+                self.lease_for_record_for_origin(deadline, Some(result.scope().origin()))?;
+            lease.sequence += 1;
+            let envelope = result
+                .encode_bounded()
+                .map_err(|e| BatchError::Invalid(format!("invalid application result: {e:?}")))?;
+            let value = serde_json::from_slice(&envelope)
+                .map_err(|e| BatchError::Invalid(e.to_string()))?;
+            let mut fields = serde_json::Map::new();
+            fields.insert(APPLICATION_MARKER.into(), value);
+            let observation = ObservationV3 {
+                version: observation::VERSION_V3,
+                registry: observation::REGISTRY_V3.into(),
+                context: report.context,
+                identity: Identity {
+                    producer: self.config.producer.clone(),
+                    generation: lease.generation,
+                    sequence: lease.sequence,
+                },
+                timestamp_ns: report.timestamp_ns,
+                resource: self.config.resource.clone(),
+                data: Data::JsonLog { fields },
+            };
+            observation.validate().map_err(BatchError::Invalid)?;
+            let bytes =
+                serde_json::to_vec(&observation).map_err(|e| BatchError::Invalid(e.to_string()))?;
+            observation::check_json(&bytes, self.config.max_record).map_err(BatchError::Invalid)?;
+            let pending = Pending {
+                report_id: report.report_id,
+                digest,
+                bytes,
+            };
+            self.outbox.stage(&pending, lease.sequence)?;
+            self.deliver(&pending, deadline)
+        })()?;
+        Ok(ApplicationReceipt {
+            receipt,
+            original_artifact_digest,
+            application_payload_digest,
+        })
+    }
+
     pub fn status(&self) -> Result<BatchStatus, BatchError> {
         let pending_report_id = self.outbox.pending_id()?;
         let lease = self.outbox.lease()?;
@@ -232,7 +382,20 @@ impl BatchClient {
     }
 
     fn lease_for_record(&mut self, deadline: Instant) -> Result<Lease, BatchError> {
+        self.lease_for_record_for_origin(deadline, None)
+    }
+
+    fn lease_for_record_for_origin(
+        &mut self,
+        deadline: Instant,
+        expected: Option<&str>,
+    ) -> Result<Lease, BatchError> {
         let previous = self.outbox.lease()?;
+        if let Some(lease) = &previous
+            && expected.is_some_and(|origin| origin != lease.origin)
+        {
+            return Err(BatchError::OriginMismatch);
+        }
         let now = wall_time()?;
         if let Some(lease) = &previous
             && !lease.expired
@@ -245,6 +408,9 @@ impl BatchClient {
             None => transport::read_origin(&self.config.socket, deadline)
                 .map_err(BatchError::Unavailable)?,
         };
+        if expected.is_some_and(|expected| expected != origin) {
+            return Err(BatchError::OriginMismatch);
+        }
         if origin.is_empty() || origin.len() > 128 || origin.contains('\0') {
             return Err(BatchError::Unavailable("invalid Spindle origin".into()));
         }
@@ -307,14 +473,8 @@ impl BatchClient {
             || observation.identity.generation != lease.generation
             || observation.identity.sequence != lease.sequence
             || observation.resource != self.config.resource
-            || (BatchReport {
-                report_id: pending.report_id.clone(),
-                context: observation.context,
-                data: observation.data,
-                timestamp_ns: observation.timestamp_ns,
-            })
-            .digest()
-            .map_err(|error| BatchError::Storage(error.to_string()))?
+            || pending_digest(&pending.report_id, &observation, &lease.origin)
+                .map_err(|error| BatchError::Storage(error.to_string()))?
                 != pending.digest
         {
             return Err(BatchError::Storage(
@@ -337,6 +497,43 @@ impl BatchClient {
     }
 }
 
+fn pending_digest(
+    report_id: &str,
+    observation: &ObservationV3,
+    origin: &str,
+) -> Result<[u8; 32], BatchError> {
+    if let Data::JsonLog { fields } = &observation.data {
+        if fields.len() != 1 {
+            return Err(BatchError::Invalid("invalid application carrier".into()));
+        }
+        let value = fields
+            .get(APPLICATION_MARKER)
+            .ok_or_else(|| BatchError::Invalid("invalid application carrier".into()))?;
+        let bytes =
+            serde_json::to_vec(value).map_err(|error| BatchError::Invalid(error.to_string()))?;
+        let result = ApplicationResult::decode_bounded(&bytes).map_err(|error| {
+            BatchError::Invalid(format!("invalid application result: {error:?}"))
+        })?;
+        if result.report_id() != report_id
+            || result.scope().producer() != observation.identity.producer
+            || result.scope().origin() != origin
+        {
+            return Err(BatchError::Invalid(
+                "application carrier scope or identity mismatch".into(),
+            ));
+        }
+        application_digest(&observation.context, observation.timestamp_ns, &result)
+    } else {
+        BatchReport {
+            report_id: report_id.to_owned(),
+            context: observation.context.clone(),
+            data: observation.data.clone(),
+            timestamp_ns: observation.timestamp_ns,
+        }
+        .digest()
+    }
+}
+
 fn wall_time() -> Result<u64, BatchError> {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -349,6 +546,7 @@ pub fn batch_adapter_reply(client: &mut BatchClient, bytes: &[u8]) -> serde_json
     #[serde(tag = "command", rename_all = "snake_case", deny_unknown_fields)]
     enum Command {
         Record(BatchReport),
+        RecordApplication(ApplicationReport),
         Flush { timeout_ms: u64 },
         Status,
     }
@@ -389,6 +587,47 @@ pub fn batch_adapter_reply(client: &mut BatchClient, bytes: &[u8]) -> serde_json
                         result["capacity"] = serde_json::json!({"used":used,"limit":limit});
                     }
                     result
+                }
+            }
+        }
+        Ok(Command::RecordApplication(report)) => {
+            let report_id = report.report_id.clone();
+            match client.record_application(report) {
+                Ok(confirmed) => {
+                    serde_json::json!({"report_id":report_id,"delivery_state":"custody_confirmed","durably_staged":true,"projection":"unchecked","receipt":confirmed.receipt,"original_artifact_digest":confirmed.original_artifact_digest,"application_payload_digest":confirmed.application_payload_digest})
+                }
+                Err(error) => {
+                    let pending = matches!(
+                        error,
+                        BatchError::Unavailable(_)
+                            | BatchError::MismatchedReceipt
+                            | BatchError::Expired
+                            | BatchError::Storage(_)
+                    ) && client
+                        .status()
+                        .ok()
+                        .and_then(|s| s.pending_report_id)
+                        .as_deref()
+                        == Some(report_id.as_str());
+                    let state = if matches!(error, BatchError::GenerationCapacity { .. }) {
+                        Some("refused_before_acceptance")
+                    } else if pending {
+                        Some("outcome_unknown")
+                    } else {
+                        None
+                    };
+                    let staged = if pending {
+                        Some(true)
+                    } else if matches!(error, BatchError::GenerationCapacity { .. }) {
+                        Some(false)
+                    } else {
+                        None
+                    };
+                    let mut reply = serde_json::json!({"report_id":report_id,"error":error.to_string(),"code":error.code(),"delivery_state":state,"durably_staged":staged});
+                    if let BatchError::GenerationCapacity { used, limit } = error {
+                        reply["capacity"] = serde_json::json!({"used":used,"limit":limit});
+                    }
+                    reply
                 }
             }
         }

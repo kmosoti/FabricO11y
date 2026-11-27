@@ -334,6 +334,45 @@ count is available. It reveals no generation or producer identities. Expiry
 alone does not guarantee a free slot: a generation with outstanding custody
 also needs confirmed forwarding before its metadata can be retired.
 
+### Application-defined terminal results
+
+In batch mode, `record_application` accepts an application JSON object as an
+`artifact_json` string, together with a report UUID, run context, versioned
+schema, producer completion time and its clock/source, and a `scope` containing
+the configured producer and pinned Spindle origin. On a fresh outbox, obtain
+the origin from `spindle status "$XDG_RUNTIME_DIR/spindle/spindle.sock"` and
+use its `status.origin` value; batch status has no origin before its first lease. `parent_report_id` may be
+null or a same-scope UUID. The outer `timestamp_ns` is a separate caller-supplied
+observation time; neither time is a custody timestamp.
+
+```json
+{"command":"record_application","report_id":"edd65cef-e5aa-4f95-8ae6-6b30f9edb662","context":{"run_id":"f404b128-2c19-412f-bcd0-823f9c1f1b31"},"scope":{"origin":"SPINDLE_ORIGIN","producer":"batch"},"parent_report_id":null,"schema":"example.result.v1","producer_completion":{"unix_ms":1795014000000,"clock":{"clock_id":"producer-wall","source":"worker","uncertainty_ms":null}},"artifact_json":"{\"label\":\"caf\\u00e9\"}\n","timestamp_ns":1795014000000000000}
+```
+
+The adapter validates the bounded application profile and actual v3 frame
+before staging. It persists the canonical application envelope and original
+artifact digest, not a separate copy of `artifact_json`. Select the fields to
+publish before submission: canonical payload contents and the source digest
+are retained in custody. Keep the original bytes separately to verify that
+claim later. The profile's limits and numeric restrictions are documented in
+[architecture](architecture.md#application-result-envelope).
+
+A successful response includes `receipt`, `original_artifact_digest`, and
+`application_payload_digest`. `durably_staged: true` means the outbox staged
+the frame before delivery; after confirmation it retains the receipt rather
+than the frame. A lost reply may produce `outcome_unknown` with
+`durably_staged: true`; reopen the same outbox and retry the identical request.
+A changed original spelling under the same report UUID conflicts even when
+it has the same canonical payload. The digest claims name application bytes,
+not the enclosing v3 frame. Projection remains unchecked until separately
+verified. An outbox at capacity returns `full` before accepting a new report.
+
+Report-ID deduplication belongs to the one persistent outbox. Separate outboxes
+can accept the same producer, origin and report ID under different generation
+identities. Scope labels do not authenticate a user or authorize reading a
+parent. The completion time, local receipt and first verified visibility are
+separate facts; this command does not record custody or visibility timestamps.
+
 The outbox can report that it is full, locked, or waiting for custody. Preserve
 an unresolved outbox after lease expiry. Automatic replay uses the original
 lease and stops at expiry. Inspect custody using the original origin and
