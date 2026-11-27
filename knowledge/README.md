@@ -51,6 +51,7 @@ TOML-native records without changing that cohort or its count.
 | [D-0194 · Causal contribution projection](decisions/D-0194-causal-contributions.md) | `agent` | `false` | Bounded runtime-neutral contribution and proposal heads |
 | [D-0200 · Frozen experiment snapshots](decisions/D-0200-frozen-snapshots.md) | `agent` | `false` | Fixed roster, explicit boundaries and missingness-aware comparisons |
 | [D-0199 · Canonical query operation negotiation](decisions/D-0199-query-negotiation.md) | `agent` | `false` | Authenticated opt-in per-operation version gate |
+| [D-0304 · Portable query operation contracts](decisions/D-0304-portable-query-contracts.md) | `agent` | `false` | Shared pure query DTOs and native compatibility |
 | [D-0198 · Operation dispatch profiles](decisions/D-0198-dispatch-profiles.md) | `agent` | `false` | Scoped dependency profiles and matched dispatch measurement |
 | [D-0197 · Typed operation contracts](decisions/D-0197-typed-operation-contracts.md) | `agent` | `false` | Versioned typed registry and payload-free outcome categories |
 | [D-0195 · Runtime-neutral operation lifecycles](decisions/D-0195-operation-lifecycle.md) | `agent` | `false` | Bounded lifecycle transitions and adapter-established trust context |

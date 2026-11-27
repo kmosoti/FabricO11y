@@ -22,18 +22,9 @@ impl RunContext {
 }
 
 pub(crate) fn validate_id(id: &str) -> Result<(), ()> {
-    let bytes = id.as_bytes();
-    if id == "00000000-0000-0000-0000-000000000000"
-        || bytes.len() != 36
-        || !bytes.iter().enumerate().all(|(i, b)| {
-            if matches!(i, 8 | 13 | 18 | 23) {
-                *b == b'-'
-            } else {
-                b.is_ascii_hexdigit() && !b.is_ascii_uppercase()
-            }
-        })
-    {
-        return Err(());
+    if fabric_query_contract::valid_run_id(id) {
+        Ok(())
+    } else {
+        Err(())
     }
-    Ok(())
 }

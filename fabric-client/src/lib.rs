@@ -26,12 +26,13 @@ pub use fabric::canonical::{
     Request as CanonicalRequest, Response as CanonicalResponse,
 };
 #[cfg(feature = "cli")]
-pub use fabric::query::{
-    Budgets, Coverage, Filter, Operation, QueryPlan, QueryRequest, QueryResponse,
-};
-#[cfg(feature = "cli")]
 pub use fabric::spindle::{
     Health as SpindleHealth, Reply as SpindleReply, Request as SpindleRequest,
+};
+/// Shared query DTOs and operation contracts, available without native transport.
+pub use fabric_query_contract as query_contract;
+pub use fabric_query_contract::{
+    Budgets, Coverage, Filter, Operation, QueryPlan, QueryRequest, QueryResponse,
 };
 #[cfg(feature = "cli")]
 pub use query_client::FabricQueryClient;

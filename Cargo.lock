@@ -1394,10 +1394,10 @@ dependencies = [
  "admission-kernel",
  "fabric-evidence",
  "fabric-ops",
+ "fabric-query-contract",
  "hmac",
  "rusqlite",
  "rustix",
- "schemars",
  "serde",
  "serde_json",
  "sha2",
@@ -1432,6 +1432,7 @@ name = "fabric-client"
 version = "0.1.1-alpha.2"
 dependencies = [
  "fabric",
+ "fabric-query-contract",
  "serde",
  "serde_json",
  "tokio",
@@ -1539,6 +1540,16 @@ dependencies = [
  "sha2",
  "tempfile",
  "tokio",
+]
+
+[[package]]
+name = "fabric-query-contract"
+version = "0.1.1-alpha.2"
+dependencies = [
+ "fabric-ops",
+ "schemars",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

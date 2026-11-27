@@ -1,0 +1,14 @@
+[package]
+name = "fabric-query-contract"
+version = "0.1.1-alpha.2"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+fabric-ops = { path = "../fabric-ops" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+schemars = { version = "1", optional = true }
+
+[features]
+query-schema = ["dep:schemars"]
