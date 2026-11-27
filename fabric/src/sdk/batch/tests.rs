@@ -929,7 +929,7 @@ fn authenticated_exact_readback_rejects_mismatches_and_preserves_first_time() {
     let endpoint = listener.local_addr().unwrap().to_string();
     let responses = rows.clone();
     let peer = thread::spawn(move || {
-        for step in 0..6 {
+        for step in 0..9 {
             let (mut stream, _) = listener.accept().unwrap();
             let deadline = Instant::now() + Duration::from_secs(10);
             let (_, request) = canonical::accept_authenticated_sync(
@@ -949,6 +949,23 @@ fn authenticated_exact_readback_rejects_mismatches_and_preserves_first_time() {
             if step == 2 {
                 row.raw = row.raw.replace("café", "cafe");
             }
+            if step == 3 {
+                row.origin = "other-origin".into();
+            }
+            if step == 4 {
+                let changed = row
+                    .raw
+                    .replace("\"origin\":\"origin\"", "\"origin\":\"other-origin\"");
+                assert_ne!(changed, row.raw);
+                row.raw = changed;
+            }
+            if step == 5 {
+                let changed = row
+                    .raw
+                    .replace("\"generation\":\"lease\"", "\"generation\":\"other-lease\"");
+                assert_ne!(changed, row.raw);
+                row.raw = changed;
+            }
             let response = Response::ExactReceiptFound {
                 authority: authority.into(),
                 row: Some(row),
@@ -965,7 +982,7 @@ fn authenticated_exact_readback_rejects_mismatches_and_preserves_first_time() {
         .configure_reader(endpoint, "authority".into(), &credential_path)
         .unwrap();
     let child_id = application_report(2, "batch-test", "origin").report_id;
-    for _ in 0..3 {
+    for _ in 0..6 {
         assert!(client.verify_application(&child_id).is_err());
         assert!(client.outbox.verified_read(&child_id).unwrap().is_none());
     }

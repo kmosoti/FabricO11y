@@ -1270,3 +1270,372 @@ fn local_and_canonical_deployment_profiles() {
         })
     );
 }
+
+fn independent_sha256(bytes: &[u8]) -> String {
+    let mut command = Command::new("sha256sum")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    command.stdin.take().unwrap().write_all(bytes).unwrap();
+    let output = command.wait_with_output().unwrap();
+    assert!(output.status.success());
+    String::from_utf8(output.stdout)
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap()
+        .to_owned()
+}
+
+fn synthetic_rows(script: &str, count: usize, interrupt: bool) -> Vec<(String, bool)> {
+    let mut producer = Command::new("sh")
+        .args(["-c", script])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut output = BufReader::new(producer.stdout.take().unwrap());
+    let mut rows = Vec::new();
+    for _ in 0..count {
+        let mut line = String::new();
+        assert!(output.read_line(&mut line).unwrap() > 0);
+        let (id, result) = line.trim().split_once(':').unwrap();
+        rows.push((
+            id.to_owned(),
+            match result {
+                "exact" => true,
+                "different" => false,
+                _ => panic!("invalid synthetic row"),
+            },
+        ));
+    }
+    if interrupt {
+        producer.kill().unwrap();
+        assert!(!producer.wait().unwrap().success());
+    } else {
+        assert!(producer.wait().unwrap().success());
+    }
+    rows
+}
+
+fn application_request(
+    id: &str,
+    parent: Option<&str>,
+    origin: &str,
+    artifact: &str,
+    completion_ms: i64,
+) -> Value {
+    json!({"command":"record_application","report_id":id,"context":{"run_id":"00000000-0000-4000-8000-000000000001"},"scope":{"origin":origin,"producer":"batch-fixture"},"parent_report_id":parent,"schema":"example.result.v1","producer_completion":{"unix_ms":completion_ms,"clock":{"clock_id":"fixture.system_time.unix_ms","source":"fixture.producer_completion","uncertainty_ms":null}},"artifact_json":artifact,"timestamp_ns":123})
+}
+
+fn wall_millis() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
+        .try_into()
+        .unwrap()
+}
+
+fn verify_until(adapter: &mut OwnedChild, replies: &mpsc::Receiver<Value>, id: &str) -> Value {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        batch_send(
+            adapter,
+            &json!({"command":"verify_application","report_id":id}),
+        );
+        let reply = batch_reply(replies);
+        if reply.get("verified_application").is_some() {
+            return reply;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "canonical readback timeout: {reply}"
+        );
+        thread::sleep(Duration::from_millis(50));
+    }
+}
+
+#[test]
+#[ignore = "requires exact release executables and fabrico11y.slice"]
+fn application_eight_case_restart_and_paired_delivery() {
+    assert!(
+        fs::read_to_string("/proc/self/cgroup")
+            .unwrap()
+            .contains("/fabrico11y.slice/")
+    );
+    let bins = PathBuf::from(std::env::var_os("FABRIC_TEST_BIN_DIR").unwrap());
+    let sandbox = xtask::evidence::non_tmp_tempdir().unwrap();
+    let root = sandbox.path();
+    let roster: BTreeSet<_> = (1..=8).map(|i| format!("case-{i:02}")).collect();
+    let primary = synthetic_rows(
+        "printf 'case-01:exact\\ncase-02:exact\\ncase-03:exact\\ncase-04:different\\n'",
+        4,
+        false,
+    );
+    let supplement = synthetic_rows(
+        "printf 'case-05:exact\\ncase-06:exact\\ncase-07:different\\n'; exec sleep 60",
+        3,
+        true,
+    );
+    let evaluate = |rows: &[(String, bool)]| {
+        let ids: BTreeSet<_> = rows.iter().map(|(id, _)| id.clone()).collect();
+        assert_eq!(ids.len(), rows.len());
+        assert!(ids.is_subset(&roster));
+        (
+            rows.len(),
+            rows.iter().filter(|(_, exact)| *exact).count(),
+            roster.len() - rows.len(),
+        )
+    };
+    assert_eq!(evaluate(&primary), (4, 3, 4));
+    let mut combined = primary.clone();
+    combined.extend(supplement);
+    assert_eq!(evaluate(&combined), (7, 5, 1));
+    let mut source = Node::open(&bins, root, NODE[0].0, NODE[0].1);
+    let beta = Node::open(&bins, root, NODE[1].0, NODE[1].1);
+    let lane = Node::open(&bins, root, NODE[2].0, NODE[2].1);
+    let endpoint = TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .to_string();
+    let credential = root.join("reader");
+    private_file(&credential, READER);
+    let (mut server, authority) =
+        receiver(&bins, root, &endpoint, [&source, &beta, &lane], &credential);
+    source.forward(&bins, &endpoint, &authority, None);
+    let outbox = root.join("batch-outbox");
+    let primary_id = "00000000-0000-4001-8000-000000000001";
+    let supplement_id = "00000000-0000-4001-8000-000000000002";
+    let primary_json = "{\"schema\":\"example.result.v1\",\"record_id\":\"fixture.primary\",\"enrolled\":8,\"valid\":4,\"exact\":3,\"unavailable\":4}";
+    let supplement_json = format!(
+        "{{\"schema\":\"example.result.v1\",\"record_id\":\"fixture.supplementary\",\"parent_report_id\":\"{primary_id}\",\"relation\":\"supplements\",\"enrolled\":8,\"valid\":7,\"exact\":5,\"unavailable\":1}}"
+    );
+    let first_request = application_request(primary_id, None, &source.origin, primary_json, 42);
+    let second_request = application_request(
+        supplement_id,
+        Some(primary_id),
+        &source.origin,
+        &supplement_json,
+        43,
+    );
+    let (mut adapter, replies) = open_batch_reader(
+        &bins,
+        &source.config.socket,
+        &outbox,
+        &endpoint,
+        &authority,
+        &credential,
+    );
+    batch_send(&mut adapter, &first_request);
+    let first = batch_reply(&replies);
+    assert_eq!(first["delivery_state"], "custody_confirmed", "{first}");
+    until("primary canonical handoff", Duration::from_secs(20), || {
+        (source.health().canonical_through >= 1).then_some(())
+    });
+    let first_verified = verify_until(&mut adapter, &replies, primary_id)["verified_application"]["first_verified_read"].clone();
+    adapter.kill_wait();
+    server.kill_wait();
+    let proxy_path = root.join("replay-proxy.sock");
+    let proxy = UnixListener::bind(&proxy_path).unwrap();
+    proxy.set_nonblocking(true).unwrap();
+    let real_socket = source.config.socket.clone();
+    let (sent, received) = mpsc::sync_channel(1);
+    let fault = thread::spawn(move || {
+        loop {
+            let mut adapter = until("replay proxy", Duration::from_secs(10), || {
+                match proxy.accept() {
+                    Ok((socket, _)) => Some(socket),
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => None,
+                    Err(e) => panic!("proxy: {e}"),
+                }
+            });
+            let mut spindle = UnixStream::connect(&real_socket).unwrap();
+            for socket in [&adapter, &spindle] {
+                socket
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                socket
+                    .set_write_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+            }
+            let request = read_spindle_frame(&mut adapter);
+            write_spindle_frame(&mut spindle, &request);
+            let response = read_spindle_frame(&mut spindle);
+            if let Reply::Receipt { receipt } = serde_json::from_slice(&response).unwrap() {
+                sent.send(receipt).unwrap();
+                break;
+            }
+            write_spindle_frame(&mut adapter, &response);
+        }
+    });
+    let (mut adapter, replies) = open_batch_reader(
+        &bins,
+        &proxy_path,
+        &outbox,
+        &endpoint,
+        &authority,
+        &credential,
+    );
+    batch_send(&mut adapter, &second_request);
+    let original_receipt = received.recv_timeout(Duration::from_secs(15)).unwrap();
+    let unknown = batch_reply(&replies);
+    assert_eq!(unknown["delivery_state"], "outcome_unknown", "{unknown}");
+    adapter.kill_wait();
+    fault.join().unwrap();
+    let (mut adapter, replies) = open_batch_reader(
+        &bins,
+        &source.config.socket,
+        &outbox,
+        &endpoint,
+        &authority,
+        &credential,
+    );
+    batch_send(&mut adapter, &second_request);
+    let replay = batch_reply(&replies);
+    assert_eq!(replay["delivery_state"], "custody_confirmed", "{replay}");
+    let replay_receipt: Receipt = serde_json::from_value(replay["receipt"].clone()).unwrap();
+    assert_eq!(replay_receipt.id, original_receipt.id);
+    assert_eq!(replay_receipt.identity, original_receipt.identity);
+    batch_send(
+        &mut adapter,
+        &json!({"command":"verify_application","report_id":supplement_id}),
+    );
+    let pending = batch_reply(&replies);
+    assert!(pending.get("verified_application").is_none(), "{pending}");
+    batch_send(
+        &mut adapter,
+        &json!({"command":"report_status","report_id":supplement_id}),
+    );
+    assert!(batch_reply(&replies)["report_status"]["first_verified_read"].is_null());
+    let (server, restarted_authority) =
+        receiver(&bins, root, &endpoint, [&source, &beta, &lane], &credential);
+    assert_eq!(restarted_authority, authority);
+    let exact_request = canonical::ExactReceiptRequest {
+        authority: authority.clone(),
+        origin: source.origin.clone(),
+        source_id: replay_receipt.id,
+        identity: replay_receipt.identity.clone(),
+    };
+    let denied = canonical::exchange(
+        &endpoint,
+        NODE[0].1,
+        &Request::ExactReceiptLookup {
+            request: exact_request.clone(),
+        },
+        Instant::now() + Duration::from_secs(3),
+    )
+    .unwrap();
+    assert!(matches!(denied, Response::Error { .. }));
+    let mut wrong_authority = exact_request;
+    wrong_authority.authority = "wrong-authority".into();
+    let denied = canonical::exchange(
+        &endpoint,
+        READER,
+        &Request::ExactReceiptLookup {
+            request: wrong_authority,
+        },
+        Instant::now() + Duration::from_secs(3),
+    )
+    .unwrap();
+    assert!(matches!(denied, Response::Error { .. }));
+    until(
+        "supplement canonical handoff",
+        Duration::from_secs(20),
+        || (source.health().canonical_through >= 2).then_some(()),
+    );
+    let second = verify_until(&mut adapter, &replies, supplement_id);
+    batch_send(
+        &mut adapter,
+        &json!({"command":"read_application_parent","report_id":supplement_id}),
+    );
+    let parent = batch_reply(&replies);
+    assert_eq!(
+        parent["verified_parent"]["result"]["report_id"], primary_id,
+        "{parent}"
+    );
+    assert_eq!(
+        parent["verified_parent"]["first_verified_read"],
+        first_verified
+    );
+    for (raw, result) in [
+        (primary_json, &parent["verified_parent"]["result"]),
+        (
+            supplement_json.as_str(),
+            &second["verified_application"]["result"],
+        ),
+    ] {
+        let value: Value = serde_json::from_str(raw).unwrap();
+        let canonical = serde_json::to_vec(&value).unwrap();
+        assert_eq!(
+            result["original_artifact_digest"]["hex"],
+            independent_sha256(raw.as_bytes())
+        );
+        assert_eq!(
+            result["application_payload_digest"]["hex"],
+            independent_sha256(&canonical)
+        );
+    }
+    let mut changed = second_request.clone();
+    changed["artifact_json"] = format!("{supplement_json}\n").into();
+    batch_send(&mut adapter, &changed);
+    assert_eq!(batch_reply(&replies)["code"], "conflict");
+    let mut rows = Vec::new();
+    read_lane(&source, 2, &mut rows).unwrap();
+    assert_eq!(rows.len(), 2);
+    for pair in 0..3 {
+        for periodic in if pair % 2 == 0 {
+            [false, true]
+        } else {
+            [true, false]
+        } {
+            let id = format!(
+                "00000000-0000-4001-8000-{:012x}",
+                10 + pair * 2 + usize::from(periodic)
+            );
+            let finish_wall_ms = wall_millis();
+            let finished = Instant::now();
+            let request =
+                application_request(&id, None, &source.origin, primary_json, finish_wall_ms);
+            if periodic {
+                thread::sleep(Duration::from_millis(250));
+            }
+            batch_send(&mut adapter, &request);
+            let ack = batch_reply(&replies);
+            let ack_ns = finished.elapsed().as_nanos();
+            assert_eq!(ack["delivery_state"], "custody_confirmed", "{ack}");
+            let staged_ms = ack["application_timing"]["outbox_staged_at"]["unix_ms"]
+                .as_i64()
+                .unwrap();
+            assert!(staged_ms >= finish_wall_ms, "wall clock regressed");
+            let verified = verify_until(&mut adapter, &replies, &id);
+            let verified_ns = finished.elapsed().as_nanos();
+            assert!(
+                verified["verified_application"]["first_verified_read"]["unix_ms"]
+                    .as_i64()
+                    .unwrap()
+                    >= staged_ms,
+                "wall clock regressed"
+            );
+            println!(
+                "FABRIC196_SAMPLE {}",
+                json!({"pair":pair,"mode":if periodic {"periodic"} else {"immediate"},"period_ms":250,"finish_wall_ms":finish_wall_ms,"stage_wall_ms":staged_ms,"finish_to_stage_ms":staged_ms-finish_wall_ms,"finish_to_ack_ns":ack_ns,"finish_to_verified_response_ns":verified_ns,"first_verified_read":verified["verified_application"]["first_verified_read"],"payload_sha256":independent_sha256(primary_json.as_bytes())})
+            );
+        }
+    }
+    adapter.kill_wait();
+    let stored = fs::read(outbox.join("outbox.sqlite")).unwrap();
+    assert!(
+        !stored
+            .windows(primary_json.len())
+            .any(|bytes| bytes == primary_json.as_bytes())
+    );
+    assert!(
+        !stored
+            .windows(supplement_json.len())
+            .any(|bytes| bytes == supplement_json.as_bytes())
+    );
+    drop(server);
+}
