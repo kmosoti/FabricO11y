@@ -39,6 +39,7 @@ Every knowledge artifact distinguishes **who added it** from **whether a human e
 | [D-0190 · Zero-UI Typed Consumer Crate (`fabric-client`)](decisions/D-0190-zero-ui-fabric-client.md) | `agent` | `false` | Zero-UI `fabric.cli.v1` schema crate (`fabric-client`), `FABRIC_CREDENTIAL_FILE`-only `FabricQueryClient`, env stripping, redaction, and `kill_on_drop` |
 | [D-0191 · Verified develop integration and human release promotion](decisions/D-0191-verified-develop-integration.md) | `agent` | `false` | Current-base integration, exact promotion and final artifact qualification |
 | [D-0194 · Causal contribution projection](decisions/D-0194-causal-contributions.md) | `agent` | `false` | Bounded runtime-neutral contribution and proposal heads |
+| [D-0195 · Runtime-neutral operation lifecycles](decisions/D-0195-operation-lifecycle.md) | `agent` | `false` | Bounded lifecycle transitions and adapter-established trust context |
 | [D-0193 · Research corpus revision identity](decisions/D-0193-corpus-revisions.md) | `agent` | `false` | Transport-free immutable revision and claim boundaries |
 | [D-0192 · Headless defaults and an optional frontend](decisions/D-0192-optional-frontend.md) | `agent` | `false` | Supersedes D-0002's product-wide UI prohibition and retains the D-0190 client boundary |
 | [D-0236 · Bounded run and attempt manifests](decisions/D-0236-bounded-run-attempt-manifests.md) | `agent` | `false` | Versioned Sans-I/O shared run and attempt context, typed digest roles, explicit disclosure and clock provenance, and pre-decode byte bounds |
