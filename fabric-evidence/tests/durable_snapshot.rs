@@ -112,8 +112,8 @@ fn eight_case_roots_roundtrip_with_parent_and_verified_claim_matching() {
     let second = root(101, Some(&first), 2, cases(7));
     assert_eq!(second.validate_supplement(&first), Ok(()));
     let bytes = second.result().encode_bounded().unwrap();
-    let result = ApplicationResult::decode_bounded(&bytes).unwrap();
-    let decoded = DurableSnapshot::from_result(result).unwrap();
+    let restored = ApplicationResult::decode_bounded(&bytes).unwrap();
+    let decoded = DurableSnapshot::from_result(restored).unwrap();
     assert_eq!(decoded.payload(), second.payload());
     assert_eq!(
         decoded.result().application_payload_digest(),
