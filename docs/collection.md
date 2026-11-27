@@ -370,8 +370,27 @@ verified. An outbox at capacity returns `full` before accepting a new report.
 Report-ID deduplication belongs to the one persistent outbox. Separate outboxes
 can accept the same producer, origin and report ID under different generation
 identities. Scope labels do not authenticate a user or authorize reading a
-parent. The completion time, local receipt and first verified visibility are
-separate facts; this command does not record custody or visibility timestamps.
+parent. The adapter records the supplied producer completion claim and a local
+`outbox_staged_at` observation in the same SQLite transaction as the frame and
+sequence. Its `system_time.unix_ms` clock is sampled by
+`batch_outbox.stage_transaction` before commit; it is not a commit/fsync time,
+a Spindle acknowledgement time, or a visibility time. Clock values from
+different sources are not necessarily comparable.
+
+Query a report in this owner outbox, whether pending or confirmed:
+
+```json
+{"command":"report_status","report_id":"edd65cef-e5aa-4f95-8ae6-6b30f9edb662"}
+```
+
+The response has `report_status` null when absent. Otherwise it contains the
+local `delivery_state`, optional receipt, and `application_timing`. A pending
+report is `outcome_unknown`; a confirmed report is `custody_confirmed`.
+`application_timing` is null for non-application reports and for older outbox
+rows whose timing was never recorded. Existing v1 outboxes migrate without
+inventing timestamps. The completion time, local stage observation, receipt,
+and first verified visibility are separate facts; Spindle acknowledgement and
+visibility timestamps are not recorded here.
 
 The outbox can report that it is full, locked, or waiting for custody. Preserve
 an unresolved outbox after lease expiry. Automatic replay uses the original

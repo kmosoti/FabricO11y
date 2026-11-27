@@ -74,12 +74,30 @@ pub struct ApplicationReport {
     pub timestamp_ns: u64,
 }
 
+/// Producer claim and a local observation made inside the staging transaction.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ApplicationTiming {
+    pub producer_completion: ProvenancedTime,
+    /// Sampled before the SQLite stage transaction commits; not fsync or Spindle time.
+    pub outbox_staged_at: ProvenancedTime,
+}
+
+/// State in this private outbox only; absence of timing means unknown.
+#[derive(Clone, Debug, Serialize)]
+pub struct ReportStatus {
+    pub report_id: String,
+    pub delivery_state: &'static str,
+    pub receipt: Option<Receipt>,
+    pub application_timing: Option<ApplicationTiming>,
+}
+
 /// A confirmed local custody receipt and its separately named payload digests.
 #[derive(Clone, Debug, Serialize)]
 pub struct ApplicationReceipt {
     pub receipt: Receipt,
     pub original_artifact_digest: OriginalArtifactDigest,
     pub application_payload_digest: ApplicationPayloadDigest,
+    pub application_timing: Option<ApplicationTiming>,
 }
 
 const APPLICATION_MARKER: &str = "fabrico11y.application_result.v1";
@@ -240,7 +258,7 @@ impl BatchClient {
             digest,
             bytes,
         };
-        self.outbox.stage(&pending, lease.sequence)?;
+        self.outbox.stage(&pending, lease.sequence, None)?;
         self.deliver(&pending, deadline)
     }
 
@@ -268,6 +286,7 @@ impl BatchClient {
         let digest = application_digest(&report.context, report.timestamp_ns, &result)?;
         let original_artifact_digest = result.original_artifact_digest().clone();
         let application_payload_digest = result.application_payload_digest().clone();
+        let result_id = result.report_id().to_owned();
         let receipt = (|| -> Result<Receipt, BatchError> {
             let deadline = Instant::now() + self.config.delivery_timeout;
             let prior_lease = self.outbox.lease()?;
@@ -329,13 +348,15 @@ impl BatchClient {
                 digest,
                 bytes,
             };
-            self.outbox.stage(&pending, lease.sequence)?;
+            self.outbox
+                .stage(&pending, lease.sequence, Some(result.producer_completion()))?;
             self.deliver(&pending, deadline)
         })()?;
         Ok(ApplicationReceipt {
             receipt,
             original_artifact_digest,
             application_payload_digest,
+            application_timing: self.outbox.application_timing(&result_id)?,
         })
     }
 
@@ -354,6 +375,26 @@ impl BatchClient {
             confirmed: self.outbox.confirmed_count()?,
             last_error: self.last_error.clone(),
         })
+    }
+
+    /// Returns a single report's owner-outbox state, including unknown legacy timing.
+    pub fn report_status(&self, report_id: &str) -> Result<Option<ReportStatus>, BatchError> {
+        validate_id(report_id).map_err(|()| {
+            BatchError::Invalid("report_id must be a lowercase nonzero UUID".into())
+        })?;
+        let Some(saved) = self.outbox.find(report_id)? else {
+            return Ok(None);
+        };
+        let (delivery_state, receipt) = match saved {
+            SavedReport::Pending(_) => ("outcome_unknown", None),
+            SavedReport::Confirmed(_, receipt) => ("custody_confirmed", Some(receipt)),
+        };
+        Ok(Some(ReportStatus {
+            report_id: report_id.into(),
+            delivery_state,
+            receipt,
+            application_timing: self.outbox.application_timing(report_id)?,
+        }))
     }
 
     /// Retries the only pending report up to the deadline, or returns the most
@@ -549,6 +590,7 @@ pub fn batch_adapter_reply(client: &mut BatchClient, bytes: &[u8]) -> serde_json
         RecordApplication(ApplicationReport),
         Flush { timeout_ms: u64 },
         Status,
+        ReportStatus { report_id: String },
     }
     fn error_reply(error: BatchError) -> serde_json::Value {
         serde_json::json!({"error":error.to_string(),"code":error.code()})
@@ -594,7 +636,7 @@ pub fn batch_adapter_reply(client: &mut BatchClient, bytes: &[u8]) -> serde_json
             let report_id = report.report_id.clone();
             match client.record_application(report) {
                 Ok(confirmed) => {
-                    serde_json::json!({"report_id":report_id,"delivery_state":"custody_confirmed","durably_staged":true,"projection":"unchecked","receipt":confirmed.receipt,"original_artifact_digest":confirmed.original_artifact_digest,"application_payload_digest":confirmed.application_payload_digest})
+                    serde_json::json!({"report_id":report_id,"delivery_state":"custody_confirmed","durably_staged":true,"projection":"unchecked","receipt":confirmed.receipt,"original_artifact_digest":confirmed.original_artifact_digest,"application_payload_digest":confirmed.application_payload_digest,"application_timing":confirmed.application_timing})
                 }
                 Err(error) => {
                     let pending = matches!(
@@ -652,6 +694,10 @@ pub fn batch_adapter_reply(client: &mut BatchClient, bytes: &[u8]) -> serde_json
                 }
             }
         }
+        Ok(Command::ReportStatus { report_id }) => match client.report_status(&report_id) {
+            Ok(status) => serde_json::json!({"report_status":status}),
+            Err(error) => error_reply(error),
+        },
         Ok(Command::Status) => match client.status() {
             Ok(status) => serde_json::json!({"status":status}),
             Err(error) => error_reply(error),
