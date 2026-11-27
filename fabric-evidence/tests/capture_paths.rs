@@ -112,6 +112,30 @@ fn duplicate_prefix_wildcard_depth_work_and_wire_conflicts_fail_closed() {
             Err(CaptureError::InvalidPolicy)
         );
     }
+    // Reject an oversized path before walking even empty segments.
+    assert_eq!(
+        CapturePolicy::new_paths(
+            "p".into(),
+            4096,
+            MAX_CAPTURE_PATH_WORK,
+            vec![PathRule {
+                path: vec![String::new(); 1024],
+                action: leaf.clone()
+            }],
+        ),
+        Err(CaptureError::InvalidPolicy)
+    );
+    // Every individual segment fits, but their aggregate exceeds the policy cap.
+    let many = (0..64)
+        .map(|i| PathRule {
+            path: vec![format!("{i:02}{}", "x".repeat(126)), "x".repeat(128)],
+            action: leaf.clone(),
+        })
+        .collect();
+    assert_eq!(
+        CapturePolicy::new_paths("p".into(), 4096, MAX_CAPTURE_PATH_WORK, many),
+        Err(CaptureError::InvalidPolicy)
+    );
     let deep = vec!["x"; MAX_CAPTURE_PATH_DEPTH + 1];
     assert_eq!(
         CapturePolicy::new_paths(
