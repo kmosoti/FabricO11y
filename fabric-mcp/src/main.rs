@@ -686,6 +686,32 @@ async fn main() {
     }
 }
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
+    const USAGE: &str = "Usage: fabric-mcp [-h | --help]
+
+Serve typed investigations over MCP stdio or local HTTP.
+
+Reader mode (default):
+  FABRIC_MCP_MODE
+  FABRIC_ENDPOINT
+  FABRIC_CREDENTIAL_FILE or FABRIC_CREDENTIAL
+  FABRIC_MCP_LIVE_SOCKET (stdio only)
+
+Writer mode (selected by FABRIC_MCP_MODE):
+  FABRIC_ENDPOINT
+  FABRIC_WRITER_CREDENTIAL_FILE (required)
+
+Local HTTP mode:
+  FABRIC_MCP_HTTP_SOCKET
+  The mode-specific credential file is required; inline FABRIC_CREDENTIAL is not accepted.";
+    let mut args = std::env::args().skip(1);
+    match args.next().as_deref() {
+        None => {}
+        Some("--help" | "-h") if args.next().is_none() => {
+            println!("{USAGE}");
+            return Ok(());
+        }
+        Some(_) => return Err(USAGE.into()),
+    }
     let writer_mode = match std::env::var("FABRIC_MCP_MODE").as_deref() {
         Err(std::env::VarError::NotPresent) | Ok("reader") => false,
         Ok("writer") => true,

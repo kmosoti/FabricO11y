@@ -7,6 +7,22 @@ use std::{
     io::{self, Read},
     time::{Duration, Instant},
 };
+
+const USAGE: &str =
+    "Usage: fabric-query <query | query-versioned VERSION | plan | evidence ID | progress | capabilities | cancel ID>
+  query, plan              Read a typed request from standard input
+  query-versioned VERSION  Read a typed request with an operation version
+  evidence ID              Read a canonical observation
+  progress                 Read canonical source frontiers
+  capabilities             Read receiver identity and protocol limits
+  cancel ID                Cancel an active query
+
+Options: -h, --help
+Environment:
+  FABRIC_ENDPOINT         Canonical fabric-server host:port
+  FABRIC_CREDENTIAL_FILE  Private, owned reader credential file
+  FABRIC_CREDENTIAL       Inline alternative to FABRIC_CREDENTIAL_FILE";
+
 fn main() {
     if let Err(e) = run() {
         eprintln!("fabric-query: {}", fabric_core::sanitize_terminal_text(&e));
@@ -15,7 +31,14 @@ fn main() {
 }
 fn run() -> Result<(), String> {
     let mut args = std::env::args().skip(1);
-    let command=args.next().ok_or("usage: fabric-query query|query-versioned|plan|evidence|progress|cancel [version|canonical-id|query-id]; endpoint and credential from FABRIC_ENDPOINT and FABRIC_CREDENTIAL")?;
+    let command = args.next().ok_or(USAGE)?;
+    if matches!(command.as_str(), "-h" | "--help") {
+        if args.next().is_some() {
+            return Err(USAGE.into());
+        }
+        println!("{USAGE}");
+        return Ok(());
+    }
     let (endpoint, credential) = fabric::query::connection_from_env()?;
     let request = match command.as_str() {
         "query" | "query-versioned" | "plan" => {
@@ -47,10 +70,11 @@ fn run() -> Result<(), String> {
                 .map_err(|_| "invalid canonical ID")?,
         },
         "progress" => Request::Progress,
+        "capabilities" => Request::Capabilities,
         "cancel" => Request::Cancel {
             query_id: args.next().ok_or("query ID required")?,
         },
-        _ => return Err("unknown command".into()),
+        _ => return Err(USAGE.into()),
     };
     if args.next().is_some() {
         return Err("unexpected argument".into());

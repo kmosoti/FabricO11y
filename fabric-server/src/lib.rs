@@ -1485,6 +1485,7 @@ fn prepare(
     Ok(canonical)
 }
 pub fn cli() -> Result<(), String> {
+    const USAGE: &str = "Usage: fabric-server serve CONFIG\nOptions: -h, --help";
     let args: Vec<_> = std::env::args().skip(1).collect();
     match args
         .iter()
@@ -1492,6 +1493,10 @@ pub fn cli() -> Result<(), String> {
         .collect::<Vec<_>>()
         .as_slice()
     {
+        ["--help"] | ["-h"] => {
+            println!("{USAGE}");
+            Ok(())
+        }
         ["serve", config] => {
             let server = Server::open(fabric::config::load(Path::new(config))?)?;
             let stop = server.stop_handle();
@@ -1550,7 +1555,7 @@ pub fn cli() -> Result<(), String> {
             fabric::spindle::notify_systemd_ready();
             server.serve_with_limit(connection_limit)
         }
-        _ => Err("usage: fabric-server serve CONFIG".into()),
+        _ => Err(USAGE.into()),
     }
 }
 

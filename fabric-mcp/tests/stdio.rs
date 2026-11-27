@@ -891,3 +891,59 @@ fn read_response(rx: &mpsc::Receiver<Value>, id: u64, deadline: std::time::Insta
         }
     }
 }
+
+#[test]
+fn help_works_without_credentials_and_rejects_extra_arguments() {
+    for flag in ["-h", "--help"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_fabric-mcp"))
+            .arg(flag)
+            .env_remove("FABRIC_ENDPOINT")
+            .env_remove("FABRIC_CREDENTIAL")
+            .env_remove("FABRIC_CREDENTIAL_FILE")
+            .env_remove("FABRIC_MCP_MODE")
+            .env_remove("FABRIC_WRITER_CREDENTIAL_FILE")
+            .env_remove("FABRIC_MCP_HTTP_SOCKET")
+            .env_remove("FABRIC_MCP_LIVE_SOCKET")
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let text = String::from_utf8_lossy(&output.stdout);
+        for name in [
+            "FABRIC_ENDPOINT",
+            "FABRIC_CREDENTIAL_FILE",
+            "FABRIC_CREDENTIAL",
+            "FABRIC_MCP_MODE",
+            "FABRIC_WRITER_CREDENTIAL_FILE",
+            "FABRIC_MCP_HTTP_SOCKET",
+            "FABRIC_MCP_LIVE_SOCKET",
+        ] {
+            assert!(text.contains(name), "missing {name} in help: {text}");
+        }
+        assert!(text.contains("Reader mode"), "{text}");
+        assert!(
+            text.contains("Writer mode (selected by FABRIC_MCP_MODE)"),
+            "{text}"
+        );
+        assert!(text.contains("Local HTTP mode"), "{text}");
+        assert!(
+            text.contains("mode-specific credential file is required"),
+            "{text}"
+        );
+        assert!(
+            text.contains("inline FABRIC_CREDENTIAL is not accepted"),
+            "{text}"
+        );
+    }
+    let output = Command::new(env!("CARGO_BIN_EXE_fabric-mcp"))
+        .args(["--help", "unexpected"])
+        .env_remove("FABRIC_ENDPOINT")
+        .env_remove("FABRIC_CREDENTIAL")
+        .env_remove("FABRIC_CREDENTIAL_FILE")
+        .env_remove("FABRIC_MCP_MODE")
+        .env_remove("FABRIC_WRITER_CREDENTIAL_FILE")
+        .env_remove("FABRIC_MCP_HTTP_SOCKET")
+        .env_remove("FABRIC_MCP_LIVE_SOCKET")
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+}
