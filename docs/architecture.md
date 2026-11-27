@@ -383,15 +383,28 @@ or storage trailing newlines. Typed `verify_exact_bytes` methods compare these
 claims against supplied bytes. An application file and its submitted record can
 therefore have different digests while retaining explicit roles.
 
+The manifest canonical profile is not the canonical result encoding for #196.
+Application-defined results need a separate closed, versioned result schema and
+its own canonical byte profile. Until that exists, canonical-record digests
+identify the exact accepted payload bytes, and original artifact files retain
+their own exact-byte digests.
+
 The decoder rejects wire bodies above 64 KiB before JSON parsing. The JSON
 encoder uses a 64 KiB capped writer so escaping cannot grow an unbounded
 intermediate; this matches the existing 64 KiB observation frame budget.
 Envelopes contain at most 64 attempts and 64 observations; a run has at most 32
 artifacts. An attempt allows up to 32 unique input overrides and one each of
-the evaluator, toolchain, and capture-policy overrides. IDs are at most 128
-bytes; artifact locators 1,024 bytes; media types 128 bytes; clock IDs 128
-bytes; clock sources 256 bytes. Fields use explicit `available`, `unavailable`,
-`redacted`, `unknown`, and `inapplicable` states. Each supplied source,
+the evaluator, toolchain, and capture-policy overrides. If any input override
+is present, those entries replace the entire run input set in their declared
+order; they are not appended or matched to run entries by locator. With no
+input override, the attempt inherits the run's complete explicit input
+disclosure. An empty
+attempt-level replacement cannot be encoded, so attempt-level clearing is not
+supported; an empty `available` input list remains an explicit run-level empty
+set. IDs are at most 128 bytes; artifact locators 1,024 bytes; media types 128
+bytes; clock IDs 128 bytes; clock sources 256 bytes. Fields use explicit
+`available`, `unavailable`, `redacted`, `unknown`, and `inapplicable` states.
+Each supplied source,
 observed, custody, or verified time carries a clock ID and source; timestamps
 from different clocks have no global order guarantee. This contract does not
 activate collection, storage, telemetry migration, or custody verification.

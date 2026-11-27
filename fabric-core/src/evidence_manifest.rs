@@ -279,6 +279,43 @@ pub struct AttemptManifest {
     pub overrides: Vec<AttemptOverride>,
 }
 
+/// The result of applying an attempt's input override policy to its run.
+/// Empty per-attempt replacement is not representable; attempts inherit when
+/// they contain no `Input` override entries.
+#[derive(Debug, PartialEq, Eq)]
+pub enum EffectiveInputs<'a> {
+    Inherited(&'a Disclosure<Vec<ArtifactReference>>),
+    /// All input override entries form the complete replacement set.
+    Replaced(Vec<&'a ArtifactReference>),
+}
+
+impl AttemptManifest {
+    /// Resolves the complete input set. No locator matching or append behavior
+    /// is performed: one or more input overrides replace the run set wholesale
+    /// in their declared order.
+    pub fn effective_inputs<'a>(
+        &'a self,
+        run: &'a RunManifest,
+    ) -> Result<EffectiveInputs<'a>, ManifestError> {
+        validate_run(run)?;
+        validate_attempt(self)?;
+        if self.run.id != run.immutable_id || self.run.digest != run.digest.0 {
+            return Err(ManifestError::InvalidReference);
+        }
+        let replacements: Vec<_> = self
+            .overrides
+            .iter()
+            .filter(|o| o.kind == OverrideKind::Input)
+            .map(|o| &o.artifact)
+            .collect();
+        if replacements.is_empty() {
+            Ok(EffectiveInputs::Inherited(&run.inputs))
+        } else {
+            Ok(EffectiveInputs::Replaced(replacements))
+        }
+    }
+}
+
 #[derive(Serialize)]
 struct AttemptManifestCanonical<'a> {
     schema_version: u16,
@@ -703,11 +740,58 @@ mod tests {
         }
     }
 
+    fn refresh_attempt_and_observation_references(envelope: &mut ManifestEnvelope) {
+        for attempt in &mut envelope.attempts {
+            attempt.run.digest = envelope.run.digest.0.clone();
+            attempt.digest = attempt.recompute_digest().unwrap();
+        }
+        for observation in &mut envelope.observations {
+            let attempt = envelope
+                .attempts
+                .iter()
+                .find(|a| a.immutable_id == observation.attempt.id)
+                .unwrap();
+            observation.attempt.digest = attempt.digest.0.clone();
+        }
+    }
+
     #[test]
     fn bounded_roundtrip_shares_run_and_attempt_manifests() {
         let x = envelope();
         let bytes = x.encode_bounded().unwrap();
         assert_eq!(ManifestEnvelope::decode_bounded(&bytes).unwrap(), x);
+    }
+
+    #[test]
+    fn input_overrides_replace_the_complete_run_set_and_absence_inherits() {
+        let mut x = envelope();
+        x.run.inputs = Disclosure::Available(vec![
+            artifact(ArtifactKind::Input, "run-a"),
+            artifact(ArtifactKind::Input, "run-b"),
+            artifact(ArtifactKind::Input, "run-c"),
+        ]);
+        x.run.digest = x.run.recompute_digest().unwrap();
+        x.attempts[0].overrides = vec![AttemptOverride {
+            kind: OverrideKind::Input,
+            artifact: artifact(ArtifactKind::Input, "attempt-only"),
+        }];
+        refresh_attempt_and_observation_references(&mut x);
+        assert_eq!(x.validate(), Ok(()));
+
+        match x.attempts[0].effective_inputs(&x.run).unwrap() {
+            EffectiveInputs::Replaced(inputs) => {
+                assert_eq!(inputs.len(), 1);
+                assert_eq!(inputs[0].locator, "artifact:attempt-only");
+            }
+            EffectiveInputs::Inherited(_) => panic!("input override must replace the full set"),
+        }
+        match x.attempts[1].effective_inputs(&x.run).unwrap() {
+            EffectiveInputs::Inherited(Disclosure::Available(inputs)) => {
+                assert_eq!(inputs.len(), 3);
+                assert_eq!(inputs[0].locator, "artifact:run-a");
+            }
+            _ => panic!("missing input override must inherit the run set"),
+        }
     }
     #[test]
     fn all_disclosure_states_are_distinct() {
