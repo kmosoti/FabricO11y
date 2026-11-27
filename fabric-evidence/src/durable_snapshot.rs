@@ -47,12 +47,34 @@ pub struct Definition {
     pub aggregation: Aggregation,
 }
 
+/// A canonical report UUID. Serde uses its existing string representation.
+#[derive(Clone, Debug, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(transparent)]
+pub struct ReportId(String);
+impl ReportId {
+    pub fn new(value: String) -> Result<Self, DurableError> {
+        if !crate::application_result::uuid(&value) {
+            return Err(DurableError::InvalidReference);
+        }
+        Ok(Self(value))
+    }
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+impl<'de> Deserialize<'de> for ReportId {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = String::deserialize(deserializer)?;
+        Self::new(value).map_err(|_| serde::de::Error::custom("invalid report UUID"))
+    }
+}
+
 /// Owner-scoped report and canonical application payload claims. The optional
 /// source ID is a check against a later qualified receipt, not a receipt itself.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ApplicationReference {
-    pub report_id: String,
+    pub report_id: ReportId,
     pub payload_digest: ApplicationPayloadDigest,
     pub expected_source_id: Option<NonZeroU64>,
 }
@@ -129,10 +151,7 @@ impl Payload {
             }
             prior = Some(&case.id);
             if let CaseEvidence::Known { reference } = &case.evidence {
-                if !uuid(&reference.report_id)
-                    || !reports.insert(&reference.report_id)
-                    || !digest(&reference.payload_digest)
-                {
+                if !reports.insert(&reference.report_id) || !digest(&reference.payload_digest) {
                     return Err(DurableError::InvalidReference);
                 }
             }
@@ -153,21 +172,12 @@ fn text(s: &str, max: usize) -> bool {
 fn digest(d: &ApplicationPayloadDigest) -> bool {
     d.0.validate().is_ok() && d.0.representation == DigestRepresentation::ExactBytes
 }
-fn uuid(s: &str) -> bool {
-    s.len() == 36
-        && s != "00000000-0000-0000-0000-000000000000"
-        && s.bytes().enumerate().all(|(i, b)| {
-            if matches!(i, 8 | 13 | 18 | 23) {
-                b == b'-'
-            } else {
-                b.is_ascii_digit() || (b'a'..=b'f').contains(&b)
-            }
-        })
-}
 
 #[derive(Clone, Debug)]
 pub struct DurableSnapshot {
     result: ApplicationResult,
+    report_id: ReportId,
+    parent_id: Option<ReportId>,
     payload: Payload,
 }
 impl DurableSnapshot {
@@ -203,7 +213,17 @@ impl DurableSnapshot {
         if result.parent_report_id().is_some() != payload.parent_payload_digest.is_some() {
             return Err(DurableError::InvalidParent);
         }
-        Ok(Self { result, payload })
+        let report_id = ReportId::new(result.report_id().to_owned())?;
+        let parent_id = result
+            .parent_report_id()
+            .map(|id| ReportId::new(id.to_owned()))
+            .transpose()?;
+        Ok(Self {
+            result,
+            report_id,
+            parent_id,
+            payload,
+        })
     }
     pub fn result(&self) -> &ApplicationResult {
         &self.result
@@ -214,7 +234,7 @@ impl DurableSnapshot {
     /// Parent ordering uses the same immutable cutoff source and ordinal only;
     /// timestamps from different sources or clocks are never ordered here.
     pub fn validate_supplement(&self, parent: &Self) -> Result<(), DurableError> {
-        if self.result.parent_report_id() != Some(parent.result.report_id())
+        if self.parent_id.as_ref() != Some(&parent.report_id)
             || self.result.scope() != parent.result.scope()
             || self.payload.parent_payload_digest.as_ref()
                 != Some(parent.result.application_payload_digest())
@@ -253,7 +273,7 @@ impl DurableSnapshot {
             return Err(DurableError::InvalidReference);
         };
         if resolved.scope() != self.result.scope()
-            || resolved.report_id() != reference.report_id
+            || resolved.report_id() != reference.report_id.as_str()
             || resolved.application_payload_digest() != &reference.payload_digest
             || reference
                 .expected_source_id
