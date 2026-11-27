@@ -387,8 +387,8 @@ the complete projected row for each requested item. One request spends at most
 4 MiB of canonical row bytes and reserves at most 64 MiB and 32,768 rows of
 projection segments; guarded Parquet limits also apply. Segment evidence is
 verified once per touched segment. Deadline, count and byte exhaustion leave
-individual outcomes unavailable. Deadline checks occur around I/O and decoding;
-one guarded Parquet decoder call is not preemptible mid-call. Rows beyond the
+individual outcomes unavailable. Deadline checks occur around I/O and between guarded decoder validation stages;
+individual footer, page and Arrow operations are not preemptible mid-call. Rows beyond the
 caller's barrier are not looked up. The lock is held for this inspection; this can delay
 projection work for other origins. Native engine mode remains unavailable.
 

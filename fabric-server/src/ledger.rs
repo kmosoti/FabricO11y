@@ -1003,22 +1003,41 @@ impl Reader {
             .query(rusqlite::params_from_iter(values))
             .map_err(err)?;
         let mut bytes = 0usize;
-        let mut complete = true;
+        let mut complete = false;
         let mut seen = std::collections::BTreeSet::new();
-        while let Some(row) = query.next().map_err(err)? {
+        loop {
             if std::time::Instant::now() >= deadline {
-                complete = false;
                 break;
             }
-            let id: u64 = row.get(2).map_err(err)?;
+            let row = match query.next() {
+                Ok(Some(row)) => row,
+                Ok(None) => {
+                    complete = true;
+                    break;
+                }
+                Err(_) => break,
+            };
+            let id: u64 = match row.get(2) {
+                Ok(id) => id,
+                Err(_) => break,
+            };
             seen.insert(id);
-            let len: usize = row.get(4).map_err(err)?;
+            let len: usize = match row.get(4) {
+                Ok(len) => len,
+                Err(_) => continue,
+            };
             if len > observation::MAX_FRAME || bytes.saturating_add(len) > 4 * 1024 * 1024 {
                 continue;
             }
             bytes += len;
-            let value = Ledger::row(row).map_err(err)?;
-            let hash: String = row.get(5).map_err(err)?;
+            let value = match Ledger::row(row) {
+                Ok(value) => value,
+                Err(_) => continue,
+            };
+            let hash: String = match row.get(5) {
+                Ok(hash) => hash,
+                Err(_) => continue,
+            };
             if value.raw.len() == len && digest(value.raw.as_bytes()) == hash {
                 result.insert(id, Ok(Some(value)));
             }

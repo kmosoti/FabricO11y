@@ -2071,6 +2071,65 @@ mod receipt_tests {
     }
 
     #[test]
+    fn receipt_batch_corrupt_canonical_row_does_not_hide_ready_peer() {
+        use canonical::{ReceiptBatchItem, ReceiptBatchRequest, ReceiptBatchStatus as Status};
+        let (root, server) = fixture();
+        let raw = |sequence: u64| {
+            serde_json::json!({"version":2,"registry":"fabrico11y/2","identity":{"producer":"alpha","generation":"sample","sequence":sequence},"timestamp_ns":0,"resource":"service","data":{"kind":"log","level":"info","message":"sample"}}).to_string()
+        };
+        let entries: Vec<_> = (1..=2)
+            .map(|id| ForwardRecord {
+                source_id: id,
+                raw: raw(id),
+            })
+            .collect();
+        assert!(matches!(
+            call(
+                &server,
+                "alpha",
+                Request::Ingest {
+                    origin: "alpha".into(),
+                    records: entries
+                }
+            ),
+            Ok(Response::Committed { through: 2, .. })
+        ));
+        let rows = server.ledger.lock().unwrap().replay(0, 2, 8192).unwrap();
+        server.projection.lock().unwrap().apply(&rows).unwrap();
+        let db =
+            rusqlite::Connection::open(root.path().join("canonical/canonical.sqlite")).unwrap();
+        db.execute(
+            "UPDATE records SET raw=42 WHERE origin='alpha' AND source_id=1",
+            [],
+        )
+        .unwrap();
+        let items = (1..=2)
+            .map(|id| ReceiptBatchItem {
+                source_id: id,
+                identity: observation::decode_versioned(raw(id).as_bytes())
+                    .unwrap()
+                    .identity()
+                    .clone(),
+            })
+            .collect();
+        let request = ReceiptBatchRequest {
+            authority: server.reads.authority.clone(),
+            origin: "alpha".into(),
+            source_barrier: 2,
+            timeout_ms: 1000,
+            include_digest: false,
+            items,
+        };
+        let Response::ReceiptBatchReady { readiness } =
+            call(&server, "reader", Request::ReceiptBatchReady { request }).unwrap()
+        else {
+            panic!("missing batch")
+        };
+        assert_eq!(readiness.outcomes[0].status, Status::Unavailable);
+        assert_eq!(readiness.outcomes[1].status, Status::Ready);
+    }
+
+    #[test]
     fn exact_receipt_requires_a_queryable_committed_row() {
         let (root, server) = fixture();
         let raw = |name: &str| {

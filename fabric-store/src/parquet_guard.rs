@@ -4203,6 +4203,26 @@ pub fn open_verified_parquet_batch_reader_from_bytes<B>(
 where
     B: ChunkReader + AsRef<[u8]> + 'static,
 {
+    open_verified_parquet_batch_reader_from_bytes_with_check(
+        bytes,
+        expected_schema,
+        max_batch_rows,
+        || Ok(()),
+    )
+}
+
+/// Check a cooperative work budget between bounded validation stages.
+pub fn open_verified_parquet_batch_reader_from_bytes_with_check<B, F>(
+    bytes: B,
+    expected_schema: Option<&SchemaRef>,
+    max_batch_rows: usize,
+    mut check: F,
+) -> Result<ParquetRecordBatchReader, String>
+where
+    B: ChunkReader + AsRef<[u8]> + 'static,
+    F: FnMut() -> Result<(), String>,
+{
+    check()?;
     let slice = bytes.as_ref();
     let file_len = u64::try_from(slice.len()).map_err(|e| e.to_string())?;
     if file_len < 12 {
@@ -4234,6 +4254,7 @@ where
     let footer_start = slice.len() - 8 - footer_len;
     let footer_slice = &slice[footer_start..tail_off];
     let scan = scan_parquet_thrift_footer_slice(footer_slice)?;
+    check()?;
     let decoded_arrow_ipc_bytes = scan.decoded_arrow_ipc_bytes();
     if footer_len
         .saturating_add(decoded_arrow_ipc_bytes)
@@ -4254,6 +4275,7 @@ where
             "parquet buffer footer estimated decode size exceeds limit {MAX_MAINTENANCE_FOOTER_DECODE_BYTES}"
         ));
     }
+    check()?;
     let pq_meta =
         ParquetMetaDataReader::decode_metadata(footer_slice).map_err(|e| e.to_string())?;
     let reader_meta = finish_verified_maintenance_metadata(
@@ -4264,6 +4286,7 @@ where
         footer_len,
         expected_schema,
     )?;
+    check()?;
     let mut cursor = Cursor::new(slice);
     let batch_rows = validate_chunk_pages_and_budget(
         &mut cursor,
@@ -4273,15 +4296,18 @@ where
         slice.len(),
         max_batch_rows,
     )?;
+    check()?;
     let data_section_end = file_len
         .checked_sub(8_u64.saturating_add(footer_len as u64))
         .ok_or_else(|| "invalid parquet buffer footer offset bounds".to_owned())?;
     for (rg_idx, rg) in reader_meta.metadata().row_groups().iter().enumerate() {
+        check()?;
         if rg.num_rows() == 0 {
             continue;
         }
         let mut rg_bufs = PushBuffers::new(file_len);
         for col_idx in 0..rg.num_columns() {
+            check()?;
             let col = rg.column(col_idx);
             let (col_start, col_len) = checked_column_byte_range(col, col_idx, data_section_end)?;
             let col_len_usize = usize::try_from(col_len)
@@ -4292,8 +4318,10 @@ where
             rg_bufs.push_range(col_start..(col_start + col_len), col_bytes);
         }
         let rg_arc = Arc::new(rg_bufs);
+        check()?;
         validate_projected_row_group_pages(&rg_arc, &reader_meta, rg_idx, &ProjectionMask::all())?;
     }
+    check()?;
     ParquetRecordBatchReaderBuilder::new_with_metadata(bytes, reader_meta)
         .with_batch_size(batch_rows)
         .build()
