@@ -321,3 +321,52 @@ fn invalid_report_uuid_and_duplicate_known_reference_are_rejected() {
         Err(DurableError::InvalidReference)
     ));
 }
+
+#[test]
+fn case_measurements_are_bound_and_other_schemas_are_unavailable() {
+    use fabric_evidence::durable_snapshot::{
+        CASE_MEASUREMENT_SCHEMA, CaseMeasurement, read_case_measurement,
+    };
+    use fabric_evidence::snapshot::Outcome;
+    let measurement = CaseMeasurement {
+        schema: CASE_MEASUREMENT_SCHEMA.into(),
+        case_id: "case-01".into(),
+        definition: def(),
+        value: i64::MIN,
+        exact: true,
+    };
+    let result = ApplicationResult::new(
+        scope(),
+        uuid(71),
+        None,
+        CASE_MEASUREMENT_SCHEMA.into(),
+        time(1),
+        &serde_json::to_vec(&measurement).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        read_case_measurement(&result, "case-01", &def()).unwrap(),
+        Some(Outcome::Known {
+            value: i64::MIN,
+            exact: true
+        })
+    );
+    assert!(read_case_measurement(&result, "case-02", &def()).is_err());
+    let mut wrong_definition = def();
+    wrong_definition.unit = "seconds".into();
+    assert!(read_case_measurement(&result, "case-01", &wrong_definition).is_err());
+    assert_eq!(
+        read_case_measurement(&self::result(1), "case-01", &def()).unwrap(),
+        None
+    );
+    let malformed = ApplicationResult::new(
+        scope(),
+        uuid(72),
+        None,
+        CASE_MEASUREMENT_SCHEMA.into(),
+        time(1),
+        br#"{"schema":"fabric.snapshot.case-measurement.v1","case_id":"case-01","extra":1}"#,
+    )
+    .unwrap();
+    assert!(read_case_measurement(&malformed, "case-01", &def()).is_err());
+}

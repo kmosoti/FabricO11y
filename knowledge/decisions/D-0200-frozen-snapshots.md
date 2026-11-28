@@ -39,3 +39,12 @@ uses the exact outbox receipt and one shared deadline; synchronous local disk
 operations are checked around calls but cannot be interrupted midway. An
 unknown case stays unknown. These checks do not establish corpus or review
 bindings or analytical projection visibility.
+
+Two explicitly referenced boundaries may also be compared without assuming a
+parent relation. A `fabric.snapshot.case-measurement.v1` case result binds its
+case identifier and full measurement definition to an i64 value and exactness.
+The adapter verifies both roots and all known case references under one deadline,
+then applies the pure comparison to the fixed roster. Unrecognized schemas are
+unavailable; malformed recognized measurements fail closed. The output uses a
+decimal string for the i128 difference. These checks do not establish corpus or
+review bindings or causal significance.

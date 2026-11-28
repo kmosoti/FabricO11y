@@ -392,6 +392,24 @@ inventing timestamps. The completion time, local stage observation, receipt,
 and first verified visibility are separate facts; Spindle acknowledgement and
 visibility timestamps are not recorded here.
 
+The batch adapter also accepts `compare_snapshots` with explicit `baseline`
+and `candidate` application references and `timeout_ms` in 1..=30000. Each
+reference contains a report UUID, `payload_digest` claim and optional
+`expected_source_id`, using the same shape as a known case reference. Both
+roots and all named known cases are verified through the configured owner
+outbox and canonical Reader within one total deadline. No parent relationship
+is assumed. The result retains the full roster and counts, reports missing or
+unrecognized measurements as unavailable, and emits signed differences as
+decimal strings.
+
+A measurable case uses application schema `fabric.snapshot.case-measurement.v1`
+with an object containing `schema`, `case_id`, the complete snapshot
+`definition`, signed integer `value`, and boolean `exact`. The report's case ID
+and full evaluator, configuration, unit and aggregation must match its frozen
+boundary. A recognized malformed or mismatched measurement fails the comparison;
+other schemas do not supply a value. Results are observational and make no
+causal or statistical significance claim.
+
 To verify a confirmed application at a canonical authority, start batch mode
 with `--canonical-reader ENDPOINT AUTHORITY CREDENTIAL_FILE` after the outbox
 argument. The endpoint must be loopback or an authenticated loopback tunnel;

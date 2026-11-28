@@ -1830,10 +1830,90 @@ fn snapshot_readback_survives_packaged_restart() {
         "fabric.snapshot.v1",
         &payload(1, &missing_refs, None),
     );
+    // Explicit, unrelated roots compare retained typed measurements after restart.
+    let measurement_schema = "fabric.snapshot.case-measurement.v1";
+    let measurement = |value: i64, exact: bool, definition: &Value| {
+        json!({
+            "schema":measurement_schema,"case_id":"case-01","definition":definition,"value":value,"exact":exact
+        })
+    };
+    let reference = |id: &str, response: &Value| {
+        json!({
+            "report_id":id,"payload_digest":response["application_payload_digest"],"expected_source_id":response["receipt"]["id"]
+        })
+    };
+    let measure_a_id = report_id(110);
+    let measure_a = record(
+        &mut adapter,
+        &measure_a_id,
+        None,
+        measurement_schema,
+        &measurement(i64::MIN, true, &definition),
+    );
+    let measure_b_id = report_id(111);
+    let measure_b = record(
+        &mut adapter,
+        &measure_b_id,
+        None,
+        measurement_schema,
+        &measurement(i64::MAX, false, &definition),
+    );
+    let compare_a_id = report_id(112);
+    let compare_a = record(
+        &mut adapter,
+        &compare_a_id,
+        None,
+        "fabric.snapshot.v1",
+        &payload(
+            3,
+            &[reference(&measure_a_id, &measure_a), case_refs[1].clone()],
+            None,
+        ),
+    );
+    let compare_b_id = report_id(113);
+    let compare_b = record(
+        &mut adapter,
+        &compare_b_id,
+        None,
+        "fabric.snapshot.v1",
+        &payload(
+            4,
+            &[reference(&measure_b_id, &measure_b), case_refs[1].clone()],
+            None,
+        ),
+    );
+    let mut wrong_definition = definition.clone();
+    wrong_definition["unit"] = "seconds".into();
+    let bad_measure_id = report_id(114);
+    let bad_measure = record(
+        &mut adapter,
+        &bad_measure_id,
+        None,
+        measurement_schema,
+        &measurement(7, true, &wrong_definition),
+    );
+    let bad_compare_id = report_id(115);
+    let bad_compare = record(
+        &mut adapter,
+        &bad_compare_id,
+        None,
+        "fabric.snapshot.v1",
+        &payload(
+            5,
+            &[
+                reference(&bad_measure_id, &bad_measure),
+                case_refs[1].clone(),
+            ],
+            None,
+        ),
+    );
+    let baseline_ref = reference(&compare_a_id, &compare_a);
+    let candidate_ref = reference(&compare_b_id, &compare_b);
+    let bad_comparison_ref = reference(&bad_compare_id, &bad_compare);
     until(
         "snapshot canonical handoff",
         Duration::from_secs(30),
-        || (source.health().canonical_through >= 11).then_some(()),
+        || (source.health().canonical_through >= 17).then_some(()),
     );
     adapter.kill_wait();
     server.kill_wait();
@@ -1891,6 +1971,43 @@ fn snapshot_readback_survives_packaged_restart() {
             );
         }
     }
+    batch_send(
+        &mut adapter,
+        &json!({"command":"compare_snapshots","baseline":baseline_ref,"candidate":candidate_ref,"timeout_ms":30000}),
+    );
+    let comparison = replies.recv_timeout(Duration::from_secs(35)).unwrap();
+    let compared = &comparison["snapshot_comparison"];
+    assert_eq!(compared["baseline_counts"]["enrolled"], 8, "{comparison}");
+    assert_eq!(compared["baseline_counts"]["known"], 1);
+    assert_eq!(compared["candidate_counts"]["known"], 1);
+    assert_eq!(
+        compared["cases"]["case-01"]["difference"],
+        "18446744073709551615"
+    );
+    assert_eq!(compared["cases"]["case-01"]["baseline_exact"], true);
+    assert_eq!(compared["cases"]["case-01"]["candidate_exact"], false);
+    assert_eq!(compared["cases"]["case-02"]["state"], "unavailable");
+    assert_eq!(compared["cases"]["case-03"]["state"], "unavailable");
+    batch_send(
+        &mut adapter,
+        &json!({"command":"compare_snapshots","baseline":baseline_ref,"candidate":bad_comparison_ref,"timeout_ms":30000}),
+    );
+    let bad = replies.recv_timeout(Duration::from_secs(35)).unwrap();
+    assert!(
+        bad.get("error").is_some() && bad.get("snapshot_comparison").is_none(),
+        "{bad}"
+    );
+    let mut wrong_digest = candidate_ref.clone();
+    wrong_digest["payload_digest"]["hex"] = "f".repeat(64).into();
+    batch_send(
+        &mut adapter,
+        &json!({"command":"compare_snapshots","baseline":baseline_ref,"candidate":wrong_digest,"timeout_ms":30000}),
+    );
+    let bad = replies.recv_timeout(Duration::from_secs(35)).unwrap();
+    assert!(
+        bad.get("error").is_some() && bad.get("snapshot_comparison").is_none(),
+        "{bad}"
+    );
     for id in [&bad_digest_id, &missing_id] {
         batch_send(
             &mut adapter,
