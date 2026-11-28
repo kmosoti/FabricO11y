@@ -11,6 +11,7 @@ fabric = ["fabric-query-contract", "serde", "serde_json", "tempfile", "admission
 fabric-corpus = ["sha2"]
 fabric-ops = []
 fabric-colloquium = []
+fabric-alert = []
 fabric-evidence = ["serde", "serde_json", "sha2"]
 fabric-core = ["admission-kernel", "arrow", "chrono", "fabric-evidence", "serde", "serde_json", "proptest"]
 fabric-graph = ["arrow", "fabric-core", "serde", "serde_json", "proptest"]
