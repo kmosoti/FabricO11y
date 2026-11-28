@@ -62,7 +62,7 @@ flowchart TD
     subgraph PreservedCustody["Preserved Canonical Custody & Protocol Crates"]
         FAB["fabric (SDK & Spindle local custody)"]
         SRV["fabric-server (Canonical TCP ledger & elastic analytical admission)"]
-        MCP["fabric-mcp (Typed stdio MCP adapter)"]
+        MCP["fabric-mcp (Typed stdio / optional local HTTP)"]
         FAB --> AK
         FAB --> OPS
         FAB --> EVID
@@ -81,6 +81,15 @@ of `fabric-client` can use `query_contract` with default features disabled;
 that path does not activate the native transport. Optional `query-schema`
 forwards to the contract package. Query responses still carry generic JSON
 rows, which consumers decode as the documented row type for the operation.
+
+The optional `local-http` feature adds a single-request HTTP/1 transport on a
+private Unix socket to the same typed handlers. Its credential and Reader or
+Writer role are chosen at process launch. The connection and work permits bound
+request handling and response delivery; canonical query cancellation retains its
+work charge until the blocking exchange exits. Unix peer credentials establish a
+local UID boundary subject to the operating system's namespace, same-UID and
+file-descriptor-passing semantics. No TCP listener or browser-origin grant is
+created.
 
 ### MCP request scheduling
 

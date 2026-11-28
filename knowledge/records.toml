@@ -409,3 +409,12 @@ type = "decision"
 date = 2026-11-27
 added_by = "agent"
 human_ratified = false
+
+[[records]]
+id = "D-0288"
+source_path = "knowledge/decisions/D-0288-local-http.md"
+title = "Local Unix HTTP adapter"
+type = "decision"
+date = 2026-11-27
+added_by = "agent"
+human_ratified = false
