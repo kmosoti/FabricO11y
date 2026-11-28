@@ -17,6 +17,15 @@ one plus the maximum parent turn, with roots at zero. Explicit record, parent,
 head, and custom-name limits bound the projection; failed appends do not mutate
 it. A caller must separately bound decoded input and out-of-order staging.
 
+An opt-in review profile can seal caller-selected admitted IDs into immutable
+boundaries. Late arrivals stay out of a sealed view until explicit reopening,
+which retains prior boundaries and requires the same limits and an exact
+extension of prior records. Reused IDs with changed content are rejected. Total
+input and reopening caps are independent of contribution turns; exhaustion
+remains unresolved and creates no decision.
+The profile imposes no fixed rounds or global turn order and does not add
+acceptance authority.
+
 A single-head model would discard concurrent alternatives; inferring replacement
 through arbitrary discussion ancestry would require an additional semantic rule.
 This projection is not authentication, durable deduplication, acceptance,

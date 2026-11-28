@@ -4,11 +4,12 @@
 
 ## 1. Crate & Authority Boundaries
 
-Pure domain logic, schema contracts, statistical sketches, causal graph traversal, and formal admission arithmetic live in **Sans-I/O** crates (`admission-kernel`, `fabric-core`, `fabric-graph`, `fabric-corpus`, `fabric-colloquium`, `fabric-ops`, `fabric-evidence`, `fabric-query-contract`). All Linux kernel probing, embedded disk/memory custody, DataFusion query execution, and CLI rendering are isolated in dedicated I/O crates (`fabric-store`, `fabric-collect`, `fabric-query`, `fabric-cli`, plus preserved custody/protocol crates `fabric`, `fabric-server`, and `fabric-mcp`). Downstream Rust integrators consume `fabric.cli.v1` JSON outputs and `fabric-query` over bounded subprocess pipes via the lightweight, headless [`fabric-client`](../fabric-client/Cargo.toml) crate without pulling in Arrow, DataFusion, or UI crates. Dependency boundaries are machine-verified by [`verification/architecture.toml`](../verification/architecture.toml) via `cargo xtask architecture`.
+Pure domain logic, schema contracts, statistical sketches, causal graph traversal, and formal admission arithmetic live in **Sans-I/O** crates (`admission-kernel`, `fabric-core`, `fabric-graph`, `fabric-corpus`, `fabric-colloquium`, `fabric-alert`, `fabric-ops`, `fabric-evidence`, `fabric-query-contract`). All Linux kernel probing, embedded disk/memory custody, DataFusion query execution, and CLI rendering are isolated in dedicated I/O crates (`fabric-store`, `fabric-collect`, `fabric-query`, `fabric-cli`, plus preserved custody/protocol crates `fabric`, `fabric-server`, and `fabric-mcp`). Downstream Rust integrators consume `fabric.cli.v1` JSON outputs and `fabric-query` over bounded subprocess pipes via the lightweight, headless [`fabric-client`](../fabric-client/Cargo.toml) crate without pulling in Arrow, DataFusion, or UI crates. Dependency boundaries are machine-verified by [`verification/architecture.toml`](../verification/architecture.toml) via `cargo xtask architecture`.
 
 ```mermaid
 flowchart TD
     subgraph SansIO["Sans-I/O Core & Formal Verification"]
+        ALERT["fabric-alert (pure alert lifecycle)"]
         CP["fabric-corpus (research revision contracts)"]
         CC["fabric-colloquium (bounded causal contribution projection)"]
         OPS["fabric-ops (bounded operation lifecycles)"]
@@ -150,9 +151,15 @@ principal and team IDs are attribution claims, not authenticated authority.
 Causal parents must be admitted first. A proposal supersedes directly cited
 proposal heads; concurrent siblings remain discoverable, and custom kinds have
 no implicit protocol behavior. The projection rejects excess records, parents
-or heads without mutation. It does not provide durable admission, acceptance,
-authorization or execution authority. Callers bound decoding and staging before
-constructing contributions.
+or heads without mutation. An optional `ReviewSession` seals caller-selected
+sets of admitted IDs; later arrivals enter a view only after explicit reopening,
+which retains prior boundaries. Reopening requires the same protocol limits and
+an exact extension of all previously admitted records; reused IDs with changed
+content are rejected. A capped total-input or reopening budget leaves the
+session unresolved and creates no decision. The profile imposes no rounds or
+turn order. It does not provide durable admission, acceptance, authorization
+or execution authority. Callers bound decoding and staging before constructing
+contributions.
 
 ### Runtime-neutral operation lifecycles
 
@@ -229,6 +236,24 @@ remain on the frontier and the minimum row ID identifies a dominator. Inexact
 values remain attributed measurements, and the projection does not authenticate
 references or establish feasibility, correctness, or authority. Inputs are
 preflight bounded and malformed widths and duplicate row IDs are rejected.
+
+The bounded `fabric-core::retention` pressure planner evaluates caller-supplied
+snapshots and returns a plan; it does not verify archive evidence, reserve space,
+or perform eviction or other I/O.
+
+### Pure alert lifecycle
+
+`fabric-alert` is a dependency-free, single-instance threshold reducer with a
+fixed rule and revision, normalized integer profile and source identity. Inputs
+carry an injected evaluation time, source frontier and explicit evidence and
+coverage or a typed missingness reason. Inclusive trigger and recovery thresholds
+use distinct hysteresis boundaries. Firing and recovery holds require continuous
+covered observations; gaps and missing inputs reset holds without resolving a
+firing alert. Later missingness may use the same source frontier, while a new
+covered observation must advance it. Duplicate inputs are idempotent; conflicting
+replay and older time or frontier are rejected before mutation. These are
+caller-supplied claims, not event-time watermarks, custody or authorization.
+Scheduling, configuration, durable state and notification remain separate.
 
 ### Frozen experiment snapshots
 

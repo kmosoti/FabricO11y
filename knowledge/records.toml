@@ -534,3 +534,14 @@ type = "decision"
 date = 2026-11-27
 added_by = "agent"
 human_ratified = false
+
+[[records]]
+id = "D-0354"
+source_path = "knowledge/decisions/D-0354-alert-lifecycle.md"
+title = "Pure alert lifecycle"
+type = "decision"
+status = "accepted"
+date = 2026-11-27
+added_by = "agent"
+human_ratified = false
+related = []
