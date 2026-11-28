@@ -1534,10 +1534,7 @@ async fn run_daemon_mode(mut config: DaemonConfig, spindle_only: bool) -> Result
 
                 // Self-shedding check, Spindle backpressure, or 60s flush cadence.
                 let force_shed = runtime.guard.is_shedding();
-                if cgroup_pressure || force_shed {
-                    runtime.ring.write().release_hot_history();
-                    fs_tracker.clear();
-                }
+                shed_optional_history(&runtime.ring, &mut fs_tracker, cgroup_pressure, force_shed);
                 let scheduled = tick_count == 1
                     || force_shed
                     || spindle_backpressure
@@ -1607,6 +1604,20 @@ async fn run_daemon_mode(mut config: DaemonConfig, spindle_only: bool) -> Result
     final_flush.map(|_| ())
 }
 
+// Shared with the controlled RSS fixture; neither source of pressure changes
+// the unflushed queue when optional query history is released.
+fn shed_optional_history(
+    ring: &RwLock<HotMetricRing>,
+    fs_tracker: &mut FsChurnTracker,
+    cgroup_pressure: bool,
+    force_shed: bool,
+) {
+    if cgroup_pressure || force_shed {
+        ring.write().release_hot_history();
+        fs_tracker.clear();
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn drain_telemetry_queues(
     metrics_rx: &mut tokio::sync::mpsc::Receiver<MetricPoint>,
@@ -1659,6 +1670,182 @@ fn drain_telemetry_queues(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Run alone in an owned, collected 512 MiB / no-swap test service.
+    /// Isolates the real RSS guard's input to the shared branch with the other
+    /// input held false. Actual cgroup pressure is observed separately; this is
+    /// not the complete daemon tick or a claim that cgroup pressure is absent.
+    #[test]
+    #[ignore = "requires a disposable, explicitly confined process above the real RSS threshold"]
+    fn active_rss_guard_releases_only_optional_history() {
+        use std::{path::Component, time::Instant};
+        let args: Vec<String> = std::env::args().collect();
+        assert!(args.iter().any(|arg| arg == "--exact"));
+        assert!(args.iter().any(|arg| arg == "--ignored"));
+        assert!(args.iter().any(|arg| arg == "--test-threads=1"));
+        assert!(
+            args.iter()
+                .any(|arg| arg == "daemon::tests::active_rss_guard_releases_only_optional_history")
+        );
+        let membership = fs::read_to_string("/proc/self/cgroup").expect("cgroup v2 membership");
+        let path = membership
+            .lines()
+            .find_map(|line| line.strip_prefix("0::"))
+            .expect("unified cgroup");
+        let relative = Path::new(path).strip_prefix("/").expect("absolute cgroup");
+        assert!(
+            relative
+                .components()
+                .all(|c| matches!(c, Component::Normal(_)))
+        );
+        assert!(
+            relative
+                .components()
+                .any(|c| c.as_os_str() == "fabrico11y.slice")
+        );
+        assert!(
+            relative
+                .file_name()
+                .is_some_and(|name| name.to_string_lossy().ends_with(".service"))
+        );
+        let cgroup = Path::new("/sys/fs/cgroup").join(relative);
+        let read_number = |name: &str| -> u64 {
+            fs::read_to_string(cgroup.join(name))
+                .expect("cgroup control")
+                .trim()
+                .parse()
+                .expect("numeric cgroup control")
+        };
+        assert!(Path::new("/sys/fs/cgroup/cgroup.controllers").is_file());
+        let members =
+            fs::read_to_string(cgroup.join("cgroup.procs")).expect("cgroup process membership");
+        let pids: Vec<u32> = members
+            .lines()
+            .map(|line| line.parse().expect("numeric cgroup PID"))
+            .collect();
+        assert_eq!(
+            pids,
+            vec![std::process::id()],
+            "fixture requires one owned process in its unit"
+        );
+        assert_eq!(read_number("memory.high"), 256 * 1024 * 1024);
+        assert_eq!(read_number("memory.max"), 512 * 1024 * 1024);
+        assert_eq!(read_number("memory.swap.max"), 0);
+        assert_eq!(read_number("memory.swap.current"), 0);
+        let initial_cgroup_pressure = crate::resource_budget::cgroup_memory_pressure();
+        let guard = SelfPreservationGuard::new(
+            "/data/fabrico11y",
+            "/data/tmp",
+            Arc::new(AtomicU64::new(0)),
+        );
+        let initial = guard.inspect_summary();
+        let threshold = fabric_core::model::WATCHDOG_SHEDDING_RSS_BYTES;
+        assert_eq!(threshold, 200 * 1024 * 1024);
+        assert!(
+            initial.rss_bytes < threshold && !guard.is_shedding(),
+            "fixture must begin below RSS threshold"
+        );
+        let ring = RwLock::new(HotMetricRing::with_capacity_bytes(64 * 1024));
+        let mut tracker = FsChurnTracker::new();
+        let first = MetricPoint {
+            timestamp_ms: 10,
+            name: "fixture.rss.before".into(),
+            value: 1.0,
+            host: "synthetic".into(),
+            slice: "fixture".into(),
+            unit: "fixture".into(),
+            ..Default::default()
+        };
+        ring.write().push_batch(std::slice::from_ref(&first));
+        let queued_bytes = ring.read().unflushed_bytes();
+        assert!(queued_bytes > 0);
+        assert_eq!(ring.read().query_since(0), vec![first.clone()]);
+        shed_optional_history(&ring, &mut tracker, false, guard.is_shedding());
+        assert_eq!(ring.read().query_since(0), vec![first.clone()]);
+        assert_eq!(ring.read().unflushed_bytes(), queued_bytes);
+
+        let started = Instant::now();
+        let mut allocations: Vec<Vec<u8>> = Vec::new();
+        let measured = loop {
+            assert!(
+                started.elapsed() < Duration::from_secs(45),
+                "RSS threshold deadline"
+            );
+            assert_eq!(
+                read_number("memory.swap.current"),
+                0,
+                "swap invalidates RSS-only test"
+            );
+            assert!(
+                read_number("memory.current") < 250 * 1024 * 1024,
+                "cgroup headroom exhausted"
+            );
+            // Refuse to approach any visible ancestor's finite hard limit.
+            // The test never modifies limits or pressures the resident daemon.
+            for ancestor in cgroup.ancestors() {
+                // The cgroup v2 root has no per-cgroup memory.max control.
+                if ancestor == Path::new("/sys/fs/cgroup") {
+                    break;
+                }
+                let max =
+                    fs::read_to_string(ancestor.join("memory.max")).expect("ancestor memory.max");
+                if max.trim() != "max" {
+                    let max: u64 = max.trim().parse().expect("numeric ancestor memory.max");
+                    let used: u64 = fs::read_to_string(ancestor.join("memory.current"))
+                        .expect("ancestor memory.current")
+                        .trim()
+                        .parse()
+                        .expect("numeric ancestor memory.current");
+                    assert!(
+                        used.checked_add(8 * 1024 * 1024)
+                            .is_some_and(|needed| needed < max),
+                        "insufficient ancestor hard-limit headroom"
+                    );
+                }
+            }
+            let summary = guard.inspect_summary();
+            assert!(
+                summary.rss_bytes <= 230 * 1024 * 1024,
+                "RSS fixture ceiling exceeded"
+            );
+            if guard.is_shedding() {
+                break summary.rss_bytes;
+            }
+            let mut block = vec![0_u8; 1024 * 1024];
+            block.fill(0x5a);
+            allocations.push(block);
+        };
+        assert!(measured > threshold);
+        let trigger_cgroup_pressure = crate::resource_budget::cgroup_memory_pressure();
+        assert_eq!(read_number("memory.swap.current"), 0);
+        shed_optional_history(&ring, &mut tracker, false, guard.is_shedding());
+        assert!(ring.read().query_since(0).is_empty());
+        assert_eq!(ring.read().unflushed_bytes(), queued_bytes);
+        let second = MetricPoint {
+            timestamp_ms: 11,
+            name: "fixture.rss.after".into(),
+            value: 2.0,
+            host: "synthetic".into(),
+            slice: "fixture".into(),
+            unit: "fixture".into(),
+            ..Default::default()
+        };
+        ring.write().push_batch(std::slice::from_ref(&second));
+        assert_eq!(ring.read().query_since(0), vec![second.clone()]);
+        assert!(ring.read().unflushed_bytes() > queued_bytes);
+        assert_eq!(ring.write().drain_unflushed(), vec![first, second]);
+        std::hint::black_box(&allocations);
+        println!(
+            "rss_before={} rss_active={} threshold={} cgroup_pressure_before={} cgroup_pressure_at_trigger={} isolated_cgroup_input=false cgroup_current={} swap_current={}",
+            initial.rss_bytes,
+            measured,
+            threshold,
+            initial_cgroup_pressure,
+            trigger_cgroup_pressure,
+            read_number("memory.current"),
+            read_number("memory.swap.current")
+        );
+    }
 
     #[test]
     fn fast_spindle_cadence_requires_opt_in_socket_and_long_regular_interval() {
