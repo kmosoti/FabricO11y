@@ -346,6 +346,47 @@ impl Reducer {
     }
 }
 
+/// Maximum caller-selected observations evaluated by one in-memory preview.
+pub const MAX_PREVIEW_OBSERVATIONS: usize = 1024;
+
+/// An inert replay from a new reducer, not a configuration or alert decision.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Preview {
+    pub rule: Rule,
+    pub outcomes: Vec<Outcome>,
+    pub final_checkpoint: Checkpoint,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PreviewError {
+    TooManyObservations,
+    InvalidRule(Error),
+    InvalidInput { index: usize, error: Error },
+}
+
+/// Evaluate a candidate rule from its initial state over caller-selected frozen
+/// observations. Refusal returns no partial preview and never changes another
+/// reducer; this operation does not establish the observations' authority.
+pub fn preview(rule: Rule, inputs: &[Evaluation]) -> Result<Preview, PreviewError> {
+    if inputs.len() > MAX_PREVIEW_OBSERVATIONS {
+        return Err(PreviewError::TooManyObservations);
+    }
+    let mut reducer = Reducer::new(rule).map_err(PreviewError::InvalidRule)?;
+    let mut outcomes = Vec::with_capacity(inputs.len());
+    for (index, input) in inputs.iter().copied().enumerate() {
+        outcomes.push(
+            reducer
+                .evaluate(input)
+                .map_err(|error| PreviewError::InvalidInput { index, error })?,
+        );
+    }
+    Ok(Preview {
+        rule,
+        outcomes,
+        final_checkpoint: reducer.checkpoint(),
+    })
+}
+
 #[cfg(test)]
 mod checkpoint_tests {
     use super::*;
