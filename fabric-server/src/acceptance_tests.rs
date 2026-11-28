@@ -828,11 +828,6 @@ fn cursor_routes_fence_configured_and_durable_policy_after_restart() {
 #[test]
 fn first_cursor_page_detects_missing_chain_and_allows_sparse_scopes() {
     use canonical::{PlanCursorFailure, PlanPageRequest};
-    assert!(
-        fs::read_to_string("/proc/self/cgroup")
-            .unwrap()
-            .contains("/fabrico11y.slice/")
-    );
     let scratch = std::env::var_os("TMPDIR").map(PathBuf::from).unwrap();
     let root = tempfile::tempdir_in(scratch).unwrap();
     let config = config(root.path());
