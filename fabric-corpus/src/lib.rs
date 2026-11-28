@@ -9,6 +9,7 @@ pub mod as_of;
 pub mod context;
 pub mod differential;
 pub mod failure_claim;
+pub mod handoff;
 pub mod investigation;
 pub mod investigation_proposal;
 pub mod lexical;
