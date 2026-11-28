@@ -97,51 +97,7 @@ impl DaemonSocketPool {
             .await?;
         let page: fabric_query_contract::LivePage =
             serde_json::from_value(value).map_err(|e| format!("daemon live cursor decode: {e}"))?;
-        if page.version != 1
-            || page.origin.is_empty()
-            || page.origin.len() > 128
-            || page.origin.chars().any(char::is_control)
-            || page.epoch_start_after > page.observed_through
-            || page.highest_lost > page.observed_through
-            || page
-                .oldest_retained
-                .is_some_and(|id| id > page.observed_through)
-            || page.gap
-                != (request.after < page.highest_lost || request.after < page.epoch_start_after)
-            || page.gap != page.gap_reason.is_some()
-            || (page.highest_lost == 0) != page.highest_lost_reason.is_none()
-            || page.epoch.len() != 64
-            || !page
-                .epoch
-                .bytes()
-                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-            || request
-                .origin
-                .as_ref()
-                .is_some_and(|origin| origin != &page.origin)
-            || request
-                .epoch
-                .as_ref()
-                .is_some_and(|epoch| epoch != &page.epoch)
-            || page.entries.len() > request.count
-            || page.next_after < request.after
-            || page.next_after > page.observed_through
-            || page.next_after
-                != page
-                    .entries
-                    .last()
-                    .map_or(page.observed_through, |entry| entry.record_id)
-            || page
-                .entries
-                .iter()
-                .any(|entry| entry.record_id <= request.after || entry.record_id > page.next_after)
-            || page
-                .entries
-                .windows(2)
-                .any(|entries| entries[0].record_id >= entries[1].record_id)
-        {
-            return Err("invalid daemon live cursor response".into());
-        }
+        page.validate_for(request).map_err(str::to_owned)?;
         Ok(page)
     }
 
