@@ -1,11 +1,13 @@
 //! Pure, single-instance integer threshold lifecycle. Time and source frontiers
 //! are caller-supplied observations, not wall clocks or custody watermarks.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Direction {
     Above,
     Below,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Rule {
     pub rule_id: [u8; 16],
     pub instance_id: [u8; 16],
@@ -19,7 +21,7 @@ pub struct Rule {
     pub firing_hold: u64,
     pub recovery_hold: u64,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Validity {
     Covered,
     NoData,
@@ -29,7 +31,7 @@ pub enum Validity {
     Unavailable,
     Denied,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Sample {
     /// Inclusive caller-asserted coverage ending at the evaluation time.
     Covered {
@@ -40,7 +42,7 @@ pub enum Sample {
     },
     Missing(Validity),
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Evaluation {
     pub profile: [u8; 32],
     pub source: [u8; 32],
@@ -48,7 +50,7 @@ pub struct Evaluation {
     pub time: u64,
     pub sample: Sample,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Lifecycle {
     Inactive,
     Pending,
@@ -56,7 +58,7 @@ pub enum Lifecycle {
     Recovering,
     Resolved,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Decision {
     pub lifecycle: Lifecycle,
     pub validity: Validity,
@@ -80,7 +82,7 @@ pub enum Outcome {
     Duplicate(Decision),
 }
 /// An in-memory checkpoint; it is not a serialized schema or proof of history.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Checkpoint {
     pub version: u8,
     pub rule: Rule,

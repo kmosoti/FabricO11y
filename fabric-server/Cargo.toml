@@ -7,6 +7,7 @@ publish = false
 
 [dependencies]
 fabric = { path = "../fabric" }
+fabric-alert = { path = "../fabric-alert" }
 fabric-query = { path = "../fabric-query" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
