@@ -59,6 +59,26 @@ pub fn cli(args: &[&str], root: &Path) -> Result<(), String> {
         .any(|line| line == format!("candidate={candidate}"))
         && receipt.lines().any(|line| line == "result=success");
     if *mode == "benchmark" && !native_acceptance {
+        // Keep refusal evidence bounded: neither receipt text nor capture paths
+        // are copied into the result. Compare rejects unsuccessful results.
+        if !matches!(candidate.len(), 40 | 64)
+            || !candidate.bytes().all(|byte| byte.is_ascii_hexdigit())
+        {
+            return Err("invalid candidate identity in source capture".into());
+        }
+        evidence::write(
+            &directory.join("result.json"),
+            &serde_json::json!({
+                "mode": mode,
+                "candidate": candidate,
+                "capture_sha256": evidence::hash_bytes(capture.as_bytes())?,
+                "reason": "native_verification_missing_or_mismatched",
+                "success": false,
+                "refused": true,
+                "executed": false,
+                "native_acceptance": false,
+            }),
+        )?;
         return Err(
             "benchmark requires candidate capture/verify acceptance for the current source".into(),
         );
