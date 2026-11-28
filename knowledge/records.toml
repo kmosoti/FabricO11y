@@ -567,6 +567,16 @@ human_ratified = false
 related = []
 
 [[records]]
+id = "D-0217"
+source_path = "knowledge/decisions/D-0217-versioned-trace-parent.md"
+title = "Versioned trace parents"
+type = "decision"
+status = "proposed"
+date = 2026-11-28
+added_by = "agent"
+human_ratified = false
+
+[[records]]
 id = "D-0263"
 source_path = "knowledge/decisions/D-0263-bounded-worker-event-archive.md"
 title = "Bounded worker event replay archive"

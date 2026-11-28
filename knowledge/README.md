@@ -54,6 +54,7 @@ TOML-native records without changing that cohort or its count.
 | [D-0205 · Selected-head reconciliation](decisions/D-0205-selected-head-reconciliation.md) | `agent` | `false` | Explicit bounded reconciliation of complete selected ancestry |
 | [D-0204 · Frozen citation context](decisions/D-0204-frozen-context.md) | `agent` | `false` | Reverify bounded supplied passages within selected frozen evidence |
 | [D-0203 · Bounded lexical rebuild](decisions/D-0203-bounded-lexical.md) | `agent` | `false` | Deterministic within-revision token adjacency with explicit limits |
+| [D-0217 · Versioned trace parents](decisions/D-0217-versioned-trace-parent.md) | `agent` | `false` | Opt-in trace envelope with bounded IDs and explicit same-trace parent references |
 | [D-0202 · Portable corpus views](decisions/D-0202-portable-corpus.md) | `agent` | `false` | Bounded deterministic view transfer and availability claims |
 | [D-0201 · Explicit corpus as-of views](decisions/D-0201-corpus-as-of.md) | `agent` | `false` | Bounded frozen membership and conjunctive support claims |
 | [D-0348 · Receipt-bound reported attempts](decisions/D-0348-receipt-bound-attempts.md) | `agent` | `false` | Strict authenticated attempt readback and its limits |

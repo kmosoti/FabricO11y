@@ -1,7 +1,8 @@
 # Spindle collection and handoff contract
 
-Spindle runs as a Fedora user service, accepts bounded length-framed v2 records
-or context-bearing v3 records on a private Unix socket and validates peer UID. It explicitly configures text or
+Spindle runs as a Fedora user service. It accepts bounded length-framed v2 and
+context-bearing v3 and v4 records on a private Unix socket with peer UID
+validation. It explicitly configures text or
 JSONL file sources, accessible systemd journal sources and host sampling. File
 collection tracks stable file identity and byte offsets, partial lines, rename
 rotation and truncation. Journal collection tracks native cursors and reports
@@ -16,6 +17,15 @@ survive a crash. Source checkpoints advance only with custody or a durable expli
 gap/rejection record. Lost acknowledgements and timeouts are unknown outcomes;
 clients retry unchanged identities. Same identity and bytes succeeds; changed
 bytes conflicts. Registry descriptors remain available with stored observations.
+
+The trace-only v4 descriptor is distinct from the retained v2 and v3
+descriptors. V4 validation checks raw identifier tokens within the existing
+frame and nesting bounds before decoding them into owned IDs. The bridge
+stores its one optional parent ID in the trace row. The reference is scoped
+by the explicit trace ID and can name an absent or late parent. Duplicate
+claimed span identities remain visible as separate source records. A broad
+trace-ID query can include legacy rows carrying the same label. Use the
+retained version and source provenance when selecting rows for a parent join.
 
 Storage, frame sizes, decode nesting, connections, work per poll and buffers are
 bounded. Storage quotas include database/log overhead and recovery reserve. Full
