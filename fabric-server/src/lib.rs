@@ -144,6 +144,7 @@ struct ReadState {
     reader: Mutex<ledger::Reader>,
     authority: String,
     ticket_key: [u8; 32],
+    ticket_epoch: Instant,
     frontiers: RwLock<BTreeMap<String, u64>>,
     engine: Option<engine::Greptime>,
     telemetry: Option<ServerTelemetry>,
@@ -316,6 +317,7 @@ impl Server {
                 reader: Mutex::new(state.reader()?),
                 authority: state.authority.clone(),
                 ticket_key: segment_ticket::new_key()?,
+                ticket_epoch: Instant::now(),
                 frontiers: RwLock::new(frontiers),
                 engine: state.engine(),
                 telemetry,
@@ -1006,6 +1008,7 @@ fn handle(
             }
             let ticket = segment_ticket::issue(
                 &reads.ticket_key,
+                reads.ticket_epoch,
                 version,
                 authority,
                 origin,
@@ -1027,7 +1030,13 @@ fn handle(
             {
                 return Err("segment access unavailable".into());
             }
-            segment_ticket::verify(&reads.ticket_key, &ticket, offset, length)?;
+            segment_ticket::verify(
+                &reads.ticket_key,
+                reads.ticket_epoch,
+                &ticket,
+                offset,
+                length,
+            )?;
             let cancel = reserve(reads, "segment-read", query_lease)?;
             let deadline = Instant::now() + Duration::from_secs(5);
             let projection = projection

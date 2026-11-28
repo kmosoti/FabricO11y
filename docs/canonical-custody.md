@@ -257,7 +257,8 @@ A canonical Reader may request a version 1 segment ticket for an enrolled
 origin, the current authority, a SHA-256 segment digest and a bounded half-open
 byte range. The ticket declares permission to request that range for 60 seconds;
 it does not establish that the segment exists or will remain available. Tickets
-are bound to this receiver instance and become invalid when it restarts. Node
+are bound to this receiver instance and become invalid when it restarts. The
+expiry field is an opaque receiver-relative monotonic value, not a Unix time. Node
 and decision-writer credentials cannot issue or redeem them. Native engine mode
 does not offer this projection transfer.
 
