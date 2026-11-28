@@ -91,7 +91,7 @@ impl LivePage {
             || self.origin.chars().any(char::is_control)
             || self.epoch_start_after > self.observed_through
             || self.highest_lost > self.observed_through
-            || page
+            || self
                 .oldest_retained
                 .is_some_and(|id| id > self.observed_through)
             || self.gap
@@ -99,7 +99,7 @@ impl LivePage {
             || self.gap != self.gap_reason.is_some()
             || (self.highest_lost == 0) != self.highest_lost_reason.is_none()
             || self.epoch.len() != 64
-            || !page
+            || !self
                 .epoch
                 .bytes()
                 .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
@@ -115,15 +115,15 @@ impl LivePage {
             || self.next_after < request.after
             || self.next_after > self.observed_through
             || self.next_after
-                != page
+                != self
                     .entries
                     .last()
                     .map_or(self.observed_through, |entry| entry.record_id)
-            || page
+            || self
                 .entries
                 .iter()
                 .any(|entry| entry.record_id <= request.after || entry.record_id > self.next_after)
-            || page
+            || self
                 .entries
                 .windows(2)
                 .any(|entries| entries[0].record_id >= entries[1].record_id)
