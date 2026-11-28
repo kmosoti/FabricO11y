@@ -310,7 +310,15 @@ fn transaction_fixture() {
     let scratch = std::env::var_os("TMPDIR").map(PathBuf::from).unwrap();
     let root = tempfile::tempdir_in(scratch).unwrap();
     let config = config(root.path());
-    let (address, stop, server) = start(&config);
+    let receiver = Server::open(config.clone()).unwrap();
+    let projection = receiver.projection.clone();
+    // Hold the existing projection owner before serving, so ingestion cannot
+    // race the projector; acceptance still runs through authenticated TCP.
+    let paused_projection = projection.lock().unwrap();
+    assert_eq!(paused_projection.progress().checkpoint, 0);
+    let address = receiver.address();
+    let stop = receiver.stop_handle();
+    let server = thread::spawn(move || receiver.serve().unwrap());
     let authority = match exchange(&address, READER, &Request::Progress) {
         Response::Progress { authority, .. } => authority,
         other => panic!("unexpected progress: {other:?}"),
@@ -381,7 +389,8 @@ fn transaction_fixture() {
         matches!(accept(&address, WRITER, &serde_json::to_string(&wrong_record).unwrap()), Response::Error{error} if error == "canonical proposal mismatch")
     );
     let db = rusqlite::Connection::open(config.storage.join("canonical.sqlite")).unwrap();
-    // Simulate a locally committed row whose later projection is not complete.
+    // Exercise rollback with the existing engine-publication flag, then restore
+    // it before the race. Parquet projection progress is a separate checkpoint.
     db.execute(
         "UPDATE records SET published=0 WHERE origin='origin' AND source_id=1",
         [],
@@ -403,6 +412,17 @@ fn transaction_fixture() {
         .unwrap();
     assert!(initial_head.is_none());
     db.execute_batch("DROP TRIGGER abort_plan; UPDATE records SET published=1 WHERE origin='origin' AND source_id=1;").unwrap();
+    let published = |db: &rusqlite::Connection| -> u64 {
+        db.query_row(
+            "SELECT count(*) FROM records WHERE origin='origin' AND source_id IN (1,2) AND published=1",
+            [], |row| row.get(0),
+        ).unwrap()
+    };
+    assert_eq!(published(&db), 2);
+    assert_eq!(paused_projection.progress().checkpoint, 0);
+    assert!(
+        matches!(exchange(&address, READER, &Request::Progress), Response::Progress { frontiers, .. } if frontiers.get("origin") == Some(&2))
+    );
     drop(db);
     let barrier = Arc::new(Barrier::new(3));
     let mut contenders = Vec::new();
@@ -430,6 +450,19 @@ fn transaction_fixture() {
             .count(),
         1
     );
+    let db = rusqlite::Connection::open(config.storage.join("canonical.sqlite")).unwrap();
+    assert_eq!(published(&db), 2);
+    let accepted_count: u64 = db
+        .query_row("SELECT count(*) FROM plan_decision", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(accepted_count, 1);
+    assert_eq!(paused_projection.progress().checkpoint, 0);
+    assert!(
+        matches!(exchange(&address, READER, &Request::Progress), Response::Progress { frontiers, .. } if frontiers.get("origin") == Some(&2))
+    );
+    drop(db);
+    drop(paused_projection);
+    drop(projection);
     let winning = outcomes
         .into_iter()
         .find(|r| matches!(r, Response::PlanAccepted { .. }))
