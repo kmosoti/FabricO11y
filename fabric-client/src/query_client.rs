@@ -4,14 +4,15 @@
 
 use crate::cli_exec::{read_len_frame, resolve_binary, write_len_frame};
 use fabric::canonical::{
-    AUTH_HANDSHAKE_VERSION, ClientHello, MAX_FRAME, MAX_HANDSHAKE_FRAME,
-    Request as CanonicalRequest, Response as CanonicalResponse, ServerChallenge,
+    AUTH_HANDSHAKE_VERSION, ClientHello, MAX_FRAME, MAX_HANDSHAKE_FRAME, PlanPageRequest,
+    PlanScope, Request as CanonicalRequest, Response as CanonicalResponse, ServerChallenge,
     build_client_proof, random_nonce_hex, verify_server_challenge,
 };
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::process::Command;
 
@@ -141,6 +142,166 @@ impl FabricQueryClient {
     pub async fn cancel_typed(&self, query_id: &str) -> Result<CanonicalResponse, String> {
         serde_json::from_value(self.cancel(query_id).await?)
             .map_err(|e| format!("fabric-query response decode: {e}"))
+    }
+
+    /// Reads one scoped frozen plan page. A failed selected transport is never retried.
+    pub async fn plan_page(&self, request: PlanPageRequest) -> Result<CanonicalResponse, String> {
+        self.dispatch_plan(CanonicalRequest::PlanPage { request }, "plan-page")
+            .await
+    }
+    /// Creates one advisory plan subscription; it is not retried after dispatch.
+    pub async fn subscribe_plan(&self, scope: PlanScope) -> Result<CanonicalResponse, String> {
+        self.dispatch_plan(CanonicalRequest::SubscribePlan { scope }, "subscribe-plan")
+            .await
+    }
+    /// Consumes at most one advisory hint; it is not retried after dispatch.
+    pub async fn poll_plan_hint(
+        &self,
+        scope: PlanScope,
+        subscription: String,
+    ) -> Result<CanonicalResponse, String> {
+        self.dispatch_plan(
+            CanonicalRequest::PollPlanHint {
+                scope,
+                subscription,
+            },
+            "poll-plan-hint",
+        )
+        .await
+    }
+    async fn dispatch_plan(
+        &self,
+        request: CanonicalRequest,
+        command: &str,
+    ) -> Result<CanonicalResponse, String> {
+        // Bound caller-owned strings before cloning or creating either wire form.
+        let raw_len = match &request {
+            CanonicalRequest::PlanPage { request } => request
+                .scope
+                .0
+                .len()
+                .checked_add(request.cursor.as_ref().map_or(0, String::len)),
+            CanonicalRequest::SubscribePlan { scope } => Some(scope.0.len()),
+            CanonicalRequest::PollPlanHint {
+                scope,
+                subscription,
+            } => scope.0.len().checked_add(subscription.len()),
+            _ => return Err("invalid plan request".into()),
+        }
+        .ok_or("canonical request exceeds MAX_FRAME")?;
+        if raw_len > MAX_FRAME {
+            return Err("canonical request exceeds MAX_FRAME".into());
+        }
+        let expected = match &request {
+            CanonicalRequest::PlanPage { request } => PlanExpectation::Page(request.scope.clone()),
+            CanonicalRequest::SubscribePlan { .. } => PlanExpectation::Subscribe,
+            CanonicalRequest::PollPlanHint { .. } => PlanExpectation::Poll,
+            _ => return Err("invalid plan request".into()),
+        };
+        let direct = self.direct_socket
+            && self
+                .endpoint
+                .trim()
+                .parse::<SocketAddr>()
+                .is_ok_and(|addr| addr.ip().is_loopback());
+        let response = if direct {
+            self.exchange_direct(request).await?
+        } else {
+            // The CLI receives only its strict inner object; still check the
+            // canonical frame size that the CLI will ultimately transmit.
+            let frame = serde_json::to_vec(&request)
+                .map_err(|e| format!("canonical request encode: {e}"))?;
+            if frame.len() > MAX_FRAME {
+                return Err("canonical request exceeds MAX_FRAME".into());
+            }
+            let input = match &request {
+                CanonicalRequest::PlanPage { request } => serde_json::to_vec(request),
+                CanonicalRequest::SubscribePlan { scope } => {
+                    serde_json::to_vec(&serde_json::json!({"scope":scope}))
+                }
+                CanonicalRequest::PollPlanHint {
+                    scope,
+                    subscription,
+                } => serde_json::to_vec(
+                    &serde_json::json!({"scope":scope,"subscription":subscription}),
+                ),
+                _ => return Err("invalid plan request".into()),
+            }
+            .map_err(|e| format!("plan input encode: {e}"))?;
+            if input.len() > MAX_FRAME {
+                return Err("canonical request exceeds MAX_FRAME".into());
+            }
+            self.invoke_plan(command, &input).await?
+        };
+        validate_plan_response(expected, response)
+    }
+    async fn invoke_plan(&self, command: &str, input: &[u8]) -> Result<CanonicalResponse, String> {
+        let bin = self
+            .bin_path
+            .as_ref()
+            .ok_or("fabric-query binary not found")?;
+        if self.endpoint.trim().is_empty() {
+            return Err("fabric-query endpoint is empty".into());
+        }
+        self.validate_credential_file().await?;
+        let mut cmd = self.build_command(bin, &[command]);
+        cmd.stdin(Stdio::piped());
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| format!("fabric-query spawn failed: {}", e.kind()))?;
+        let mut stdin = child.stdin.take().ok_or("fabric-query stdin missing")?;
+        let stdout = child.stdout.take().ok_or("fabric-query stdout missing")?;
+        let stderr = child.stderr.take().ok_or("fabric-query stderr missing")?;
+        let (write, out, err, status) = tokio::time::timeout(QUERY_TIMEOUT, async {
+            tokio::join!(
+                async {
+                    stdin.write_all(input).await?;
+                    stdin.shutdown().await
+                },
+                async {
+                    let mut b = Vec::new();
+                    stdout
+                        .take((MAX_FRAME + 1) as u64)
+                        .read_to_end(&mut b)
+                        .await
+                        .map(|_| b)
+                },
+                async {
+                    let mut b = Vec::new();
+                    stderr
+                        .take((MAX_FRAME + 1) as u64)
+                        .read_to_end(&mut b)
+                        .await
+                        .map(|_| b)
+                },
+                child.wait(),
+            )
+        })
+        .await
+        .map_err(|_| "fabric-query timeout".to_owned())?;
+        write.map_err(|e| format!("fabric-query stdin: {}", e.kind()))?;
+        let out = out.map_err(|e| format!("fabric-query stdout: {}", e.kind()))?;
+        let err = err.map_err(|e| format!("fabric-query stderr: {}", e.kind()))?;
+        let status = status.map_err(|e| format!("fabric-query wait: {}", e.kind()))?;
+        if out.len() > MAX_FRAME || err.len() > MAX_FRAME {
+            return Err("fabric-query response exceeds MAX_FRAME".into());
+        }
+        if !status.success() {
+            let text = self
+                .redact_secret(String::from_utf8_lossy(&err).trim())
+                .await;
+            return Err(if text.is_empty() {
+                format!("fabric-query exit {status}")
+            } else {
+                text.chars().take(120).collect()
+            });
+        }
+        let response: CanonicalResponse = serde_json::from_slice(&out)
+            .map_err(|e| format!("fabric-query response decode: {e}"))?;
+        if let CanonicalResponse::Error { error } = response {
+            return Err(self.redact_secret(&error).await);
+        }
+        Ok(response)
     }
 
     /// Sends one canonical request directly over loopback TCP using `fabric::canonical` framing.
@@ -301,6 +462,31 @@ impl FabricQueryClient {
     }
 }
 
+enum PlanExpectation {
+    Page(PlanScope),
+    Subscribe,
+    Poll,
+}
+fn validate_plan_response(
+    expected: PlanExpectation,
+    response: CanonicalResponse,
+) -> Result<CanonicalResponse, String> {
+    let valid = match (&expected, &response) {
+        (_, CanonicalResponse::PlanCursorFailure { .. }) => true,
+        (PlanExpectation::Page(scope), CanonicalResponse::PlanPage { page }) => {
+            page.scope == *scope
+        }
+        (PlanExpectation::Subscribe, CanonicalResponse::PlanSubscribed { .. }) => true,
+        (PlanExpectation::Poll, CanonicalResponse::PlanHint { .. }) => true,
+        _ => false,
+    };
+    if valid {
+        Ok(response)
+    } else {
+        Err("fabric-query unexpected plan response or scope".into())
+    }
+}
+
 fn redact_token(text: &str, token: &str) -> String {
     if token.is_empty() {
         text.to_owned()
@@ -390,12 +576,140 @@ mod tests {
             assert_eq!(n, 0, "rogue listener received post-challenge data");
         });
 
-        let client = FabricQueryClient::with_bin(None, addr, &cred_path).with_direct_socket(true);
+        let marker = dir.0.join("fallback-ran");
+        let stub = dir.0.join("fallback");
+        std::fs::write(&stub, format!("#!/bin/sh\n: > '{}'\n", marker.display())).unwrap();
+        std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let client =
+            FabricQueryClient::with_bin(Some(stub), addr, &cred_path).with_direct_socket(true);
         let err = client
-            .exchange_direct(CanonicalRequest::Progress)
+            .subscribe_plan(PlanScope("team".into()))
             .await
             .unwrap_err();
         peer.join().unwrap();
         assert!(err.contains("mutual authentication"), "{err}");
+        assert!(
+            !marker.exists(),
+            "ambiguous direct dispatch must not run CLI"
+        );
+    }
+    #[tokio::test]
+    async fn plan_cli_sends_scope_and_token_only_on_stdin() {
+        use std::os::unix::fs::PermissionsExt;
+        let base = std::env::var_os("TMPDIR")
+            .map(PathBuf::from)
+            .expect("disk-backed TMPDIR");
+        assert!(!base.starts_with("/tmp") && !base.starts_with("/dev/shm"));
+        let path = base.join(format!(
+            "fabric-plan-client-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&path).unwrap();
+        struct Guard(PathBuf);
+        impl Drop for Guard {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let _guard = Guard(path.clone());
+        let credential = path.join("token");
+        std::fs::write(&credential, "fixture-secret").unwrap();
+        std::fs::set_permissions(&credential, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let capture = path.join("stdin");
+        let script = path.join("query");
+        std::fs::write(&script,format!("#!/bin/sh\n[ \"$#\" -eq 1 ] && [ \"$1\" = poll-plan-hint ] || exit 9\ncat > '{}'\nprintf '%s' '{{\"result\":\"plan_hint\",\"pending\":true}}'\n",capture.display())).unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let client = FabricQueryClient::with_bin(Some(script), "remote.example:123", credential);
+        let response = client
+            .poll_plan_hint(PlanScope("team-a".into()), "opaque-token".into())
+            .await
+            .unwrap();
+        assert!(matches!(
+            response,
+            CanonicalResponse::PlanHint { pending: true }
+        ));
+        let value: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(capture).unwrap()).unwrap();
+        assert_eq!(
+            value,
+            serde_json::json!({"scope":"team-a","subscription":"opaque-token"})
+        );
+        std::fs::write(client.bin_path().unwrap(), "#!/bin/sh\ncat > /dev/null\nprintf '%s' '{\"result\":\"plan_subscribed\",\"subscription\":\"x\",\"frontier\":1}'\n").unwrap();
+        assert!(
+            client
+                .poll_plan_hint(PlanScope("team-a".into()), "opaque-token".into())
+                .await
+                .is_err()
+        );
+    }
+    #[test]
+    fn plan_response_is_bound_to_operation_and_page_scope() {
+        use fabric::canonical::{PlanCursorFailure, PlanPage};
+        let page = |scope: &str| CanonicalResponse::PlanPage {
+            page: PlanPage {
+                authority: "receiver".into(),
+                scope: PlanScope(scope.into()),
+                frontier: 1,
+                decisions: vec![],
+                next_cursor: None,
+            },
+        };
+        assert!(
+            validate_plan_response(PlanExpectation::Page(PlanScope("a".into())), page("a")).is_ok()
+        );
+        assert!(
+            validate_plan_response(PlanExpectation::Page(PlanScope("a".into())), page("b"))
+                .is_err()
+        );
+        assert!(validate_plan_response(PlanExpectation::Poll, page("a")).is_err());
+        assert!(
+            validate_plan_response(
+                PlanExpectation::Subscribe,
+                CanonicalResponse::PlanHint { pending: true }
+            )
+            .is_err()
+        );
+        assert!(matches!(
+            validate_plan_response(
+                PlanExpectation::Page(PlanScope("a".into())),
+                CanonicalResponse::PlanCursorFailure {
+                    reason: PlanCursorFailure::Gap
+                }
+            ),
+            Ok(CanonicalResponse::PlanCursorFailure {
+                reason: PlanCursorFailure::Gap
+            })
+        ));
+    }
+    #[tokio::test]
+    async fn oversized_plan_strings_refuse_before_credentials_or_transport() {
+        let client = FabricQueryClient::with_bin(
+            Some(PathBuf::from("/nonexistent/query")),
+            "127.0.0.1:1",
+            "/nonexistent/token",
+        )
+        .with_direct_socket(true);
+        let err = client
+            .subscribe_plan(PlanScope("x".repeat(MAX_FRAME + 1)))
+            .await
+            .unwrap_err();
+        assert!(err.contains("MAX_FRAME"));
+        let err = client
+            .poll_plan_hint(PlanScope("a".into()), "x".repeat(MAX_FRAME))
+            .await
+            .unwrap_err();
+        assert!(err.contains("MAX_FRAME"));
+        let request = PlanPageRequest {
+            scope: PlanScope("a".into()),
+            cursor: Some("x".repeat(MAX_FRAME)),
+            limit: 1,
+            ttl_secs: 1,
+        };
+        let err = client.plan_page(request).await.unwrap_err();
+        assert!(err.contains("MAX_FRAME"));
     }
 }
