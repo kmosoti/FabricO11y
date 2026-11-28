@@ -33,6 +33,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::time::{Duration, Instant};
 
+mod device_memory;
 mod guide;
 mod live_cursor;
 mod production_ready;
@@ -111,6 +112,8 @@ enum Commands {
     ReceiptBatchReady(receipt_batch::Args),
     /// Check current local services and, optionally, canonical progress for this origin.
     ProductionReady(production_ready::Args),
+    /// Inspect selected cgroup v2 device-memory usage and limits.
+    DeviceMemory(device_memory::Args),
     /// Run the converged telemetry daemon (inside fabrico11y.slice).
     Daemon(DaemonArgs),
 }
@@ -244,6 +247,9 @@ async fn run() -> Result<(), String> {
     if let Commands::Guide(args) = &cli.command {
         return guide::run(args, format);
     }
+    if let Some(result) = dispatch_device_memory(&cli, device_memory::run) {
+        return result;
+    }
     if let Commands::ProductionReady(args) = &cli.command {
         std::process::exit(production_ready::run(&cli, &matches, args, format).await);
     }
@@ -271,6 +277,7 @@ async fn run() -> Result<(), String> {
         | Commands::ProjectionReady(_)
         | Commands::ReceiptBatchReady(_)
         | Commands::ProductionReady(_)
+        | Commands::DeviceMemory(_)
         | Commands::Settings(_) => {
             unreachable!("commands dispatched before storage access")
         }
@@ -681,6 +688,16 @@ fn fetch_query_live_context(
     Ok((live_metrics, live_snapshot))
 }
 
+fn dispatch_device_memory(
+    cli: &Cli,
+    run: impl FnOnce(&device_memory::Args, bool) -> Result<(), String>,
+) -> Option<Result<(), String>> {
+    match &cli.command {
+        Commands::DeviceMemory(args) => Some(run(args, cli.arrow || cli.table)),
+        _ => None,
+    }
+}
+
 fn emit_json<T: Serialize>(command: &str, payload: &T) -> Result<(), String> {
     let envelope = CliEnvelope::new(Utc::now().timestamp_millis(), command, payload);
     let out = serde_json::to_string_pretty(&envelope).map_err(|e| e.to_string())?;
@@ -1049,5 +1066,41 @@ mod tests {
             PathBuf::from("/data/tmp")
         );
         assert!(resolve_cli_tmp_dir(None).is_ok());
+    }
+
+    #[test]
+    fn device_memory_dispatches_before_profile_and_storage_setup() {
+        let cli = Cli::try_parse_from([
+            "fabric",
+            "--config",
+            "/missing/profile.toml",
+            "device-memory",
+            "--cgroup",
+            "/user.slice/job.scope",
+        ])
+        .unwrap();
+        let mut called = false;
+        let result = dispatch_device_memory(&cli, |args, unsupported_format| {
+            called = true;
+            assert_eq!(args.cgroup, "/user.slice/job.scope");
+            assert!(!unsupported_format);
+            Ok(())
+        });
+        assert!(called);
+        assert!(matches!(result, Some(Ok(()))));
+
+        let table_cli = Cli::try_parse_from([
+            "fabric",
+            "--table",
+            "device-memory",
+            "--cgroup",
+            "/user.slice/job.scope",
+        ])
+        .unwrap();
+        let result = dispatch_device_memory(&table_cli, |_, unsupported_format| {
+            assert!(unsupported_format);
+            Ok(())
+        });
+        assert!(matches!(result, Some(Ok(()))));
     }
 }
