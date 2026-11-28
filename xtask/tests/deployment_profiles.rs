@@ -438,9 +438,11 @@ fn signal_coverage(records: &[(u64, Vec<u8>)]) -> BTreeMap<String, BTreeSet<&'st
 #[test]
 #[ignore = "requires exact release executables and fabrico11y.slice"]
 fn versioned_wire_compatibility_accepts_v2_v3_and_refuses_unannounced_extensions() {
-    assert!(fs::read_to_string("/proc/self/cgroup")
-        .unwrap()
-        .contains("/fabrico11y.slice/"));
+    assert!(
+        fs::read_to_string("/proc/self/cgroup")
+            .unwrap()
+            .contains("/fabrico11y.slice/")
+    );
     let bins = PathBuf::from(std::env::var_os("FABRIC_TEST_BIN_DIR").unwrap());
     let sandbox = xtask::evidence::non_tmp_tempdir().unwrap();
     let mut node = Node::open(&bins, sandbox.path(), "compat", "compat-fixture-credential");
@@ -466,7 +468,10 @@ fn versioned_wire_compatibility_accepts_v2_v3_and_refuses_unannounced_extensions
     .to_string();
     assert_eq!(node.submit(&v2).id, 1);
     assert_eq!(node.submit(&v3).id, 2);
-    assert!(observation::decode(v3.as_bytes()).is_err(), "v2-only reader must reject v3");
+    assert!(
+        observation::decode(v3.as_bytes()).is_err(),
+        "v2-only reader must reject v3"
+    );
 
     let future_parent = json!({
         "version": 2,
@@ -528,7 +533,11 @@ fn versioned_wire_compatibility_accepts_v2_v3_and_refuses_unannounced_extensions
             expected_error,
             "{label} must be rejected by schema validation, not a transport failure"
         );
-        assert_eq!(node.health().highest_record_id, 2, "{label} advanced custody");
+        assert_eq!(
+            node.health().highest_record_id,
+            2,
+            "{label} advanced custody"
+        );
     }
     let v2_next = json!({
         "version": 2,
@@ -539,7 +548,11 @@ fn versioned_wire_compatibility_accepts_v2_v3_and_refuses_unannounced_extensions
         "data": {"kind": "event", "name": "v2", "message": "after refusals"}
     })
     .to_string();
-    assert_eq!(node.submit(&v2_next).id, 3, "refusals must leave the identity usable");
+    assert_eq!(
+        node.submit(&v2_next).id,
+        3,
+        "refusals must leave the identity usable"
+    );
     node.restart(&bins);
     let mut stored = Vec::new();
     read_lane(&node, 3, &mut stored).unwrap();
@@ -552,6 +565,7 @@ fn versioned_wire_compatibility_accepts_v2_v3_and_refuses_unannounced_extensions
     );
     assert_eq!(stored[0].1, v2.as_bytes());
     assert_eq!(stored[1].1, v3.as_bytes());
+    assert_eq!(stored[2].1, v2_next.as_bytes());
 }
 
 fn open_batch_adapter(
