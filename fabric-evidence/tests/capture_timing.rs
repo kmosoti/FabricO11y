@@ -1,5 +1,7 @@
 //! Local transform-only comparison; no storage, sockets or custody work.
-use fabric_evidence::capture_policy::{CapturePolicy, FieldRule, ScalarType};
+use fabric_evidence::capture_policy::{
+    CaptureAction, CaptureError, CapturePolicy, FieldRule, Omission, PathRule, ScalarType,
+};
 use sha2::{Digest, Sha256};
 use std::{hint::black_box, time::Instant};
 
@@ -77,5 +79,81 @@ fn matched_capture_transform_timing() {
             "FABRIC239_TIMING {{\"repeat\":{repeat},\"mode\":\"mixed_capture\",\"iterations\":5000,\"elapsed_ns\":{}}}",
             start.elapsed().as_nanos()
         );
+    }
+}
+
+#[test]
+#[ignore = "release-profile nested capture timing, isolated from custody"]
+fn nested_capture_input_budget_timing() {
+    const LIMIT: usize = 4096;
+    const ITERATIONS: usize = 5000;
+    let rules = vec![
+        PathRule {
+            path: vec!["env".into(), "REGION".into()],
+            action: CaptureAction::Scalar {
+                scalar_type: ScalarType::Text,
+            },
+        },
+        PathRule {
+            path: vec!["env".into(), "TOKEN".into()],
+            action: CaptureAction::Redact,
+        },
+    ];
+    let policy =
+        CapturePolicy::new_paths("nested-timing".into(), LIMIT, 65_536, rules.clone()).unwrap();
+    let input = |size| {
+        format!(
+            r#"{{"env":{{"REGION":"west","TOKEN":"input-token","PAD":"{}"}}}}"#,
+            "x".repeat(size)
+        )
+    };
+    let small = input(1);
+    let boundary = input(LIMIT - input(0).len());
+    assert_eq!(boundary.len(), LIMIT);
+    let expected = br#"{"env":{"REGION":"west","TOKEN":"[REDACTED]"}}"#;
+    let policy_digest = hex(&policy.canonical_bytes());
+    for fixture in [&small, &boundary] {
+        let captured = policy.capture(fixture.as_bytes()).unwrap();
+        assert_eq!(captured.bytes, expected);
+        assert_eq!(captured.digest.0.hex, hex(expected));
+        assert_eq!(captured.policy_digest.0.hex, policy_digest);
+        assert_eq!(
+            captured.omissions,
+            [Omission::PolicyExcluded, Omission::Redacted]
+        );
+    }
+    assert_eq!(
+        policy.capture(format!("{boundary} ").as_bytes()),
+        Err(CaptureError::InputSize)
+    );
+    let limited = CapturePolicy::new_paths("nested-timing".into(), LIMIT, 1, rules).unwrap();
+    assert_eq!(
+        limited.capture(small.as_bytes()),
+        Err(CaptureError::WorkLimit)
+    );
+
+    let workload = [
+        ("small", small.as_bytes()),
+        ("input_budget", boundary.as_bytes()),
+    ];
+    for (_, fixture) in workload {
+        for _ in 0..1000 {
+            black_box(policy.capture(black_box(fixture)).unwrap());
+        }
+    }
+    for repeat in 0..7 {
+        for index in [repeat % 2, (repeat + 1) % 2] {
+            let (case, fixture) = workload[index];
+            let started = Instant::now();
+            for _ in 0..ITERATIONS {
+                black_box(policy.capture(black_box(fixture)).unwrap());
+            }
+            println!(
+                "FABRIC239_NESTED {{\"repeat\":{repeat},\"case\":\"{case}\",\"input_bytes\":{},\"captured_bytes\":{},\"iterations\":{ITERATIONS},\"elapsed_ns\":{}}}",
+                fixture.len(),
+                expected.len(),
+                started.elapsed().as_nanos()
+            );
+        }
     }
 }
