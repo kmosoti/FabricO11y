@@ -47,6 +47,41 @@ pub struct Definition {
     pub aggregation: Aggregation,
 }
 
+/// Schema for an optional scalar reported by an independently retained case.
+pub const CASE_MEASUREMENT_SCHEMA: &str = "fabric.snapshot.case-measurement.v1";
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct CaseMeasurement {
+    pub schema: String,
+    pub case_id: String,
+    pub definition: Definition,
+    pub value: i64,
+    pub exact: bool,
+}
+/// Unrecognized schemas carry no measurement. A recognized but malformed or
+/// misbound measurement is an error, not a missing result.
+pub fn read_case_measurement(
+    result: &ApplicationResult,
+    case_id: &str,
+    definition: &Definition,
+) -> Result<Option<crate::snapshot::Outcome>, DurableError> {
+    if result.schema() != CASE_MEASUREMENT_SCHEMA {
+        return Ok(None);
+    }
+    let measurement: CaseMeasurement = serde_json::from_slice(&result.canonical_payload()?)
+        .map_err(|_| DurableError::InvalidPayload)?;
+    if measurement.schema != CASE_MEASUREMENT_SCHEMA
+        || measurement.case_id != case_id
+        || &measurement.definition != definition
+    {
+        return Err(DurableError::InvalidPayload);
+    }
+    Ok(Some(crate::snapshot::Outcome::Known {
+        value: measurement.value,
+        exact: measurement.exact,
+    }))
+}
+
 /// A canonical report UUID. Serde uses its existing string representation.
 #[derive(Clone, Debug, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(transparent)]

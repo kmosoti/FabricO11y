@@ -267,3 +267,17 @@ fn full_i64_difference_cannot_overflow_and_unknown_can_become_known() {
         }
     ));
 }
+
+#[test]
+fn full_width_difference_serializes_as_decimal_string() {
+    use fabric_evidence::snapshot::Observation;
+    let value = Observation::Comparable {
+        baseline: i64::MIN,
+        candidate: i64::MAX,
+        baseline_exact: true,
+        candidate_exact: false,
+        difference: i128::from(i64::MAX) - i128::from(i64::MIN),
+    };
+    let json = serde_json::to_value(value).unwrap();
+    assert_eq!(json["difference"], "18446744073709551615");
+}

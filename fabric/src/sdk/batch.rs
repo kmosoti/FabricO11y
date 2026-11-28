@@ -10,13 +10,20 @@ use crate::{
 use fabric_evidence::{
     ReportScope,
     application_result::{ApplicationPayloadDigest, ApplicationResult},
-    durable_snapshot::{CaseEvidence, DurableSnapshot, Payload},
+    durable_snapshot::{
+        ApplicationReference, CaseEvidence, Cutoff, Definition, DurableSnapshot, Payload,
+        read_case_measurement,
+    },
     evidence_manifest::{OriginalArtifactDigest, ProvenancedTime},
+    snapshot::{
+        self, Counts, MeasurementDefinition, Observation, Outcome, Snapshot, UnknownReason,
+    },
 };
 use outbox::{Lease, Outbox, Pending, SavedReport};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
+    collections::{BTreeMap, BTreeSet},
     fmt,
     path::Path,
     thread,
@@ -216,6 +223,19 @@ pub struct VerifiedBoundary {
 pub struct VerifiedSnapshot {
     pub root: VerifiedBoundary,
     pub parent: Option<VerifiedBoundary>,
+}
+
+/// Authenticated comparison of explicitly selected frozen boundaries.
+#[derive(Clone, Debug, Serialize)]
+pub struct VerifiedSnapshotComparison {
+    pub baseline_report_id: String,
+    pub candidate_report_id: String,
+    pub baseline_cutoff: Cutoff,
+    pub candidate_cutoff: Cutoff,
+    pub definition: Definition,
+    pub baseline_counts: Counts,
+    pub candidate_counts: Counts,
+    pub cases: BTreeMap<String, Observation>,
 }
 
 struct CanonicalReader {
@@ -439,6 +459,117 @@ impl BatchClient {
             }
         }
         Ok(())
+    }
+
+    /// Compare two explicitly named verified boundaries under one total deadline.
+    pub fn compare_snapshots(
+        &mut self,
+        baseline: &ApplicationReference,
+        candidate: &ApplicationReference,
+        timeout: Duration,
+    ) -> Result<VerifiedSnapshotComparison, BatchError> {
+        if timeout.is_zero() || timeout > Duration::from_secs(30) {
+            return Err(BatchError::Invalid(
+                "snapshot timeout must be 1..=30000 ms".into(),
+            ));
+        }
+        let deadline = Instant::now()
+            .checked_add(timeout)
+            .ok_or_else(|| BatchError::Invalid("snapshot timeout overflow".into()))?;
+        let baseline = self.comparison_root(baseline, deadline)?;
+        let candidate = self.comparison_root(candidate, deadline)?;
+        if baseline.result().scope() != candidate.result().scope()
+            || baseline.payload().definition != candidate.payload().definition
+            || !baseline
+                .payload()
+                .cases
+                .iter()
+                .map(|case| &case.id)
+                .eq(candidate.payload().cases.iter().map(|case| &case.id))
+        {
+            return Err(BatchError::Invalid(
+                "incompatible snapshot boundaries".into(),
+            ));
+        }
+        let left = self.comparison_snapshot(&baseline, deadline)?;
+        let right = self.comparison_snapshot(&candidate, deadline)?;
+        let cases = snapshot::compare(&left, &right)
+            .map_err(|_| BatchError::Invalid("incompatible snapshot boundaries".into()))?;
+        check_read_deadline(deadline)?;
+        Ok(VerifiedSnapshotComparison {
+            baseline_report_id: baseline.result().report_id().to_owned(),
+            candidate_report_id: candidate.result().report_id().to_owned(),
+            baseline_cutoff: baseline.payload().cutoff.clone(),
+            candidate_cutoff: candidate.payload().cutoff.clone(),
+            definition: baseline.payload().definition.clone(),
+            baseline_counts: left.counts(),
+            candidate_counts: right.counts(),
+            cases,
+        })
+    }
+    fn comparison_root(
+        &mut self,
+        reference: &ApplicationReference,
+        deadline: Instant,
+    ) -> Result<DurableSnapshot, BatchError> {
+        let (verified, receipt) =
+            self.verify_application_until(reference.report_id.as_str(), deadline)?;
+        if verified.result.application_payload_digest() != &reference.payload_digest
+            || reference
+                .expected_source_id
+                .is_some_and(|id| id.get() != receipt.id)
+        {
+            return Err(BatchError::MismatchedReceipt);
+        }
+        DurableSnapshot::from_result(verified.result).map_err(snapshot_error)
+    }
+    fn comparison_snapshot(
+        &mut self,
+        boundary: &DurableSnapshot,
+        deadline: Instant,
+    ) -> Result<Snapshot, BatchError> {
+        let payload = boundary.payload();
+        let def = &payload.definition;
+        let definition = MeasurementDefinition::new(
+            def.evaluator.clone(),
+            def.configuration.clone(),
+            def.unit.clone(),
+            def.aggregation.clone(),
+        )
+        .map_err(|_| BatchError::Invalid("invalid measurement definition".into()))?;
+        let mut roster = BTreeSet::new();
+        let mut outcomes = BTreeMap::new();
+        for case in &payload.cases {
+            let outcome = match &case.evidence {
+                CaseEvidence::Unknown { reason } => Outcome::Unknown(*reason),
+                CaseEvidence::Known { reference } => {
+                    let (verified, receipt) =
+                        self.verify_application_until(reference.report_id.as_str(), deadline)?;
+                    boundary
+                        .match_case(
+                            &case.id,
+                            &verified.result,
+                            std::num::NonZeroU64::new(receipt.id),
+                        )
+                        .map_err(snapshot_error)?;
+                    read_case_measurement(&verified.result, &case.id, def)
+                        .map_err(snapshot_error)?
+                        .unwrap_or(Outcome::Unknown(UnknownReason::Unavailable))
+                }
+            };
+            roster.insert(case.id.clone());
+            outcomes.insert(case.id.clone(), outcome);
+        }
+        check_read_deadline(deadline)?;
+        Snapshot::new(
+            boundary.result().report_id().to_owned(),
+            payload.cutoff.ordinal.to_string(),
+            None,
+            definition,
+            roster,
+            outcomes,
+        )
+        .map_err(|_| BatchError::Invalid("invalid snapshot boundary".into()))
     }
 
     /// Verify a child and read its same-scope parent from this owner outbox.
@@ -835,12 +966,28 @@ pub fn batch_adapter_reply(client: &mut BatchClient, bytes: &[u8]) -> serde_json
     enum Command {
         Record(BatchReport),
         RecordApplication(ApplicationReport),
-        Flush { timeout_ms: u64 },
+        Flush {
+            timeout_ms: u64,
+        },
         Status,
-        ReportStatus { report_id: String },
-        VerifyApplication { report_id: String },
-        VerifySnapshot { report_id: String, timeout_ms: u64 },
-        ReadApplicationParent { report_id: String },
+        ReportStatus {
+            report_id: String,
+        },
+        VerifyApplication {
+            report_id: String,
+        },
+        VerifySnapshot {
+            report_id: String,
+            timeout_ms: u64,
+        },
+        CompareSnapshots {
+            baseline: ApplicationReference,
+            candidate: ApplicationReference,
+            timeout_ms: u64,
+        },
+        ReadApplicationParent {
+            report_id: String,
+        },
     }
     fn error_reply(error: BatchError) -> serde_json::Value {
         serde_json::json!({"error":error.to_string(),"code":error.code()})
@@ -956,6 +1103,17 @@ pub fn batch_adapter_reply(client: &mut BatchClient, bytes: &[u8]) -> serde_json
             Ok(result) => serde_json::json!({"verified_snapshot":result}),
             Err(error) => error_reply(error),
         },
+        Ok(Command::CompareSnapshots {
+            baseline,
+            candidate,
+            timeout_ms,
+        }) => {
+            match client.compare_snapshots(&baseline, &candidate, Duration::from_millis(timeout_ms))
+            {
+                Ok(result) => serde_json::json!({"snapshot_comparison":result}),
+                Err(error) => error_reply(error),
+            }
+        }
         Ok(Command::ReadApplicationParent { report_id }) => {
             match client.read_application_parent(&report_id) {
                 Ok(result) => serde_json::json!({"verified_parent":result}),

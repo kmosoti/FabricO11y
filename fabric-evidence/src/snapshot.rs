@@ -90,7 +90,8 @@ pub enum UnknownReason {
 }
 
 /// Exactness is an attributed result, not a calculated significance claim.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(tag = "state", content = "value", rename_all = "snake_case")]
 pub enum Outcome {
     Known { value: i64, exact: bool },
     Unknown(UnknownReason),
@@ -107,7 +108,7 @@ pub struct Snapshot {
     outcomes: BTreeMap<String, Outcome>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct Counts {
     pub enrolled: usize,
     pub known: usize,
@@ -205,19 +206,28 @@ impl Snapshot {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
 pub enum Observation {
     Comparable {
         baseline: i64,
         candidate: i64,
         baseline_exact: bool,
         candidate_exact: bool,
+        #[serde(serialize_with = "serialize_difference")]
         difference: i128,
     },
     Unavailable {
         baseline: Outcome,
         candidate: Outcome,
     },
+}
+
+fn serialize_difference<S: serde::Serializer>(
+    value: &i128,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(&value.to_string())
 }
 
 /// Preserves the declared denominator and exposes missingness on either side.
