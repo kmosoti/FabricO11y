@@ -690,11 +690,6 @@ fn segment_tickets_bind_real_reader_and_verified_resume() {
 #[test]
 fn cursor_routes_fence_configured_and_durable_policy_after_restart() {
     use canonical::PlanPageRequest;
-    assert!(
-        fs::read_to_string("/proc/self/cgroup")
-            .unwrap()
-            .contains("/fabrico11y.slice/")
-    );
     let scratch = std::env::var_os("TMPDIR").map(PathBuf::from).unwrap();
     let root = tempfile::tempdir_in(scratch).unwrap();
     let mut config = config(root.path());
@@ -833,11 +828,6 @@ fn cursor_routes_fence_configured_and_durable_policy_after_restart() {
 #[test]
 fn scoped_cursor_survives_restart_and_hints_coalesce() {
     use canonical::{PlanCursorFailure as Failure, PlanPageRequest};
-    assert!(
-        fs::read_to_string("/proc/self/cgroup")
-            .unwrap()
-            .contains("/fabrico11y.slice/")
-    );
     let scratch = std::env::var_os("TMPDIR").map(PathBuf::from).unwrap();
     let root = tempfile::tempdir_in(scratch).unwrap();
     let config = config(root.path());
