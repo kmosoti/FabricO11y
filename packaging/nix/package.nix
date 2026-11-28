@@ -21,7 +21,7 @@ let
 in
 rustPlatform.buildRustPackage {
   pname = "fabrico11y";
-  version = "0.1.1-alpha.2";
+  version = "0.2.0-rc.1";
   src = lib.cleanSource ../..;
   cargoLock.lockFile = ../../Cargo.lock;
 
