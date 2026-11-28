@@ -1,0 +1,219 @@
+[
+  {
+    "name": "service-request-with-parent",
+    "valid": true,
+    "wire": {
+      "version": 4,
+      "registry": "fabrico11y/4",
+      "context": {"run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31"},
+      "identity": {"producer": "fixture", "generation": "g4-fixture", "sequence": 2},
+      "timestamp_ns": 18446744073709551615,
+      "resource": "fixture",
+      "span": {
+        "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+        "span_id": "00f067aa0ba902b7",
+        "parent_span_id": "b7ad6b7169203331"
+      },
+      "data": {
+        "kind": "service_request",
+        "service": "worker",
+        "operation": "run",
+        "duration_ns": 1,
+        "status": "ok",
+        "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+      }
+    }
+  },
+  {
+    "name": "agent-run-without-parent",
+    "valid": true,
+    "wire": {
+      "version": 4,
+      "registry": "fabrico11y/4",
+      "context": {"run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31"},
+      "identity": {"producer": "fixture", "generation": "g4-fixture", "sequence": 3},
+      "timestamp_ns": 18446744073709551615,
+      "resource": "fixture",
+      "span": {
+        "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+        "span_id": "00f067aa0ba902b8",
+        "parent_span_id": null
+      },
+      "data": {
+        "kind": "agent_run",
+        "agent": "fixture-agent",
+        "run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31",
+        "duration_ns": 1,
+        "status": "ok"
+      }
+    }
+  },
+  {
+    "name": "tool-execution-with-omitted-parent",
+    "valid": true,
+    "wire": {
+      "version": 4,
+      "registry": "fabrico11y/4",
+      "context": {"run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31"},
+      "identity": {"producer": "fixture", "generation": "g4-fixture", "sequence": 4},
+      "timestamp_ns": 18446744073709551615,
+      "resource": "fixture",
+      "span": {
+        "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+        "span_id": "00f067aa0ba902b9"
+      },
+      "data": {
+        "kind": "tool_execution",
+        "tool": "fixture-tool",
+        "run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31",
+        "duration_ns": 1,
+        "status": "ok"
+      }
+    }
+  },
+  {
+    "name": "missing-span",
+    "valid": false,
+    "wire": {
+      "version": 4,
+      "registry": "fabrico11y/4",
+      "context": {"run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31"},
+      "identity": {"producer": "fixture", "generation": "g4-fixture", "sequence": 1},
+      "timestamp_ns": 1,
+      "resource": "fixture",
+      "data": {
+        "kind": "agent_run",
+        "agent": "fixture-agent",
+        "run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31",
+        "duration_ns": 1,
+        "status": "ok"
+      }
+    }
+  },
+  {
+    "name": "zero-trace-id",
+    "valid": false,
+    "wire": {
+      "version": 4,
+      "registry": "fabrico11y/4",
+      "context": {"run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31"},
+      "identity": {"producer": "fixture", "generation": "g4-fixture", "sequence": 1},
+      "timestamp_ns": 1,
+      "resource": "fixture",
+      "span": {"trace_id": "00000000000000000000000000000000", "span_id": "00f067aa0ba902b7"},
+      "data": {"kind": "agent_run", "agent": "fixture-agent", "run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31", "duration_ns": 1, "status": "ok"}
+    }
+  },
+  {
+    "name": "uppercase-trace-id",
+    "valid": false,
+    "wire": {
+      "version": 4,
+      "registry": "fabrico11y/4",
+      "context": {"run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31"},
+      "identity": {"producer": "fixture", "generation": "g4-fixture", "sequence": 1},
+      "timestamp_ns": 1,
+      "resource": "fixture",
+      "span": {"trace_id": "4BF92F3577B34DA6A3CE929D0E0E4736", "span_id": "00f067aa0ba902b7"},
+      "data": {"kind": "agent_run", "agent": "fixture-agent", "run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31", "duration_ns": 1, "status": "ok"}
+    }
+  },
+  {
+    "name": "wrong-span-id-length",
+    "valid": false,
+    "wire": {
+      "version": 4,
+      "registry": "fabrico11y/4",
+      "context": {"run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31"},
+      "identity": {"producer": "fixture", "generation": "g4-fixture", "sequence": 1},
+      "timestamp_ns": 1,
+      "resource": "fixture",
+      "span": {"trace_id": "4bf92f3577b34da6a3ce929d0e0e4736", "span_id": "00f067aa0ba902b"},
+      "data": {"kind": "agent_run", "agent": "fixture-agent", "run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31", "duration_ns": 1, "status": "ok"}
+    }
+  },
+  {
+    "name": "uppercase-span-id",
+    "valid": false,
+    "wire": {
+      "version": 4,
+      "registry": "fabrico11y/4",
+      "context": {"run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31"},
+      "identity": {"producer": "fixture", "generation": "g4-fixture", "sequence": 1},
+      "timestamp_ns": 1,
+      "resource": "fixture",
+      "span": {"trace_id": "4bf92f3577b34da6a3ce929d0e0e4736", "span_id": "00F067AA0BA902B7"},
+      "data": {"kind": "agent_run", "agent": "fixture-agent", "run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31", "duration_ns": 1, "status": "ok"}
+    }
+  },
+  {
+    "name": "parent-equals-span",
+    "valid": false,
+    "wire": {
+      "version": 4,
+      "registry": "fabrico11y/4",
+      "context": {"run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31"},
+      "identity": {"producer": "fixture", "generation": "g4-fixture", "sequence": 1},
+      "timestamp_ns": 1,
+      "resource": "fixture",
+      "span": {"trace_id": "4bf92f3577b34da6a3ce929d0e0e4736", "span_id": "00f067aa0ba902b7", "parent_span_id": "00f067aa0ba902b7"},
+      "data": {"kind": "agent_run", "agent": "fixture-agent", "run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31", "duration_ns": 1, "status": "ok"}
+    }
+  },
+  {
+    "name": "uppercase-parent-span-id",
+    "valid": false,
+    "wire": {
+      "version": 4,
+      "registry": "fabrico11y/4",
+      "context": {"run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31"},
+      "identity": {"producer": "fixture", "generation": "g4-fixture", "sequence": 1},
+      "timestamp_ns": 1,
+      "resource": "fixture",
+      "span": {"trace_id": "4bf92f3577b34da6a3ce929d0e0e4736", "span_id": "00f067aa0ba902b7", "parent_span_id": "B7AD6B7169203331"},
+      "data": {"kind": "agent_run", "agent": "fixture-agent", "run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31", "duration_ns": 1, "status": "ok"}
+    }
+  },
+  {
+    "name": "service-request-trace-mismatch",
+    "valid": false,
+    "wire": {
+      "version": 4,
+      "registry": "fabrico11y/4",
+      "context": {"run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31"},
+      "identity": {"producer": "fixture", "generation": "g4-fixture", "sequence": 1},
+      "timestamp_ns": 1,
+      "resource": "fixture",
+      "span": {"trace_id": "4bf92f3577b34da6a3ce929d0e0e4736", "span_id": "00f067aa0ba902b7"},
+      "data": {"kind": "service_request", "service": "worker", "operation": "run", "duration_ns": 1, "status": "ok", "trace_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+    }
+  },
+  {
+    "name": "unsupported-event-kind",
+    "valid": false,
+    "wire": {
+      "version": 4,
+      "registry": "fabrico11y/4",
+      "context": {"run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31"},
+      "identity": {"producer": "fixture", "generation": "g4-fixture", "sequence": 1},
+      "timestamp_ns": 1,
+      "resource": "fixture",
+      "span": {"trace_id": "4bf92f3577b34da6a3ce929d0e0e4736", "span_id": "00f067aa0ba902b7"},
+      "data": {"kind": "event", "name": "event", "message": "not a v4 trace"}
+    }
+  },
+  {
+    "name": "v4-parent-field-refused-by-v3",
+    "valid": false,
+    "wire": {
+      "version": 3,
+      "registry": "fabrico11y/3",
+      "context": {"run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31"},
+      "identity": {"producer": "fixture", "generation": "g3.fixture-authentication-checked-at-custody", "sequence": 1},
+      "timestamp_ns": 1,
+      "resource": "fixture",
+      "span": {"trace_id": "4bf92f3577b34da6a3ce929d0e0e4736", "span_id": "00f067aa0ba902b7"},
+      "data": {"kind": "agent_run", "agent": "fixture-agent", "run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31", "duration_ns": 1, "status": "ok"}
+    }
+  }
+]

@@ -4,6 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 const BINARY_HASH: &str = "6c67e08ba8abb2c60cf8a58c299b5db460c0fbe7226f7453d4878dcc4f6c3867";
+const V4_FIXTURES_HASH: &str = "f6dc07a4bbf45a4055c58634a890821504716e63a4e5c4b8cfb0834a380d3030";
 pub fn check(root: &Path, generate: bool) -> Result<(), String> {
     let binary = env::var_os("FABRIC_WEAVER")
         .map(PathBuf::from)
@@ -33,6 +34,11 @@ pub fn check(root: &Path, generate: bool) -> Result<(), String> {
             return Err(format!("immutable v2 registry artifact drift: {path}"));
         }
     }
+    if super::evidence::hash(&root.join("registry/v4/fixtures.json"))? != V4_FIXTURES_HASH {
+        return Err(
+            "v4 wire fixtures drifted; review fixture updates and change their pinned hash".into(),
+        );
+    }
     verify_revision(
         binary,
         root,
@@ -51,7 +57,25 @@ pub fn check(root: &Path, generate: bool) -> Result<(), String> {
         &["descriptor.json"],
         generate,
     )?;
-    println!("Pinned v2 and v3 registries and generated artifacts verified");
+    let v3_descriptor_hash = super::evidence::hash(&root.join("registry/v3/descriptor.json"))?;
+    let v4_template =
+        fs::read_to_string(root.join("registry/v4/templates/registry/rust/descriptor.json.j2"))
+            .map_err(|e| e.to_string())?;
+    if !v4_template.contains(&format!(
+        "\"extends_descriptor_sha256\":\"{v3_descriptor_hash}\""
+    )) {
+        return Err("v4 descriptor template must extend the exact v3 descriptor".into());
+    }
+    verify_revision(
+        binary,
+        root,
+        "registry/v4/model",
+        "registry/v4/templates",
+        "registry/v4",
+        &["descriptor.json"],
+        generate,
+    )?;
+    println!("Pinned v2 and generated v3/v4 registries and artifacts verified");
     Ok(())
 }
 
@@ -219,6 +243,101 @@ mod tests {
         assert!(check(temp.path(), true).is_err());
         assert_eq!(fs::read(&descriptor).unwrap(), original_descriptor);
     }
+
+    #[test]
+    fn v4_descriptor_extends_the_exact_v3_contract_and_bounds() {
+        let original = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let v3_descriptor = original.join("registry/v3/descriptor.json");
+        let digest = crate::evidence::hash(&v3_descriptor).unwrap();
+        assert_eq!(
+            digest,
+            "266e82b0a89f40f0136aa988fb642c48ce0cc7b916b9c0dd0959596c4542fd5e"
+        );
+        let descriptor: serde_json::Value = serde_json::from_slice(
+            &fs::read(original.join("registry/v4/descriptor.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(descriptor["registry"], "fabrico11y/4");
+        assert_eq!(descriptor["version"], 4);
+        assert_eq!(descriptor["extends"], "fabrico11y/3");
+        assert_eq!(descriptor["extends_descriptor_sha256"], digest);
+        assert_eq!(
+            descriptor["context"],
+            serde_json::json!({
+                "required": ["run_id"],
+                "run_id": "globally unique nonzero lowercase UUID",
+                "data_run_id": "agent_run and tool_execution data.run_id must equal context.run_id"
+            })
+        );
+        assert_eq!(descriptor["wire"]["max_bytes"], 65536);
+        assert_eq!(descriptor["wire"]["max_depth"], 16);
+        assert_eq!(
+            descriptor["span"]["required"],
+            serde_json::json!(["trace_id", "span_id"])
+        );
+        assert_eq!(
+            descriptor["span"]["data_kinds"],
+            serde_json::json!(["service_request", "agent_run", "tool_execution"])
+        );
+        assert_eq!(
+            descriptor["span"]["service_request_trace_id"],
+            "if present, data.trace_id must equal span.trace_id"
+        );
+    }
+
+    #[test]
+    fn v4_artifact_and_valid_model_drift_are_rejected() {
+        let original = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let temp = crate::evidence::non_tmp_tempdir().unwrap();
+        copy(&original.join("registry"), &temp.path().join("registry"));
+        check(temp.path(), false).unwrap();
+
+        let descriptor = temp.path().join("registry/v4/descriptor.json");
+        let original_descriptor = fs::read(&descriptor).unwrap();
+        let mut corrupted = original_descriptor.clone();
+        corrupted.push(b' ');
+        fs::write(&descriptor, &corrupted).unwrap();
+        assert!(
+            check(temp.path(), false)
+                .unwrap_err()
+                .contains("artifact drift")
+        );
+        check(temp.path(), true).unwrap();
+        assert_eq!(fs::read(&descriptor).unwrap(), original_descriptor);
+
+        let model = temp.path().join("registry/v4/model/observations.yaml");
+        let original_model = fs::read_to_string(&model).unwrap();
+        let changed =
+            original_model.replace("at most one parent", "exactly one parent when present");
+        assert_ne!(changed, original_model);
+        fs::write(&model, changed).unwrap();
+        assert!(
+            check(temp.path(), false)
+                .unwrap_err()
+                .contains("artifact drift")
+        );
+        assert_eq!(fs::read(&descriptor).unwrap(), original_descriptor);
+    }
+
+    #[test]
+    fn v4_fixture_drift_is_rejected_before_generation() {
+        let original = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let temp = crate::evidence::non_tmp_tempdir().unwrap();
+        copy(&original.join("registry"), &temp.path().join("registry"));
+        let descriptor = temp.path().join("registry/v4/descriptor.json");
+        let original_descriptor = fs::read(&descriptor).unwrap();
+        let fixtures = temp.path().join("registry/v4/fixtures.json");
+        let mut changed = fs::read(&fixtures).unwrap();
+        changed.push(b' ');
+        fs::write(&fixtures, changed).unwrap();
+        assert!(
+            check(temp.path(), true)
+                .unwrap_err()
+                .contains("v4 wire fixtures drifted")
+        );
+        assert_eq!(fs::read(&descriptor).unwrap(), original_descriptor);
+    }
+
     #[test]
     fn explicit_generation_cannot_redefine_v2() {
         let original = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();

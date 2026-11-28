@@ -1,0 +1,4 @@
+file_format: definition_manifest/2.0
+name: fabrico11y-trace-spans
+schema_url: https://github.com/kmosoti/FabricO11y/schemas/4.0.0
+description: Opt-in Fabric observations with explicit trace and span identity and one same-trace parent.
