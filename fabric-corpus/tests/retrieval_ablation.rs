@@ -336,3 +336,83 @@ fn unequal_or_exceeded_budgets_refuse_comparison() {
     other.input = 1;
     assert_eq!(compare(&f, other, other), Err("budget"));
 }
+
+#[test]
+fn caller_replay_matches_portable_rebuild_and_selected_result() {
+    use lexical::{Apply, Incremental, IncrementalError, RevisionEvent};
+    for f in [
+        fixture("team-a", ("amber", "leaf")),
+        fixture("team-b", ("cobalt", "stone")),
+    ] {
+        let portable = PortableView::import(&f.bytes, f.digest).unwrap();
+        let limits = lexical::Limits {
+            scan_bytes: 64 * 1024,
+            tokens: 1024,
+            ..lexical::Limits::default()
+        };
+        let rebuilt = lexical::rebuild(portable.view(), limits).unwrap();
+        let mut replay = Incremental::new(0, limits).unwrap();
+        let target = u64::try_from(portable.view().revisions().len()).unwrap();
+        assert!(target > 1);
+        let (&first_id, first_body) = portable
+            .view()
+            .revisions()
+            .iter()
+            .find(|(_, body)| body.is_some())
+            .unwrap();
+        let before = replay.clone();
+        assert_eq!(
+            replay.append(RevisionEvent {
+                frontier: 2,
+                revision: first_id,
+                body: first_body.as_ref()
+            }),
+            Err(IncrementalError::Gap)
+        );
+        assert_eq!(replay, before);
+        let mut tampered = first_body.as_ref().unwrap().clone();
+        tampered.text.push_str(" altered");
+        assert_eq!(
+            replay.append(RevisionEvent {
+                frontier: 1,
+                revision: first_id,
+                body: Some(&tampered)
+            }),
+            Err(IncrementalError::DigestMismatch)
+        );
+        assert_eq!(replay, before);
+        let mut scanned = 0;
+        let mut tokens = 0;
+        for (index, (revision, body)) in portable.view().revisions().iter().enumerate() {
+            let next = u64::try_from(index).unwrap() + 1;
+            assert_eq!(target - replay.frontier(), target - next + 1);
+            let Apply::Applied { work } = replay
+                .append(RevisionEvent {
+                    frontier: next,
+                    revision: *revision,
+                    body: body.as_ref(),
+                })
+                .unwrap()
+            else {
+                panic!("new selection")
+            };
+            scanned += work.scanned_bytes;
+            tokens += work.tokens;
+            assert!(scanned <= limits.scan_bytes && tokens <= limits.tokens);
+            assert_eq!(replay.view().cost.scanned_bytes, scanned);
+            assert_eq!(replay.view().cost.tokens, tokens);
+            assert_eq!(target - replay.frontier(), target - next);
+        }
+        assert_eq!(replay.frontier(), target);
+        assert_eq!(replay.view(), &rebuilt);
+        let selected = |view: &lexical::LexicalView| -> BTreeSet<RevisionDigest> {
+            view.pairs
+                .get(&f.pair)
+                .map(|pair| pair.revisions.iter().copied().take(1).collect())
+                .unwrap_or_default()
+        };
+        assert_eq!(selected(replay.view()), selected(&rebuilt));
+        assert_eq!(selected(&rebuilt), BTreeSet::from([f.label]));
+        println!("caller_frontier={target} caller_pending=0 scanned={scanned} tokens={tokens}");
+    }
+}
