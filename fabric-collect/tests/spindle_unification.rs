@@ -983,22 +983,30 @@ fn local_live_metric_cursor_socket_profile() {
 #[test]
 #[ignore = "requires collected fabrico11y.slice and FABRIC_LIVE_CURSOR_BYTES=32768"]
 fn isolated_cli_live_metric_cursor_socket_profile() {
-    isolated_cursor_profile(false, false);
+    isolated_cursor_profile(false, false, false);
 }
 
 #[test]
 #[ignore = "requires collected fabrico11y.slice and FABRIC_LIVE_CURSOR_BYTES=32768"]
 fn isolated_cli_sustained_cursor_socket_profile() {
-    isolated_cursor_profile(true, false);
+    isolated_cursor_profile(true, false, false);
 }
 
 #[test]
 #[ignore = "requires collected fabrico11y.slice and exact CLI and MCP executables"]
 fn isolated_cursor_cli_mcp_real_parity() {
-    isolated_cursor_profile(false, true);
+    isolated_cursor_profile(false, true, false);
 }
 
-fn isolated_cursor_profile(sustained: bool, parity: bool) {
+#[test]
+#[ignore = "requires collected fabrico11y.slice, RuntimeMaxSec=115 and exact CLI"]
+fn isolated_default_cadence_cursor_profile() {
+    isolated_cursor_profile(false, false, true);
+}
+
+fn isolated_cursor_profile(sustained: bool, parity: bool, default_cadence: bool) {
+    // The collected test unit must also impose RuntimeMaxSec=115.
+    let qualification_deadline = Instant::now() + Duration::from_secs(105);
     assert!(
         in_fabrico11y_slice(),
         "run inside the collected fabrico11y.slice"
@@ -1071,9 +1079,9 @@ fn isolated_cursor_profile(sustained: bool, parity: bool) {
                 "daemon",
                 "--spindle-only",
                 "--interval-ms",
-                "250",
+                if default_cadence { "2000" } else { "250" },
                 "--max-ticks",
-                "80",
+                if default_cadence { "44" } else { "80" },
                 "--ring-budget-bytes",
                 "2097152",
                 "--max-disk-bytes",
@@ -1093,11 +1101,27 @@ fn isolated_cursor_profile(sustained: bool, parity: bool) {
     let stop_sample = Arc::new(AtomicBool::new(false));
     let max_fds = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let peak_kib = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let max_sample_gap_us = Arc::new(AtomicU64::new(0));
+    let sample_count = Arc::new(AtomicU64::new(0));
+    let sample_gap = max_sample_gap_us.clone();
+    let sample_count_thread = sample_count.clone();
     let sample_stop = stop_sample.clone();
     let sample_fds = max_fds.clone();
     let sample_peak = peak_kib.clone();
     let sampler = thread::spawn(move || {
+        let mut previous = Instant::now();
         while !sample_stop.load(Ordering::Relaxed) {
+            if default_cadence {
+                let now = Instant::now();
+                sample_gap.fetch_max(
+                    now.duration_since(previous)
+                        .as_micros()
+                        .min(u64::MAX as u128) as u64,
+                    Ordering::Relaxed,
+                );
+                sample_count_thread.fetch_add(1, Ordering::Relaxed);
+                previous = now;
+            }
             if let Ok(status) = fs::read_to_string(format!("/proc/{pid}/status"))
                 && let Some(kib) = status.lines().find_map(|line| {
                     line.strip_prefix("VmHWM:")
@@ -1165,7 +1189,107 @@ fn isolated_cursor_profile(sustained: bool, parity: bool) {
     assert!(!initial.gap);
     let epoch = initial.epoch.clone();
     let mut after = initial.next_after;
-    let delays_ms = if sustained {
+    let delays_ms = if default_cadence {
+        const SAMPLES: usize = 650;
+        let (starts, ids, seen_a, seen_b) = thread::scope(|scope| {
+            let writer = scope.spawn(|| {
+                let schedule = Instant::now() + Duration::from_millis(100);
+                let mut starts = Vec::with_capacity(SAMPLES);
+                let mut ids = Vec::with_capacity(SAMPLES);
+                let mut schedule_lag_us = Vec::with_capacity(SAMPLES);
+                for sample in 1..=SAMPLES {
+                    assert!(Instant::now() < qualification_deadline, "producer deadline");
+                    let target = schedule + Duration::from_millis((sample - 1) as u64 * 100);
+                    if let Some(wait) = target.checked_duration_since(Instant::now()) {
+                        thread::sleep(wait);
+                    }
+                    let started = Instant::now();
+                    assert!(started < qualification_deadline, "producer deadline");
+                    schedule_lag_us.push(started.saturating_duration_since(target).as_micros());
+                    starts.push(started);
+                    ids.push(submit(sample));
+                }
+                let elapsed_ms = starts.last().unwrap().duration_since(starts[0]).as_millis();
+                let max_interarrival_us = starts.windows(2).map(|pair| pair[1].duration_since(pair[0]).as_micros()).max().unwrap();
+                println!(
+                    "producer samples={SAMPLES} nominal_interval_ms=100 actual_elapsed_ms={elapsed_ms} max_interarrival_us={max_interarrival_us} max_schedule_lag_us={}",
+                    schedule_lag_us.iter().max().unwrap()
+                );
+                (starts, ids)
+            });
+            let read = || {
+                let deadline =
+                    (Instant::now() + Duration::from_secs(80)).min(qualification_deadline);
+                let mut cursor = after;
+                let mut seen = Vec::with_capacity(SAMPLES);
+                let mut last_probe = Instant::now();
+                let mut max_probe_gap_us = 0;
+                let mut probes = 0usize;
+                while seen.len() < SAMPLES {
+                    let now = Instant::now();
+                    max_probe_gap_us =
+                        max_probe_gap_us.max(now.duration_since(last_probe).as_micros());
+                    last_probe = now;
+                    probes += 1;
+                    if let Some(DaemonResponse::LiveMetricsV1(page)) = query_daemon_socket(
+                        &daemon_sock,
+                        &DaemonRequest::LiveMetricsV1 {
+                            origin: Some(origin.clone()),
+                            epoch: Some(epoch.clone()),
+                            after: cursor,
+                            count: 64,
+                            max_bytes: 32768,
+                        },
+                    ) {
+                        assert!(!page.gap, "synchronized reader reported a gap");
+                        let observed = Instant::now();
+                        for entry in page.entries {
+                            seen.push((entry.record_id, entry.point.name, observed));
+                        }
+                        cursor = page.next_after;
+                    }
+                    assert!(Instant::now() < deadline, "default cadence reader deadline");
+                    thread::sleep(Duration::from_millis(20));
+                }
+                println!(
+                    "reader probes={probes} probe_sleep_ms=20 max_actual_probe_gap_us={max_probe_gap_us}"
+                );
+                seen
+            };
+            let a = scope.spawn(read);
+            let b = scope.spawn(read);
+            let (starts, ids) = writer.join().unwrap();
+            (starts, ids, a.join().unwrap(), b.join().unwrap())
+        });
+        let mut all_latencies = Vec::with_capacity(SAMPLES * 2);
+        for (reader, seen) in [("a", &seen_a), ("b", &seen_b)] {
+            assert_eq!(seen.len(), SAMPLES);
+            let mut durations = Vec::with_capacity(SAMPLES);
+            for (index, ((id, name, observed), start)) in seen.iter().zip(&starts).enumerate() {
+                assert_eq!(*id, ids[index], "reader {reader} sequence mismatch");
+                assert_eq!(name, &format!("live.sample.{}", index + 1));
+                durations.push(observed.duration_since(*start));
+            }
+            let misses = durations
+                .iter()
+                .filter(|d| **d >= Duration::from_millis(2000))
+                .count();
+            let mut micros: Vec<_> = durations.iter().map(Duration::as_micros).collect();
+            micros.sort_unstable();
+            let rank = |percent: usize| micros[(percent * micros.len()).div_ceil(100) - 1];
+            println!(
+                "default cadence reader={reader} samples={} p50_us={} p95_us={} p99_us={} max_us={} at_or_above_2000ms={} probe_sleep_ms=20",
+                micros.len(),
+                rank(50),
+                rank(95),
+                rank(99),
+                micros[micros.len() - 1],
+                misses
+            );
+            all_latencies.extend(durations.into_iter().map(|d| d.as_millis()));
+        }
+        all_latencies
+    } else if sustained {
         // Schedule production independently of cursor polling; record actual starts and
         // correlate returned IDs to the monotonic observation time after both finish.
         let (starts, ids, seen) = thread::scope(|scope| {
@@ -1260,71 +1384,77 @@ fn isolated_cursor_profile(sustained: bool, parity: bool) {
         }
         delays_ms
     };
-    for (bad_origin, bad_epoch) in [
-        ("other".to_string(), epoch.clone()),
-        (origin.clone(), "bad".to_string()),
-    ] {
-        assert!(matches!(
-            query_daemon_socket(
+    if !default_cadence {
+        for (bad_origin, bad_epoch) in [
+            ("other".to_string(), epoch.clone()),
+            (origin.clone(), "bad".to_string()),
+        ] {
+            assert!(matches!(
+                query_daemon_socket(
+                    &daemon_sock,
+                    &DaemonRequest::LiveMetricsV1 {
+                        origin: Some(bad_origin),
+                        epoch: Some(bad_epoch),
+                        after,
+                        count: 1,
+                        max_bytes: 32768
+                    }
+                ),
+                Some(DaemonResponse::Error { .. })
+            ));
+        }
+        // Force a bounded-wrap gap using real accepted records without timing this burst.
+        let mut last_burst = 0;
+        for i in 0..132 {
+            last_burst = submit(1000 + i);
+        }
+        let deadline = Instant::now() + Duration::from_secs(15);
+        loop {
+            if let Some(DaemonResponse::LiveMetricsV1(page)) = query_daemon_socket(
                 &daemon_sock,
                 &DaemonRequest::LiveMetricsV1 {
-                    origin: Some(bad_origin),
-                    epoch: Some(bad_epoch),
+                    origin: Some(origin.clone()),
+                    epoch: Some(epoch.clone()),
                     after,
-                    count: 1,
-                    max_bytes: 32768
-                }
-            ),
-            Some(DaemonResponse::Error { .. })
-        ));
-    }
-    // Force a bounded-wrap gap using real accepted records without timing this burst.
-    let mut last_burst = 0;
-    for i in 0..132 {
-        last_burst = submit(1000 + i);
-    }
-    let deadline = Instant::now() + Duration::from_secs(15);
-    loop {
-        if let Some(DaemonResponse::LiveMetricsV1(page)) = query_daemon_socket(
-            &daemon_sock,
-            &DaemonRequest::LiveMetricsV1 {
-                origin: Some(origin.clone()),
-                epoch: Some(epoch.clone()),
-                after,
-                count: 64,
-                max_bytes: 32768,
-            },
-        ) && page.gap
-        {
-            assert!(page.highest_lost > after);
-            assert_eq!(
-                page.highest_lost_reason,
-                Some(fabric_collect::live_cursor::LossReason::Evicted)
-            );
-            assert!(page.oldest_retained.is_some());
-            if parity {
-                if page.observed_through < last_burst {
-                    assert!(Instant::now() < deadline, "cursor settled deadline");
-                    thread::sleep(Duration::from_millis(20));
-                    continue;
-                }
-                verify_real_cursor_parity(
-                    root,
-                    &collector_data,
-                    &collector_tmp,
-                    &daemon_sock,
-                    &origin,
-                    &epoch,
-                    after,
-                    &page,
+                    count: 64,
+                    max_bytes: 32768,
+                },
+            ) && page.gap
+            {
+                assert!(page.highest_lost > after);
+                assert_eq!(
+                    page.highest_lost_reason,
+                    Some(fabric_collect::live_cursor::LossReason::Evicted)
                 );
+                assert!(page.oldest_retained.is_some());
+                if parity {
+                    if page.observed_through < last_burst {
+                        assert!(Instant::now() < deadline, "cursor settled deadline");
+                        thread::sleep(Duration::from_millis(20));
+                        continue;
+                    }
+                    verify_real_cursor_parity(
+                        root,
+                        &collector_data,
+                        &collector_tmp,
+                        &daemon_sock,
+                        &origin,
+                        &epoch,
+                        after,
+                        &page,
+                    );
+                }
+                break;
             }
-            break;
+            assert!(Instant::now() < deadline, "cursor wrap deadline");
+            thread::sleep(Duration::from_millis(20));
         }
-        assert!(Instant::now() < deadline, "cursor wrap deadline");
-        thread::sleep(Duration::from_millis(20));
     }
-    let deadline = Instant::now() + Duration::from_secs(30);
+    let deadline = if default_cadence {
+        (Instant::now() + Duration::from_secs(30)).min(qualification_deadline)
+    } else {
+        Instant::now() + Duration::from_secs(30)
+    };
     let status = loop {
         if let Some(status) = collector.0.try_wait().unwrap() {
             break status;
@@ -1341,14 +1471,32 @@ fn isolated_cursor_profile(sustained: bool, parity: bool) {
         peak_kib > 0 && max_fds > 0,
         "child resource samples unavailable"
     );
-    let label = if sustained {
+    if default_cadence {
+        assert!(
+            peak_kib < 100 * 1024,
+            "collector exceeded 100 MiB VmHWM: {peak_kib} KiB"
+        );
+        assert!(max_fds < 64, "collector exceeded FD bound: {max_fds}");
+    }
+    let label = if default_cadence {
+        "default cadence isolated"
+    } else if sustained {
         "sustained isolated"
     } else {
         "isolated"
     };
-    println!(
-        "{label} child pid={pid}; submit-through-visibility ms={delays_ms:?}; child sampled VmHWM KiB={peak_kib}; child max sampled FDs={max_fds}; poll_interval_ms=250; sample_interval_ms=20"
-    );
+    if default_cadence {
+        let samples = sample_count.load(Ordering::Relaxed);
+        assert!(samples > 0, "resource sampler did not run");
+        println!(
+            "{label} child pid={pid}; child sampled VmHWM KiB={peak_kib}; child max sampled FDs={max_fds}; poll_interval_ms=2000; resource_samples={samples}; sample_sleep_ms=20; max_actual_sample_gap_us={}",
+            max_sample_gap_us.load(Ordering::Relaxed)
+        );
+    } else {
+        println!(
+            "{label} child pid={pid}; submit-through-visibility ms={delays_ms:?}; child sampled VmHWM KiB={peak_kib}; child max sampled FDs={max_fds}; poll_interval_ms=250; sample_interval_ms=20"
+        );
+    }
     drop(client);
     assert!(matches!(
         transport::request(
