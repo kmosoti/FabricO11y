@@ -358,7 +358,7 @@ fn cancellation_reaches_canonical_and_capacity_waits_for_actual_exchange() {
 /// Authenticated canonical-protocol mock: exercises the actual stdio adapter,
 /// but does not claim to exercise a live ledger or server authorization policy.
 #[test]
-fn writer_mode_exposes_only_acceptance_and_retries_identical_body() {
+fn writer_mode_exposes_scoped_plan_tools_and_retries_identical_body() {
     use fabric::canonical::{self, Request, Response};
     use std::{net::TcpListener, os::unix::fs::PermissionsExt, time::Instant};
     const WRITER: &str = "writer-credential-for-test";
@@ -442,9 +442,25 @@ fn writer_mode_exposes_only_acceptance_and_retries_identical_body() {
     input.flush().unwrap();
     let listed = rx.recv_timeout(Duration::from_secs(5)).unwrap();
     let tools = listed["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 1);
-    assert_eq!(tools[0]["name"], "accept_plan");
-    assert_eq!(tools[0]["annotations"]["readOnlyHint"], false);
+    let mut names: Vec<_> = tools
+        .iter()
+        .map(|tool| tool["name"].as_str().unwrap())
+        .collect();
+    names.sort_unstable();
+    assert_eq!(
+        names,
+        [
+            "accept_plan",
+            "plan_page",
+            "poll_plan_hint",
+            "subscribe_plan"
+        ]
+    );
+    let accept = tools
+        .iter()
+        .find(|tool| tool["name"] == "accept_plan")
+        .unwrap();
+    assert_eq!(accept["annotations"]["readOnlyHint"], false);
     let carrier = canonical::PlanProposal {
         version: 1,
         scope: canonical::PlanScope("plan".into()),
