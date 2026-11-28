@@ -178,8 +178,7 @@ INSERT OR IGNORE INTO custody_state VALUES('clock_floor','0');").map_err(err)?;
         if lease_key.len() != 32 {
             return Err("invalid persisted lease key".into());
         }
-        metric_series::install(&conn).map_err(err)?;
-        retain_descriptor(&conn, observation::REGISTRY_V5, observation::DESCRIPTOR_V5)?;
+        check_descriptor_if_present(&conn, observation::REGISTRY_V5, observation::DESCRIPTOR_V5)?;
         retain_descriptor(&conn, observation::REGISTRY_V3, observation::DESCRIPTOR_V3)?;
         retain_descriptor(&conn, observation::REGISTRY_V4, observation::DESCRIPTOR_V4)?;
         File::open(dir).and_then(|f| f.sync_all()).map_err(err)?;
@@ -354,6 +353,7 @@ CREATE TRIGGER fail_batch_commit AFTER INSERT ON records BEGIN INSERT INTO commi
             .transpose()?;
         let tx = self.conn.savepoint().map_err(err)?;
         if let Some(key) = series_key {
+            ensure_v5_series_schema(&tx)?;
             metric_series::reserve(
                 &tx,
                 &i.producer,
@@ -623,6 +623,50 @@ mod tests {
     }
 }
 
+// Existing metadata is checked on open without growing legacy stores.
+fn check_descriptor_if_present(
+    conn: &Connection,
+    name: &str,
+    descriptor: &str,
+) -> Result<(), String> {
+    let existing: Option<String> = conn
+        .query_row(
+            "SELECT descriptor FROM registries WHERE name=?1",
+            [name],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(err)?;
+    if existing.as_deref().is_some_and(|value| value != descriptor) {
+        return Err("registry descriptor conflict".into());
+    }
+    Ok(())
+}
+// The descriptor is the commit marker for schema installation; both are owned
+// by the same record savepoint and roll back with it and its outer transaction.
+fn ensure_v5_series_schema(tx: &rusqlite::Savepoint<'_>) -> Result<(), String> {
+    let existing: Option<String> = tx
+        .query_row(
+            "SELECT descriptor FROM registries WHERE name=?1",
+            [observation::REGISTRY_V5],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(err)?;
+    match existing {
+        Some(value) if value == observation::DESCRIPTOR_V5 => Ok(()),
+        Some(_) => Err("registry descriptor conflict".into()),
+        None => {
+            metric_series::install(tx).map_err(err)?;
+            tx.execute(
+                "INSERT INTO registries(name,descriptor) VALUES(?1,?2)",
+                params![observation::REGISTRY_V5, observation::DESCRIPTOR_V5],
+            )
+            .map_err(err)?;
+            Ok(())
+        }
+    }
+}
 fn retain_descriptor(conn: &Connection, name: &str, descriptor: &str) -> Result<(), String> {
     let existing: Option<String> = conn
         .query_row(
@@ -1167,6 +1211,36 @@ mod handoff_tests {
         })).unwrap()
         };
         let first = metric(1, "m");
+        let v5_metadata = |s: &Store| -> (u64, u64) {
+            let descriptor = s
+                .conn
+                .query_row(
+                    "SELECT COUNT(*) FROM registries WHERE name=?1",
+                    [observation::REGISTRY_V5],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            let schema = s.conn.query_row("SELECT COUNT(*) FROM sqlite_master WHERE name IN ('metric_series_membership','metric_series_by_producer_key','metric_series_retire_generation')", [], |r| r.get(0)).unwrap();
+            (descriptor, schema)
+        };
+        assert_eq!(v5_metadata(&store), (0, 0));
+        store.conn.execute_batch("CREATE TRIGGER fail_v5_record BEFORE INSERT ON records BEGIN SELECT RAISE(ABORT, 'injected record failure'); END;").unwrap();
+        assert!(store.submit(&first, None).is_err());
+        assert_eq!(v5_metadata(&store), (0, 0));
+        assert_eq!(store.count().unwrap(), 0);
+        store
+            .conn
+            .execute_batch("DROP TRIGGER fail_v5_record;")
+            .unwrap();
+        store.begin_connection_batch().unwrap();
+        assert!(!store.submit(&first, None).unwrap().duplicate);
+        assert_eq!(v5_metadata(&store), (1, 3));
+        store.rollback_connection_batch().unwrap();
+        assert_eq!(v5_metadata(&store), (0, 0));
+        assert_eq!(store.count().unwrap(), 0);
+        drop(store);
+        let mut store = Store::open(&path, MIN_QUOTA).unwrap();
+        assert_eq!(v5_metadata(&store), (0, 0));
         let decoded = observation::decode_versioned(&first).unwrap();
         assert_eq!(decoded.metric_v5().unwrap().data.labels["region"], "x");
         assert!(matches!(decoded.data(), observation::Data::Metric { .. }));
@@ -1198,6 +1272,23 @@ mod handoff_tests {
         assert_eq!(count(&store), 1);
         assert!(!store.submit(&second, None).unwrap().duplicate);
         assert_eq!(count(&store), 2);
+    }
+    #[test]
+    fn existing_v5_descriptor_conflict_still_refuses_open() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("store");
+        let store = Store::open(&path, MIN_QUOTA).unwrap();
+        store
+            .conn
+            .execute(
+                "INSERT INTO registries(name,descriptor) VALUES(?1,?2)",
+                params![observation::REGISTRY_V5, "conflict"],
+            )
+            .unwrap();
+        drop(store);
+        assert!(
+            matches!(Store::open(&path, MIN_QUOTA), Err(error) if error.contains("descriptor conflict"))
+        );
     }
     #[test]
     fn lease_authentication_order_expiry_and_pending_retention() {
