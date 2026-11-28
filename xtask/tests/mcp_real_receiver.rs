@@ -228,7 +228,32 @@ fn hash(path: &Path) -> String {
         .to_owned()
 }
 
+fn bounded_plan_output(
+    stream: impl Read + Send + 'static,
+) -> mpsc::Receiver<std::io::Result<Vec<u8>>> {
+    let (send, receive) = mpsc::sync_channel(1);
+    thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let result = stream
+            .take(canonical::MAX_FRAME as u64 + 1)
+            .read_to_end(&mut bytes)
+            .and_then(|_| {
+                if bytes.len() > canonical::MAX_FRAME {
+                    Err(std::io::Error::other("plan CLI output exceeds MAX_FRAME"))
+                } else {
+                    Ok(bytes)
+                }
+            });
+        let _ = send.send(result);
+    });
+    receive
+}
+
 fn plan_cli(binary: &Path, address: &str, credential: &Path, verb: &str, body: &Value) -> Response {
+    let input = serde_json::to_vec(body).unwrap();
+    // The controlled fixture writes at most Linux PIPE_BUF to an empty pipe.
+    assert!(input.len() <= 4096);
+    let deadline = Instant::now() + Duration::from_secs(10);
     let mut child = Command::new(binary)
         .arg(verb)
         .env("FABRIC_ENDPOINT", address)
@@ -239,14 +264,38 @@ fn plan_cli(binary: &Path, address: &str, credential: &Path, verb: &str, body: &
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    serde_json::to_writer(child.stdin.take().unwrap(), body).unwrap();
-    let output = child.wait_with_output().unwrap();
+    let stdout = bounded_plan_output(child.stdout.take().unwrap());
+    let stderr = bounded_plan_output(child.stderr.take().unwrap());
+    if let Err(e) = child.stdin.take().unwrap().write_all(&input) {
+        let _ = child.kill();
+        child.wait().unwrap();
+        panic!("{verb} stdin: {e}");
+    }
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(5)),
+            other => {
+                let _ = child.kill();
+                child.wait().unwrap();
+                panic!("{verb} failed to exit within the deadline: {other:?}");
+            }
+        }
+    };
+    let receive = |output: mpsc::Receiver<std::io::Result<Vec<u8>>>| {
+        output
+            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            .unwrap_or_else(|e| panic!("{verb} output deadline: {e}"))
+            .unwrap_or_else(|e| panic!("{verb} output bound: {e}"))
+    };
+    let stdout = receive(stdout);
+    let stderr = receive(stderr);
     assert!(
-        output.status.success(),
+        status.success(),
         "{verb}: {}",
-        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&stderr)
     );
-    serde_json::from_slice(&output.stdout).unwrap()
+    serde_json::from_slice(&stdout).unwrap()
 }
 
 #[test]
