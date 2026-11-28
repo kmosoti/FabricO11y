@@ -81,6 +81,24 @@ impl AlertJournal {
             .map_err(|_| JournalError::Invalid)?
             .checkpoint();
         crate::ledger::private_dir(dir).map_err(|_| JournalError::Storage)?;
+        let directory = File::from(
+            rustix::fs::open(
+                dir,
+                rustix::fs::OFlags::RDONLY
+                    | rustix::fs::OFlags::DIRECTORY
+                    | rustix::fs::OFlags::NOFOLLOW
+                    | rustix::fs::OFlags::CLOEXEC,
+                rustix::fs::Mode::empty(),
+            )
+            .map_err(|_| JournalError::Storage)?,
+        );
+        let metadata = directory.metadata().map_err(|_| JournalError::Storage)?;
+        if !metadata.is_dir()
+            || metadata.uid() != rustix::process::getuid().as_raw()
+            || metadata.permissions().mode() & 0o077 != 0
+        {
+            return Err(JournalError::Storage);
+        }
         let owner = OpenOptions::new()
             .read(true)
             .write(true)
@@ -144,6 +162,9 @@ impl AlertJournal {
         if saved != encode(&provision)? {
             return Err(JournalError::ScopeMismatch);
         }
+        // Commit creates database, journal and lock names in this directory.
+        // Surface a failed directory barrier instead of reporting a durable open.
+        directory.sync_all().map_err(|_| JournalError::Storage)?;
         Ok(Self {
             db,
             _owner: owner,
