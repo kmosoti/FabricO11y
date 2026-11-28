@@ -1013,8 +1013,41 @@ fn batch_adapter_replays_a_committed_report_and_projects_130_runs() {
     let first_receipt = committed.recv_timeout(Duration::from_secs(15)).unwrap();
     let unknown = batch_reply(&lost_stdout);
     assert_eq!(unknown["delivery_state"], "outcome_unknown", "{unknown}");
+    assert_eq!(unknown["report_id"], first_request["report_id"]);
+    assert_eq!(unknown["code"], "unavailable");
+    let second_request = batch_record(2);
+    batch_send(&mut adapter, &second_request);
+    let blocked = batch_reply(&lost_stdout);
+    assert_eq!(blocked["code"], "full", "{blocked}");
+    assert_eq!(
+        blocked["delivery_state"], "refused_before_acceptance",
+        "{blocked}"
+    );
+    assert_eq!(blocked["report_id"], second_request["report_id"]);
+    // Release the adapter's exclusive SQLite lock before inspecting its outbox.
     adapter.kill_wait();
     fault.join().unwrap();
+    let db = rusqlite::Connection::open_with_flags(
+        outbox.join("outbox.sqlite"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
+    let count = |request: &Value| -> u64 {
+        db.query_row(
+            "SELECT count(*) FROM reports WHERE report_id=?1",
+            [request["report_id"].as_str().unwrap()],
+            |row| row.get(0),
+        )
+        .unwrap()
+    };
+    assert_eq!(count(&first_request), 1);
+    let pending: u64 = db.query_row(
+        "SELECT count(*) FROM reports WHERE report_id=?1 AND ordinal=1 AND length(digest)=32 AND payload IS NOT NULL AND receipt IS NULL",
+        [first_request["report_id"].as_str().unwrap()], |row| row.get(0),
+    ).unwrap();
+    assert_eq!(pending, 1);
+    assert_eq!(count(&second_request), 0);
+    drop(db);
     assert_eq!(first_receipt.id, 1);
     assert_eq!(source.health().canonical_through, 0);
 
@@ -1088,10 +1121,18 @@ fn batch_adapter_replays_a_committed_report_and_projects_130_runs() {
         .unwrap()
         .to_owned()]);
     for sequence in 2..=130 {
-        let report = batch_record(sequence);
+        let report = if sequence == 2 {
+            second_request.clone()
+        } else {
+            batch_record(sequence)
+        };
         runs.insert(report["context"]["run_id"].as_str().unwrap().to_owned());
         batch_send(&mut adapter, &report);
         let reply = batch_reply(&responses);
+        if sequence == 2 {
+            assert_eq!(reply["delivery_state"], "custody_confirmed", "{reply}");
+            assert_eq!(reply["report_id"], second_request["report_id"]);
+        }
         let receipt: Receipt = serde_json::from_value(reply["receipt"].clone())
             .unwrap_or_else(|error| panic!("report {sequence}: {reply}: {error}"));
         assert_eq!(receipt.id, sequence);
