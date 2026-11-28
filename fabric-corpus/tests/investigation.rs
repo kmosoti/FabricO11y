@@ -168,6 +168,8 @@ fn omission_missing_and_bounds_are_explicit() {
         groups,
     );
     let r = investigation::project(&bytes, digest, BTreeSet::from([a]), Limits::default()).unwrap();
+    assert!(r.nodes[&a].groups[0].enumeration_complete);
+    assert!(!r.truncated);
     let premises = &r.nodes[&a].groups[0].premises;
     let m = premises.iter().find(|p| p.revision == missing).unwrap();
     assert_eq!(
@@ -190,7 +192,7 @@ fn omission_missing_and_bounds_are_explicit() {
     )
     .unwrap();
     assert!(limited.truncated);
-    assert!(!limited.nodes[&a].groups[0].complete);
+    assert!(!limited.nodes[&a].groups[0].enumeration_complete);
     assert_eq!(
         limited,
         investigation::project(
