@@ -111,4 +111,15 @@ prepopulate custody to cover existing records, retry them through the real CLI
 service, read/export, restart and verify export progress to a following record.
 The `readback_envelope` fuzz target has no exemption for normalization expansion.
 Declared lifecycle coverage and its limitations are recorded in the verification
-coverage manifest and checked by native acceptance.
+coverage manifest and checked by native acceptance. The partial-flush fixture
+obstructs a partition flush and then the watermark commit. It checks that both
+maintenance paths preserve pending partitions and can evict them after the
+watermark commits. A separate small-quota fixture runs real partition eviction.
+These checks use exact library selectors and reject zero or ignored tests.
+
+The real RSS watchdog fixture requires a single test process in a collected
+`fabrico11y.slice` service with the documented memory limits and no swap. It
+exercises the process RSS guard and the shared optional-history shedding
+branch. Run it as the separate confined Linux resource qualification. A
+passing shared native check does not establish that runner capability, the
+full daemon tick under pressure, or power-loss durability.

@@ -14,6 +14,10 @@ Retire the two-branch `develop` -> `main` promotion workflow and `.github/workfl
 4. **Preserved Host & Scope Invariants:**
    - Zero `/tmp` / `/dev/shm` usage (`CARGO_BUILD_TARGET_DIR=/data/cargo-target`, `TMPDIR=/data/tmp`, `FABRIC_DATA_DIR=/data/fabrico11y`), Zero-UI CLI scope, `fabrico11y.slice` confinement, and Sans-I/O crate isolation remain unchanged.
 
+The historical product-wide UI prohibition above is superseded by
+[D-0192](D-0192-optional-frontend.md). The other historical workflow and
+operating constraints are governed by their current decisions and rules.
+
 ## Alternatives Considered
 
 - **Keep `develop` + `main-human-gate.yml`:** Rejected because `main` and `develop` carried identical trees via rebase and the GitHub Environment promotion workflow added friction without extra safety over native `main` branch protection + `.github/CODEOWNERS` (`* @kmosoti`) + non-admin collaborator `push` permissions.

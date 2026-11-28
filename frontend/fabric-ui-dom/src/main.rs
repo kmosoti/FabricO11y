@@ -3,7 +3,7 @@ use fabric_app_core::{Effect, Event, MAX_RESPONSE_BYTES, Phase, State};
 use fabric_query_contract::{
     API_VERSION, Budgets, Filter, Operation, QueryRequest, RunKey, RunSummary,
 };
-use leptos::prelude::*;
+use leptos::{prelude::*, reactive::owner::LocalStorage};
 use wasm_bindgen::{JsCast, JsValue, closure::Closure};
 use wasm_bindgen_futures::{JsFuture, spawn_local};
 use web_sys::{
@@ -37,7 +37,10 @@ fn focus_results() {
     }
 }
 // A gateway owns authentication and authorization. The browser sends no canonical credential.
-async fn fetch_query(mut query: QueryRequest) -> Result<Vec<u8>, &'static str> {
+async fn fetch_query(
+    mut query: QueryRequest,
+    controller: AbortController,
+) -> Result<Vec<u8>, &'static str> {
     let window = web_sys::window().ok_or("Browser unavailable")?;
     // Request labels separate simultaneous reads across browser instances.
     // Scope and snapshot remain the reducer's exact typed selection.
@@ -48,7 +51,6 @@ async fn fetch_query(mut query: QueryRequest) -> Result<Vec<u8>, &'static str> {
         .map_err(|_| "Could not label request")?;
     query.query_id = format!("ui-{:032x}", u128::from_be_bytes(entropy));
     let body = serde_json::to_string(&query).map_err(|_| "Invalid request")?;
-    let controller = AbortController::new().map_err(|_| "Could not start request deadline")?;
     let deadline_controller = controller.clone();
     let callback = Closure::wrap(Box::new(move || deadline_controller.abort()) as Box<dyn FnMut()>);
     // One absolute deadline covers both headers and every body chunk.
@@ -132,25 +134,64 @@ async fn fetch_query(mut query: QueryRequest) -> Result<Vec<u8>, &'static str> {
     }
     Ok(bytes)
 }
-fn dispatch(state: RwSignal<State>, message: RwSignal<String>, effect: Option<Effect>) {
-    if let Some(Effect::Request {
-        generation,
-        request,
-    }) = effect
-    {
-        spawn_local(async move {
-            let result = fetch_query(*request).await;
-            state.update(|s| {
-                if s.generation() != generation || s.phase() != Phase::Loading { return; }
-                match result {
-                    Ok(bytes) => match s.transition(Event::Response { generation, bytes }) {
-                        Ok(_) => message.set(String::new()),
-                        Err(_) => { let _ = s.transition(Event::Disconnected); message.set("The response did not match the requested scope, snapshot, or limits".into()); }
-                    },
-                    Err(error) => { let _ = s.transition(Event::Disconnected); message.set(error.into()); }
+type ActiveRequest = RwSignal<Option<(u32, AbortController)>, LocalStorage>;
+fn dispatch(
+    state: RwSignal<State>,
+    message: RwSignal<String>,
+    active: ActiveRequest,
+    retry: RwSignal<Option<QueryRequest>>,
+    effect: Option<Effect>,
+) {
+    match effect {
+        Some(Effect::Request {
+            generation,
+            request,
+        }) => {
+            let mut fresh = (*request).clone();
+            // Restart a cancelled page from the first page at its pinned snapshot.
+            fresh.cursor = None;
+            retry.set(Some(fresh));
+            let controller = match AbortController::new() {
+                Ok(value) => value,
+                Err(_) => {
+                    state.update(|s| {
+                        let _ = s.transition(Event::Disconnected);
+                    });
+                    message.set("Could not start the query.".into());
+                    return;
+                }
+            };
+            // Register synchronously, before the asynchronous fetch can start.
+            active.set(Some((generation, controller.clone())));
+            spawn_local(async move {
+                let result = fetch_query(*request, controller).await;
+                active.update(|slot| {
+                    if slot.as_ref().is_some_and(|(g, _)| *g == generation) {
+                        *slot = None;
+                    }
+                });
+                state.update(|s| {
+                    if s.generation() != generation || s.phase() != Phase::Loading { return; }
+                    match result {
+                        Ok(bytes) => match s.transition(Event::Response { generation, bytes }) {
+                            Ok(_) => message.set(String::new()),
+                            Err(_) => { let _ = s.transition(Event::Disconnected); message.set("The response did not match the requested scope, snapshot, or limits".into()); }
+                        },
+                        Err(error) => { let _ = s.transition(Event::Disconnected); message.set(error.into()); }
+                    }
+                });
+            });
+        }
+        Some(Effect::Cancel { generation }) => {
+            active.update(|slot| {
+                if slot.as_ref().is_some_and(|(g, _)| *g == generation)
+                    && let Some((_, controller)) = slot.take()
+                {
+                    controller.abort();
                 }
             });
-        });
+        }
+        None => {}
     }
 }
 fn key_text(key: &RunKey) -> String {
@@ -193,6 +234,8 @@ fn summary(row: RunSummary) -> impl IntoView {
 fn App() -> impl IntoView {
     let state = RwSignal::new(State::default());
     let base = RwSignal::new(None::<QueryRequest>);
+    let retry = RwSignal::new(None::<QueryRequest>);
+    let active = RwSignal::new_local(None::<(u32, AbortController)>);
     let authority = RwSignal::new(String::new());
     let scope = RwSignal::new(String::new());
     let message = RwSignal::new(String::new());
@@ -227,7 +270,7 @@ fn App() -> impl IntoView {
                 detail.set(false);
                 message.set(String::new());
                 state.set(current);
-                dispatch(state, message, t.effect);
+                dispatch(state, message, active, retry, t.effect);
             }
             Err(_) => {
                 message.set("Enter a valid authority and comma-separated source scope".into())
@@ -250,10 +293,40 @@ fn App() -> impl IntoView {
                 detail.set(false);
                 message.set(String::new());
                 state.set(current);
-                dispatch(state, message, t.effect);
+                dispatch(state, message, active, retry, t.effect);
                 focus_results();
             }
             Err(_) => message.set("Could not return to runs".into()),
+        }
+    };
+    let cancel = move |_| {
+        let mut current = state.get_untracked();
+        if let Ok(t) = current.transition(Event::Cancel) {
+            state.set(current);
+            message.set("Stopped waiting. Backend work may still continue.".into());
+            dispatch(state, message, active, retry, t.effect);
+            focus_results();
+        }
+    };
+    let retry_read = move |_| {
+        let Some(request) = retry.get_untracked() else {
+            return;
+        };
+        let Some(expected_authority) = request.authority.clone() else {
+            return;
+        };
+        let mut current = state.get_untracked();
+        match current.transition(Event::Start {
+            request: Box::new(request),
+            expected_authority,
+        }) {
+            Ok(t) => {
+                state.set(current);
+                message.set(String::new());
+                dispatch(state, message, active, retry, t.effect);
+                focus_results();
+            }
+            Err(_) => message.set("Could not retry the query.".into()),
         }
     };
     let select = move |index: usize| {
@@ -286,7 +359,7 @@ fn App() -> impl IntoView {
                 detail.set(true);
                 message.set(String::new());
                 state.set(current);
-                dispatch(state, message, t.effect);
+                dispatch(state, message, active, retry, t.effect);
                 focus_results();
             }
             Err(_) => message.set("Could not start the summary query".into()),
@@ -302,8 +375,10 @@ fn App() -> impl IntoView {
           </form>
           <p class="status" role="status" aria-live="polite">{move || {
               let s = state.get(); let m = message.get();
-              if !m.is_empty() { m } else { match s.phase() { Phase::Idle => String::new(), Phase::Loading => "Loading…".into(), Phase::Ready if s.rows().is_empty() => "No runs returned for this scope and snapshot".into(), Phase::Ready => "Results ready".into(), Phase::Cancelled => "Request cancelled".into(), Phase::Unknown => "The connection was lost. The request outcome is unknown.".into() } }
+              if !m.is_empty() { m } else { match s.phase() { Phase::Idle => String::new(), Phase::Loading => "Loading…".into(), Phase::Ready if s.rows().is_empty() => "No runs returned for this scope and snapshot".into(), Phase::Ready => "Results ready".into(), Phase::Cancelled => "Stopped waiting. Backend work may still continue.".into(), Phase::Unknown => "The connection was lost. The request outcome is unknown.".into() } }
           }}</p>
+          {move || (state.get().phase() == Phase::Loading).then(|| view! { <button type="button" on:click=cancel>"Stop waiting"</button> })}
+          {move || matches!(state.get().phase(), Phase::Cancelled | Phase::Unknown).then(|| view! { <div><button type="button" on:click=retry_read>"Retry read"</button><p>"A retry starts a fresh read. A paged list starts again at its pinned snapshot."</p></div> })}
           {move || if detail.get() { Some(view! { <button type="button" disabled=move || state.get().phase() == Phase::Loading on:click=back>"← Back to runs"</button> }) } else { None }}
           <h2 id="results-heading" tabindex="-1">{move || if detail.get() { "Run aggregate summary" } else { "Runs" }}</h2>
           {move || if detail.get() {
@@ -311,7 +386,7 @@ fn App() -> impl IntoView {
           } else {
             let rows = state.get().rows().to_vec();
             view! { <ol class="ledger">{rows.into_iter().enumerate().map(|(i, row)| { let key = key_text(&row.run); let label = format!("Inspect summary for {key}"); view! { <li><code>{key}</code><button type="button" aria-label=label disabled=move || state.get().phase() == Phase::Loading on:click=move |_| select(i)>"Inspect summary"</button></li> } }).collect_view()}</ol>
-            <button type="button" disabled=move || state.get().phase() != Phase::Ready || state.get().next_cursor().is_none() on:click=move |_| { let mut s = state.get_untracked(); if let Ok(t) = s.transition(Event::Next) { state.set(s); dispatch(state, message, t.effect); } }>"Next page"</button> }.into_any()
+            <button type="button" disabled=move || state.get().phase() != Phase::Ready || state.get().next_cursor().is_none() on:click=move |_| { let mut s = state.get_untracked(); if let Ok(t) = s.transition(Event::Next) { state.set(s); dispatch(state, message, active, retry, t.effect); } }>"Next page"</button> }.into_any()
           }}
           {move || { let coverages = state.get().coverages().to_vec(); (!coverages.is_empty()).then(|| view! { <section class="coverage"><h2>"Coverage"</h2>{coverages.into_iter().enumerate().map(|(i,c)| view! { <div><h3>{format!("Page {}", i + 1)}</h3><p>{if c.complete { "Complete" } else { "Partial. More results available." }}</p><dl><dt>"Authority"</dt><dd>{c.canonical_authority}</dd><dt>"Sources"</dt><dd>{c.scope.join(", ")}</dd><dt>"Snapshot"</dt><dd>{serde_json::to_string(&c.snapshot).unwrap_or_default()}</dd><dt>"Reported gaps"</dt><dd>{if c.observed_gaps.is_empty() { "None reported".to_owned() } else { c.observed_gaps.join(", ") }}</dd></dl></div> }).collect_view()}</section> }) }}
         </main>

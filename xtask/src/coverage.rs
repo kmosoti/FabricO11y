@@ -24,7 +24,9 @@ struct Invariant {
 struct Check {
     id: String,
     package: String,
-    target: String,
+    target: Option<String>,
+    #[serde(default)]
+    library: bool,
     test: String,
 }
 fn identifier(value: &str) -> bool {
@@ -50,7 +52,11 @@ impl Manifest {
             if !identifier(&c.id)
                 || !ids.insert(&c.id)
                 || !identifier(&c.package)
-                || !identifier(&c.target)
+                || !match (c.library, c.target.as_deref()) {
+                    (false, Some(target)) => identifier(target),
+                    (true, None) => true,
+                    _ => false,
+                }
                 || c.test.is_empty()
                 || c.test.len() > 256
                 || !c
@@ -188,6 +194,13 @@ fn configure_cargo_env(command: &mut Command, root: &Path) -> Result<(), String>
     Ok(())
 }
 
+fn cargo_target_arguments(target: Option<&str>) -> Vec<&str> {
+    match target {
+        Some(name) => vec!["--test", name],
+        None => vec!["--lib"],
+    }
+}
+
 pub fn run(root: &Path) -> Result<(), String> {
     let report_path = root.join(".local/coverage.json");
     match fs::remove_file(&report_path) {
@@ -202,18 +215,20 @@ pub fn run(root: &Path) -> Result<(), String> {
     // 120s per-test execution timeout so cold Arrow/DataFusion builds do not starve tests.
     let mut build_targets = BTreeSet::new();
     for check in &manifest.checks {
-        build_targets.insert((check.package.as_str(), check.target.as_str()));
+        build_targets.insert((check.package.as_str(), check.target.as_deref()));
     }
     for (package, target) in build_targets {
         let mut build = Command::new("timeout");
-        build.args([
-            "600", "cargo", "test", "--locked", "-p", package, "--test", target, "--no-run",
-        ]);
+        build
+            .args(["600", "cargo", "test", "--locked", "-p", package])
+            .args(cargo_target_arguments(target))
+            .arg("--no-run");
         configure_cargo_env(&mut build, root)?;
         let output = build.output().map_err(|e| e.to_string())?;
         if !output.status.success() {
             return Err(format!(
-                "coverage prebuild {package}/{target} failed: {}\n{}\n{}",
+                "coverage prebuild {package}/{} failed: {}\n{}\n{}",
+                target.unwrap_or("--lib"),
                 output.status,
                 String::from_utf8_lossy(&output.stdout),
                 String::from_utf8_lossy(&output.stderr)
@@ -224,20 +239,10 @@ pub fn run(root: &Path) -> Result<(), String> {
     let mut results = Vec::new();
     for check in &manifest.checks {
         let mut command = Command::new("timeout");
-        command.args([
-            "120",
-            "cargo",
-            "test",
-            "--locked",
-            "-p",
-            &check.package,
-            "--test",
-            &check.target,
-            &check.test,
-            "--",
-            "--exact",
-            "--test-threads=1",
-        ]);
+        command
+            .args(["120", "cargo", "test", "--locked", "-p", &check.package])
+            .args(cargo_target_arguments(check.target.as_deref()))
+            .args([&check.test, "--", "--exact", "--test-threads=1"]);
         configure_cargo_env(&mut command, root)?;
         let output = command.output().map_err(|e| e.to_string())?;
         if !output.status.success()
@@ -327,7 +332,8 @@ mod tests {
             checks: vec![Check {
                 id: "lifecycle".into(),
                 package: "fabric".into(),
-                target: "readback_lifecycle".into(),
+                target: Some("readback_lifecycle".into()),
+                library: false,
                 test: "lifecycle".into(),
             }],
         }
@@ -351,6 +357,17 @@ mod tests {
         let mut bad = m;
         bad.invariants.push(bad.invariants[0].clone());
         assert!(bad.validate().is_err());
+    }
+    #[test]
+    fn library_target_requires_the_explicit_form() {
+        let mut manifest = valid();
+        manifest.checks[0].library = true;
+        assert!(manifest.validate().is_err());
+        manifest.checks[0].target = None;
+        assert!(manifest.validate().is_ok());
+        assert_eq!(cargo_target_arguments(None), ["--lib"]);
+        manifest.checks[0].library = false;
+        assert!(manifest.validate().is_err());
     }
     #[test]
     fn broad_success_zero_matches_and_ignored_do_not_cover() {

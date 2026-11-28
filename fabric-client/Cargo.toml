@@ -1,6 +1,6 @@
 [package]
 name = "fabric-client"
-version = "0.1.1-alpha.2"
+version = "0.2.0-rc.1"
 edition.workspace = true
 license.workspace = true
 description = "Zero-UI async client and strongly typed fabric.cli.v1 schemas for FabricO11y"

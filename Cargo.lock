@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "admission-kernel"
-version = "0.1.1-alpha.2"
+version = "0.2.0-rc.1"
 dependencies = [
  "vstd",
 ]
@@ -1389,7 +1389,7 @@ dependencies = [
 
 [[package]]
 name = "fabric"
-version = "0.1.1-alpha.2"
+version = "0.2.0-rc.1"
 dependencies = [
  "admission-kernel",
  "fabric-evidence",
@@ -1407,14 +1407,14 @@ dependencies = [
 
 [[package]]
 name = "fabric-alert"
-version = "0.1.1-alpha.2"
+version = "0.2.0-rc.1"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "fabric-cli"
-version = "0.1.1-alpha.2"
+version = "0.2.0-rc.1"
 dependencies = [
  "admission-kernel",
  "arrow",
@@ -1436,7 +1436,7 @@ dependencies = [
 
 [[package]]
 name = "fabric-client"
-version = "0.1.1-alpha.2"
+version = "0.2.0-rc.1"
 dependencies = [
  "fabric",
  "fabric-query-contract",
@@ -1447,7 +1447,7 @@ dependencies = [
 
 [[package]]
 name = "fabric-collect"
-version = "0.1.1-alpha.2"
+version = "0.2.0-rc.1"
 dependencies = [
  "admission-kernel",
  "chrono",
@@ -1467,11 +1467,11 @@ dependencies = [
 
 [[package]]
 name = "fabric-colloquium"
-version = "0.1.1-alpha.2"
+version = "0.2.0-rc.1"
 
 [[package]]
 name = "fabric-core"
-version = "0.1.1-alpha.2"
+version = "0.2.0-rc.1"
 dependencies = [
  "admission-kernel",
  "arrow",
@@ -1484,7 +1484,7 @@ dependencies = [
 
 [[package]]
 name = "fabric-corpus"
-version = "0.1.1-alpha.2"
+version = "0.2.0-rc.1"
 dependencies = [
  "serde_json",
  "sha2",
@@ -1492,7 +1492,7 @@ dependencies = [
 
 [[package]]
 name = "fabric-evidence"
-version = "0.1.1-alpha.2"
+version = "0.2.0-rc.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -1501,7 +1501,7 @@ dependencies = [
 
 [[package]]
 name = "fabric-graph"
-version = "0.1.1-alpha.2"
+version = "0.2.0-rc.1"
 dependencies = [
  "arrow",
  "fabric-core",
@@ -1512,7 +1512,7 @@ dependencies = [
 
 [[package]]
 name = "fabric-mcp"
-version = "0.1.1-alpha.2"
+version = "0.2.0-rc.1"
 dependencies = [
  "fabric",
  "fabric-client",
@@ -1531,11 +1531,11 @@ dependencies = [
 
 [[package]]
 name = "fabric-ops"
-version = "0.1.1-alpha.2"
+version = "0.2.0-rc.1"
 
 [[package]]
 name = "fabric-query"
-version = "0.1.1-alpha.2"
+version = "0.2.0-rc.1"
 dependencies = [
  "arrow",
  "bytes",
@@ -1557,7 +1557,7 @@ dependencies = [
 
 [[package]]
 name = "fabric-query-contract"
-version = "0.1.1-alpha.2"
+version = "0.2.0-rc.1"
 dependencies = [
  "fabric-ops",
  "schemars",
@@ -1567,7 +1567,7 @@ dependencies = [
 
 [[package]]
 name = "fabric-server"
-version = "0.1.1-alpha.2"
+version = "0.2.0-rc.1"
 dependencies = [
  "admission-kernel",
  "chrono",
@@ -1588,7 +1588,7 @@ dependencies = [
 
 [[package]]
 name = "fabric-store"
-version = "0.1.1-alpha.2"
+version = "0.2.0-rc.1"
 dependencies = [
  "admission-kernel",
  "arrow",
@@ -3749,7 +3749,7 @@ checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
 
 [[package]]
 name = "xtask"
-version = "0.1.1-alpha.2"
+version = "0.2.0-rc.1"
 dependencies = [
  "arrow-array",
  "arrow-ipc",
