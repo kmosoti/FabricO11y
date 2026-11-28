@@ -111,6 +111,13 @@ pub enum DaemonRequest {
     HotMetrics {
         since_ms: i64,
     },
+    LiveMetricsV1 {
+        origin: Option<String>,
+        epoch: Option<String>,
+        after: u64,
+        count: usize,
+        max_bytes: usize,
+    },
     Flush,
 }
 
@@ -125,6 +132,7 @@ pub enum DaemonResponse {
     Lineage(LineageSubgraph),
     Drift(DriftReport),
     HotMetrics { points: Vec<MetricPoint> },
+    LiveMetricsV1(crate::live_cursor::LivePage),
     Flushed { rows: usize },
     Error { message: String },
 }
@@ -348,22 +356,31 @@ fn enqueue_spindle_record(
         if SpindleProjectionRange::include(&mut staging.range, &key).is_err() {
             return false;
         }
-        let provenance = Some(key);
+        let provenance = Some(key.clone());
         match env {
             IngestEnvelope::Metric(mut pt) => {
                 if pt.timestamp_ms <= 0 {
                     pt.timestamp_ms = now_ms;
                 }
                 hot_metric = cache_hot.then(|| pt.clone());
+                if let Some(cursor) = runtime.live_cursor.lock().as_mut() {
+                    cursor.observe(&key.origin, key.record_id, Some(&pt), cache_hot);
+                }
                 staging.metrics.push((provenance, pt));
             }
             IngestEnvelope::Log(mut log) => {
+                if let Some(cursor) = runtime.live_cursor.lock().as_mut() {
+                    cursor.observe(&key.origin, key.record_id, None, cache_hot);
+                }
                 if log.timestamp_ms <= 0 {
                     log.timestamp_ms = now_ms;
                 }
                 staging.logs.push((provenance, log));
             }
             IngestEnvelope::Trace(mut span) => {
+                if let Some(cursor) = runtime.live_cursor.lock().as_mut() {
+                    cursor.observe(&key.origin, key.record_id, None, cache_hot);
+                }
                 if span.timestamp_ms <= 0 {
                     span.timestamp_ms = now_ms;
                 }
@@ -666,6 +683,7 @@ struct DaemonRuntime {
     _writer_lock: fabric_store::WriterLockGuard,
     flush_lock: Mutex<()>,
     ring: RwLock<HotMetricRing>,
+    live_cursor: Mutex<Option<crate::live_cursor::LiveCursor>>,
     latest: RwLock<Option<CollectedState>>,
     pending_logs: RwLock<Vec<LogRecord>>,
     pending_traces: RwLock<Vec<TraceSpanRecord>>,
@@ -1063,6 +1081,26 @@ impl DaemonRuntime {
                     },
                 }
             }
+            DaemonRequest::LiveMetricsV1 {
+                origin,
+                epoch,
+                after,
+                count,
+                max_bytes,
+            } => {
+                let cursor = self.live_cursor.lock();
+                match cursor
+                    .as_ref()
+                    .ok_or("live cursor disabled")
+                    .and_then(|cursor| {
+                        cursor.page(origin.as_deref(), epoch.as_deref(), after, count, max_bytes)
+                    }) {
+                    Ok(page) => DaemonResponse::LiveMetricsV1(page),
+                    Err(message) => DaemonResponse::Error {
+                        message: message.into(),
+                    },
+                }
+            }
             DaemonRequest::HotMetrics { since_ms } => DaemonResponse::HotMetrics {
                 points: self.ring.read().query_since(since_ms),
             },
@@ -1148,6 +1186,30 @@ async fn run_daemon_mode(mut config: DaemonConfig, spindle_only: bool) -> Result
         total_dropped.clone(),
     );
 
+    let live_bytes = match std::env::var("FABRIC_LIVE_CURSOR_BYTES") {
+        Ok(raw) => raw
+            .parse::<usize>()
+            .map_err(|_| "invalid live cursor budget".to_owned())?,
+        Err(std::env::VarError::NotPresent) => 0,
+        Err(_) => return Err("invalid live cursor budget".into()),
+    };
+    let (ring_budget, live_cursor) = if live_bytes == 0 {
+        (config.ring_budget_bytes, None)
+    } else {
+        let ring_budget = config
+            .ring_budget_bytes
+            .checked_sub(live_bytes)
+            .filter(|n| *n >= 4096)
+            .ok_or("live cursor exceeds ring budget")?;
+        (
+            ring_budget,
+            Some(crate::live_cursor::LiveCursor::new(
+                live_bytes,
+                initial_spindle_watermark,
+            )?),
+        )
+    };
+
     let runtime = Arc::new(DaemonRuntime {
         start_instant: std::time::Instant::now(),
         config: config.clone(),
@@ -1156,7 +1218,8 @@ async fn run_daemon_mode(mut config: DaemonConfig, spindle_only: bool) -> Result
         janitor,
         _writer_lock: writer_lock,
         flush_lock: Mutex::new(()),
-        ring: RwLock::new(HotMetricRing::with_capacity_bytes(config.ring_budget_bytes)),
+        ring: RwLock::new(HotMetricRing::with_capacity_bytes(ring_budget)),
+        live_cursor: Mutex::new(live_cursor),
         latest: RwLock::new(None),
         pending_logs: RwLock::new(Vec::new()),
         pending_traces: RwLock::new(Vec::new()),
@@ -1306,6 +1369,9 @@ async fn run_daemon_mode(mut config: DaemonConfig, spindle_only: bool) -> Result
             _ = ticker.tick() => {
                 tick_count += 1;
                 let cgroup_pressure = crate::resource_budget::cgroup_memory_pressure();
+                if cgroup_pressure && let Some(cursor) = runtime.live_cursor.lock().as_mut() {
+                    cursor.clear_pressure();
+                }
 
                 // Drain bounded queues.
                 let extra_metrics = drain_telemetry_queues(
@@ -1349,6 +1415,7 @@ async fn run_daemon_mode(mut config: DaemonConfig, spindle_only: bool) -> Result
                                         spindle_backpressure = true;
                                         break;
                                     }
+                                    if let Some(cursor) = runtime.live_cursor.lock().as_mut() { cursor.observe(&key.origin, key.record_id, None, !cgroup_pressure); }
                                 } else if !enqueue_spindle_record(key, env, &runtime, !cgroup_pressure) {
                                     spindle_backpressure = true;
                                     break;
@@ -1548,6 +1615,7 @@ mod tests {
             _writer_lock: fabric_store::try_acquire_writer_lock(&layout).expect("writer lock"),
             flush_lock: Mutex::new(()),
             ring: RwLock::new(HotMetricRing::with_capacity_bytes(4096)),
+            live_cursor: Mutex::new(None),
             latest: RwLock::new(None),
             pending_logs: RwLock::new(Vec::new()),
             pending_traces: RwLock::new(Vec::new()),
@@ -1559,6 +1627,8 @@ mod tests {
             guard,
         };
 
+        *runtime.live_cursor.lock() =
+            Some(crate::live_cursor::LiveCursor::new(crate::live_cursor::MIN_BUDGET, 0).unwrap());
         // Stage metric, log, and trace Spindle records with IDs 1..=6.
         for id in 1..=2 {
             assert!(enqueue_test_spindle_record(
@@ -1576,6 +1646,36 @@ mod tests {
                 &runtime,
             ));
         }
+        let response = runtime.handle_rpc(DaemonRequest::LiveMetricsV1 {
+            origin: None,
+            epoch: None,
+            after: 0,
+            count: 4,
+            max_bytes: 4096,
+        });
+        let page = match response {
+            DaemonResponse::LiveMetricsV1(page) => page,
+            other => panic!("unexpected live page: {other:?}"),
+        };
+        assert_eq!(
+            page.entries
+                .iter()
+                .map(|entry| entry.record_id)
+                .collect::<Vec<_>>(),
+            vec![1, 2]
+        );
+        assert_eq!(page.observed_through, 2);
+        assert!(!page.gap);
+        assert!(matches!(
+            runtime.handle_rpc(DaemonRequest::LiveMetricsV1 {
+                origin: Some("wrong".into()),
+                epoch: Some(page.epoch),
+                after: 0,
+                count: 4,
+                max_bytes: 4096
+            }),
+            DaemonResponse::Error { .. }
+        ));
         for id in 3..=4 {
             assert!(enqueue_test_spindle_record(
                 id,
@@ -1724,6 +1824,7 @@ mod tests {
             _writer_lock: fabric_store::try_acquire_writer_lock(&layout).expect("writer lock"),
             flush_lock: Mutex::new(()),
             ring: RwLock::new(HotMetricRing::with_capacity_bytes(4096)),
+            live_cursor: Mutex::new(None),
             latest: RwLock::new(None),
             pending_logs: RwLock::new(Vec::new()),
             pending_traces: RwLock::new(Vec::new()),
@@ -1851,6 +1952,7 @@ mod tests {
             _writer_lock: fabric_store::try_acquire_writer_lock(&layout).expect("writer lock"),
             flush_lock: Mutex::new(()),
             ring: RwLock::new(HotMetricRing::with_capacity_bytes(4096)),
+            live_cursor: Mutex::new(None),
             latest: RwLock::new(None),
             pending_logs: RwLock::new(Vec::new()),
             pending_traces: RwLock::new(Vec::new()),
@@ -2125,6 +2227,7 @@ mod tests {
             _writer_lock: fabric_store::try_acquire_writer_lock(&layout).expect("writer lock"),
             flush_lock: Mutex::new(()),
             ring: RwLock::new(HotMetricRing::with_capacity_bytes(4096)),
+            live_cursor: Mutex::new(None),
             latest: RwLock::new(None),
             pending_logs: RwLock::new(Vec::new()),
             pending_traces: RwLock::new(Vec::new()),
@@ -2329,6 +2432,7 @@ mod tests {
             _writer_lock: fabric_store::try_acquire_writer_lock(&layout).expect("writer lock"),
             flush_lock: Mutex::new(()),
             ring: RwLock::new(HotMetricRing::with_capacity_bytes(65_536)),
+            live_cursor: Mutex::new(None),
             latest: RwLock::new(None),
             pending_logs: RwLock::new(Vec::new()),
             pending_traces: RwLock::new(Vec::new()),
@@ -2508,6 +2612,7 @@ mod tests {
             _writer_lock: fabric_store::try_acquire_writer_lock(&layout).expect("writer lock"),
             flush_lock: Mutex::new(()),
             ring: RwLock::new(HotMetricRing::with_capacity_bytes(65_536)),
+            live_cursor: Mutex::new(None),
             latest: RwLock::new(None),
             pending_logs: RwLock::new(Vec::new()),
             pending_traces: RwLock::new(Vec::new()),
@@ -2692,6 +2797,7 @@ mod tests {
             _writer_lock: fabric_store::try_acquire_writer_lock(&layout).expect("writer lock"),
             flush_lock: Mutex::new(()),
             ring: RwLock::new(HotMetricRing::with_capacity_bytes(65_536)),
+            live_cursor: Mutex::new(None),
             latest: RwLock::new(None),
             pending_logs: RwLock::new(Vec::new()),
             pending_traces: RwLock::new(Vec::new()),

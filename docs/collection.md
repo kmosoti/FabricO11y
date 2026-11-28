@@ -479,6 +479,33 @@ to `false`, keeping canonical access configured for already reclaimed records.
 Shadow mode can exhaust the local quota while verification is pending; its
 confirmed prefix is preserved and does not imply payload reclamation.
 
+## Local live metric cursor
+
+The optional daemon socket `live_metrics_v1` operation exposes admitted Spindle
+metrics in source record order to the same-UID local reader. It is disabled by
+default. Set `FABRIC_LIVE_CURSOR_BYTES` to a decimal byte budget from 32768 to
+1048576 to enable it; the value is carved from the configured hot-ring budget,
+and startup rejects a value that leaves less than 4096 bytes for the existing
+ring. The allocation is bounded to 128 retained metric entries and 8192 encoded
+bytes per entry. Memory pressure clears the live queue and records the affected
+metric positions.
+
+For a fresh cursor, send `origin: null`, `epoch: null`, `after: 0`, a `count`
+from 1 to 64, and `max_bytes` from 1024 to 32768. Once a trusted Spindle origin
+has been observed, the response supplies that origin and a fresh process epoch;
+continue with both values and `next_after`. Wrong origin, epoch, future position,
+or invalid limits are rejected. The operation reports `epoch_start_after`,
+`observed_through`, `highest_lost`, and a `gap` with its reason. A position equal
+to the highest lost position is beyond that loss; the epoch boundary remains
+separate. Nonmetric source records advance the observed position but are not
+reported as lost metrics. An oversized retained row requires a larger page
+budget; records too large to retain are reported as loss.
+
+This is a volatile local view, not a durable custody or projection frontier.
+Restart creates a new epoch. It does not cover host-only metrics or remote
+readers, and the collector's polling cadence does not promise a latency bound.
+The existing `hot_metrics` operation and its default budget remain available.
+
 ## Elastic collector memory
 
 The resident collector computes its default hot ring budget in bytes at
