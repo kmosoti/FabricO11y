@@ -332,6 +332,18 @@ pub fn publish_restore_files(
     directory: &File,
     expected: &ExpectedRestore,
 ) -> Result<PublishedRestore, PublishError> {
+    publish_restore_files_inner(manifest_file, artifact_file, directory, expected, || {})
+}
+
+// The callback is reached only after the unnamed inode has been verified and
+// synced, immediately before the first publication attempt.
+fn publish_restore_files_inner(
+    manifest_file: &File,
+    artifact_file: &File,
+    directory: &File,
+    expected: &ExpectedRestore,
+    before_link: impl FnOnce(),
+) -> Result<PublishedRestore, PublishError> {
     use rustix::fs::{AtFlags, Mode, OFlags, linkat, openat};
     use std::io::Write;
 
@@ -393,6 +405,7 @@ pub fn publish_restore_files(
         return Err(RestoreError::ArtifactDigest.into());
     }
     temp.sync_all().map_err(|_| PublishError::Unavailable)?;
+    before_link();
     match linkat(&temp, "", directory, basename.as_str(), AtFlags::EMPTY_PATH) {
         Ok(()) => {}
         Err(rustix::io::Errno::EXIST) => {
@@ -553,6 +566,145 @@ mod tests {
                 PublishError::ExistingUnavailable(ExistingFailure::Open(error.raw_os_error()))
             );
         }
+    }
+
+    #[test]
+    fn killed_before_link_leaves_no_published_restore_and_retry_succeeds() {
+        use std::{
+            io::Write,
+            os::unix::process::ExitStatusExt,
+            process::{Child, Command, Stdio},
+            time::{Duration, Instant},
+        };
+        const CHILD_ROOT: &str = "FABRIC_RESTORE_INTERRUPT_CHILD";
+        fn fixture(root: &std::path::Path) -> (File, File, File, ExpectedRestore) {
+            let bytes = b"bounded restore fixture";
+            let artifact_digest = digest(bytes);
+            let manifest = Manifest {
+                version: 1,
+                authority: "authority".into(),
+                origin: "origin".into(),
+                candidate_id: 7,
+                profile: Profile::Exact,
+                artifact_len: bytes.len() as u64,
+                artifact_digest,
+            };
+            let encoded = serde_json::to_vec(&manifest).unwrap();
+            let expected = ExpectedRestore {
+                authority: "authority".into(),
+                origin: "origin".into(),
+                candidate_id: 7,
+                manifest_digest: digest(&encoded),
+                artifact_digest,
+            };
+            (
+                File::open(root.join("manifest")).unwrap(),
+                File::open(root.join("artifact")).unwrap(),
+                File::open(root.join("output")).unwrap(),
+                expected,
+            )
+        }
+        if let Some(root) = std::env::var_os(CHILD_ROOT) {
+            let root = PathBuf::from(root);
+            let (manifest, artifact, dir, expected) = fixture(&root);
+            let result = publish_restore_files_inner(&manifest, &artifact, &dir, &expected, || {
+                let mut marker = fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(root.join("ready"))
+                    .unwrap();
+                marker
+                    .write_all(b"verified and synced before link")
+                    .unwrap();
+                marker.sync_all().unwrap();
+                loop {
+                    std::thread::park();
+                }
+            });
+            panic!("child unexpectedly returned: {result:?}");
+        }
+        struct Guard(Child);
+        impl Drop for Guard {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+                let _ = self.0.wait();
+            }
+        }
+        let root = tempfile::tempdir_in(PathBuf::from(
+            std::env::var_os("TMPDIR").expect("disk TMPDIR"),
+        ))
+        .unwrap();
+        let artifact = b"bounded restore fixture";
+        let artifact_digest = digest(artifact);
+        let manifest = Manifest {
+            version: 1,
+            authority: "authority".into(),
+            origin: "origin".into(),
+            candidate_id: 7,
+            profile: Profile::Exact,
+            artifact_len: artifact.len() as u64,
+            artifact_digest,
+        };
+        fs::write(
+            root.path().join("manifest"),
+            serde_json::to_vec(&manifest).unwrap(),
+        )
+        .unwrap();
+        fs::write(root.path().join("artifact"), artifact).unwrap();
+        fs::create_dir(root.path().join("output")).unwrap();
+        fs::write(root.path().join("output/unrelated"), b"existing").unwrap();
+        let mut child = Guard(Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "restored_evidence::tests::killed_before_link_leaves_no_published_restore_and_retry_succeeds", "--nocapture"])
+            .env(CHILD_ROOT, root.path()).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap());
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while !root.path().join("ready").exists() {
+            assert!(
+                child.0.try_wait().unwrap().is_none(),
+                "restore child exited before readiness"
+            );
+            assert!(
+                Instant::now() < deadline,
+                "restore child readiness deadline"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        child.0.kill().unwrap();
+        assert_eq!(child.0.wait().unwrap().signal(), Some(9));
+        assert_eq!(fs::read_dir(root.path().join("output")).unwrap().count(), 1);
+        assert_eq!(
+            fs::read(root.path().join("output/unrelated")).unwrap(),
+            b"existing"
+        );
+        let (manifest, artifact_file, dir, expected) = fixture(root.path());
+        let restored = publish_restore_files(&manifest, &artifact_file, &dir, &expected).unwrap();
+        assert_eq!(
+            fs::read(root.path().join("output").join(&restored.basename)).unwrap(),
+            artifact
+        );
+        assert_eq!(
+            restored.archive,
+            VerifiedArchive {
+                id: 7,
+                digest: artifact_digest
+            }
+        );
+        assert_eq!(
+            fs::read(root.path().join("output/unrelated")).unwrap(),
+            b"existing"
+        );
+        assert_eq!(
+            publish_restore_files(&manifest, &artifact_file, &dir, &expected)
+                .unwrap()
+                .basename,
+            restored.basename
+        );
+        let destination = root.path().join("output").join(&restored.basename);
+        fs::write(&destination, b"foreign existing bytes").unwrap();
+        assert!(matches!(
+            publish_restore_files(&manifest, &artifact_file, &dir, &expected),
+            Err(PublishError::ExistingMismatch)
+        ));
+        assert_eq!(fs::read(destination).unwrap(), b"foreign existing bytes");
     }
 
     #[test]
