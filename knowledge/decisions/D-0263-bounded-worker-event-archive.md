@@ -1,0 +1,7 @@
+# Bounded worker event replay archive
+
+Keep this profile as a finite on-disk replay input for the existing pure worker-segment verifier. A caller supplies ordered segment and terminal attempts, an exact-byte content claim for each event, the expected worker scope, and an independently retained physical digest for the complete archive. The archive format is versioned (`FWCA` v1), capped at 4 MiB total, 1,024 attempts, and 1 MiB per event. Replay checks the reopened regular file without following symlinks, verifies the exact physical digest and scope, and feeds the attempts in their recorded order to `WorkerSegmentVerifier`.
+
+The result retains each attempt outcome and reports the verifier's completeness state. A missing terminal, producer-declared incompleteness, drops, or rejected input stays incomplete; a missing archive, malformed or unsupported version, over-limit input, digest/scope mismatch, or storage failure is a typed refusal with no completion result. The archive is written by atomic replacement at a caller-selected name in a caller-controlled dedicated directory; it is not append-only history.
+
+This profile records only the finite transcript supplied to it. It does not capture a live worker stream, authenticate a producer, reserve archive space, establish custody or retention, or act as a durable worker checkpoint. A caller must retain the expected digest and directory ownership independently. Consider a separate capture/authority contract only if a concrete caller needs live event admission or durable worker authority.

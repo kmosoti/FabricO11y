@@ -565,3 +565,13 @@ date = 2026-11-27
 added_by = "agent"
 human_ratified = false
 related = []
+
+[[records]]
+id = "D-0263"
+source_path = "knowledge/decisions/D-0263-bounded-worker-event-archive.md"
+title = "Bounded worker event replay archive"
+type = "decision"
+status = "proposed"
+date = 2026-11-28
+added_by = "agent"
+human_ratified = false
