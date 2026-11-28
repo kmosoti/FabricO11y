@@ -34,6 +34,7 @@ use std::sync::atomic::AtomicU64;
 use std::time::{Duration, Instant};
 
 mod guide;
+mod live_cursor;
 mod production_ready;
 mod projection_ready;
 mod settings;
@@ -89,6 +90,8 @@ enum Commands {
     Settings(DaemonArgs),
     /// Capture or inspect the latest live host, slice, cgroup, unit, and storage snapshot.
     Snapshot,
+    /// Read an ordered page from the local live metric cursor (JSON only).
+    LiveMetrics(live_cursor::Args),
     /// Query historical ZSTD Parquet + hot RAM ring/live state via DataFusion.
     Query(QueryArgs),
     /// Traverse causal upstream/downstream lineage around a path, unit, slice, PID, or agent.
@@ -264,6 +267,7 @@ async fn run() -> Result<(), String> {
         | Commands::Settings(_) => {
             unreachable!("commands dispatched before storage access")
         }
+        Commands::LiveMetrics(args) => live_cursor::run(&layout, args, format).await,
         Commands::Snapshot => {
             let snap = fetch_snapshot(&layout, &tmp_dir)?;
             match format {

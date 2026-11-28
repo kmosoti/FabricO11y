@@ -506,6 +506,11 @@ budget; records too large to retain are reported as loss.
 This is a volatile local view, not a durable custody or projection frontier.
 Restart creates a new epoch. It does not cover host-only metrics or remote
 readers, and the collector's polling cadence does not promise a latency bound.
+The CLI exposes the same view as `fabric --json live-metrics`. Resume with
+`--origin ORIGIN --epoch EPOCH --after NEXT_AFTER`; `--count` and `--max-bytes`
+set the bounded page size. The command returns the versioned CLI JSON envelope
+and fails on a socket or cursor error; it does not query timestamp history.
+
 The existing `hot_metrics` operation and its default budget remain available.
 Rust consumers using `fabric-client` with its direct daemon-socket transport can
 call `FabricClient::try_query_live_metrics` with the shared `LiveCursorRequest`.
