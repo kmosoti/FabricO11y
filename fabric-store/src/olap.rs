@@ -2810,6 +2810,7 @@ enum PublishStageError {
 #[cfg(test)]
 thread_local! {
     static TEST_ALLOCATION_REFUSAL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static TEST_POST_RENAME_PARTITION_SYNC_FAILURE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 enum StagingOutcome {
@@ -3570,6 +3571,12 @@ impl OlapParquetStore {
                 )));
             }
             Err(err) => return Err(PublishStageError::PostRenameVerify(err)),
+        }
+        #[cfg(test)]
+        if TEST_POST_RENAME_PARTITION_SYNC_FAILURE.with(|flag| flag.replace(false)) {
+            return Err(PublishStageError::PostRenameSync(
+                "injected post-rename partition directory sync failure".to_owned(),
+            ));
         }
         part_fd.sync_all().map_err(|e| {
             PublishStageError::PostRenameSync(format!(
@@ -4497,6 +4504,16 @@ impl OlapParquetStore {
     #[cfg(test)]
     pub(crate) fn set_test_allocation_refusal(value: bool) {
         TEST_ALLOCATION_REFUSAL.with(|flag| flag.set(value));
+    }
+
+    #[cfg(test)]
+    pub(crate) fn arm_test_post_rename_partition_sync_failure() {
+        TEST_POST_RENAME_PARTITION_SYNC_FAILURE.with(|flag| flag.set(true));
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_post_rename_partition_sync_failure_pending() -> bool {
+        TEST_POST_RENAME_PARTITION_SYNC_FAILURE.with(std::cell::Cell::get)
     }
 
     fn write_batches_to_staging_bounded<I>(
