@@ -446,11 +446,24 @@ fn versioned_wire_compatibility_accepts_v2_v3_and_refuses_unannounced_extensions
     let bins = PathBuf::from(std::env::var_os("FABRIC_TEST_BIN_DIR").unwrap());
     let sandbox = xtask::evidence::non_tmp_tempdir().unwrap();
     let mut node = Node::open(&bins, sandbox.path(), "compat", "compat-fixture-credential");
-    let identity = json!({"producer":"compat-fixture","generation":"legacy","sequence":1});
+    let v3_producer = "compat-fixture-v3";
+    let lease = spindle::transport::request(
+        &node.config.socket,
+        &spindle::Request::LeaseForOrigin {
+            producer: v3_producer.into(),
+            expected_origin: node.origin.clone(),
+        },
+        Instant::now() + Duration::from_secs(3),
+    )
+    .unwrap();
+    let v3_generation = match lease {
+        Reply::Lease { generation, .. } => generation,
+        reply => panic!("Spindle refused the fixture generation lease: {reply:?}"),
+    };
     let v2 = json!({
         "version": 2,
         "registry": "fabrico11y/2",
-        "identity": identity,
+        "identity": {"producer": "compat-fixture-v2", "generation": "legacy", "sequence": 1},
         "timestamp_ns": 1,
         "resource": "fixture",
         "data": {"kind": "event", "name": "v2", "message": "old writer"}
@@ -460,7 +473,7 @@ fn versioned_wire_compatibility_accepts_v2_v3_and_refuses_unannounced_extensions
         "version": 3,
         "registry": "fabrico11y/3",
         "context": {"run_id": "00000000-0000-4000-8000-000000000001"},
-        "identity": {"producer": "compat-fixture", "generation": "legacy", "sequence": 2},
+        "identity": {"producer": v3_producer, "generation": v3_generation.as_str(), "sequence": 1},
         "timestamp_ns": 2,
         "resource": "fixture",
         "data": {"kind": "event", "name": "v3", "message": "new writer"}
@@ -476,7 +489,7 @@ fn versioned_wire_compatibility_accepts_v2_v3_and_refuses_unannounced_extensions
     let future_parent = json!({
         "version": 2,
         "registry": "fabrico11y/2",
-        "identity": {"producer": "compat-fixture", "generation": "legacy", "sequence": 3},
+        "identity": {"producer": "compat-fixture-v2", "generation": "legacy", "sequence": 2},
         "timestamp_ns": 3,
         "resource": "fixture",
         "data": {
@@ -494,7 +507,7 @@ fn versioned_wire_compatibility_accepts_v2_v3_and_refuses_unannounced_extensions
         "version": 3,
         "registry": "fabrico11y/3",
         "context": {"run_id": "00000000-0000-4000-8000-000000000001"},
-        "identity": {"producer": "compat-fixture", "generation": "legacy", "sequence": 3},
+        "identity": {"producer": v3_producer, "generation": v3_generation.as_str(), "sequence": 2},
         "timestamp_ns": 3,
         "resource": "fixture",
         "data": {
@@ -511,7 +524,7 @@ fn versioned_wire_compatibility_accepts_v2_v3_and_refuses_unannounced_extensions
     let future_version = json!({
         "version": 4,
         "registry": "fabrico11y/4",
-        "identity": {"producer": "compat-fixture", "generation": "legacy", "sequence": 3},
+        "identity": {"producer": v3_producer, "generation": v3_generation.as_str(), "sequence": 2},
         "timestamp_ns": 3,
         "resource": "fixture",
         "data": {"kind": "event", "name": "future", "message": "unsupported"}
@@ -542,7 +555,7 @@ fn versioned_wire_compatibility_accepts_v2_v3_and_refuses_unannounced_extensions
     let v2_next = json!({
         "version": 2,
         "registry": "fabrico11y/2",
-        "identity": {"producer": "compat-fixture", "generation": "legacy", "sequence": 3},
+        "identity": {"producer": "compat-fixture-v2", "generation": "legacy", "sequence": 2},
         "timestamp_ns": 3,
         "resource": "fixture",
         "data": {"kind": "event", "name": "v2", "message": "after refusals"}
