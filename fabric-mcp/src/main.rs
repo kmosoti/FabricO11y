@@ -272,15 +272,39 @@ impl Investigation {
                 None,
             ));
         }
-        self.exchange(Request::IssueSegmentTicket {
-            version: 1,
-            authority: input.authority,
-            origin: input.origin,
-            digest: input.digest,
-            start,
-            end,
-        })
-        .await
+        let response = self
+            .start_exchange(Request::IssueSegmentTicket {
+                version: 1,
+                authority: input.authority.clone(),
+                origin: input.origin.clone(),
+                digest: input.digest.clone(),
+                start,
+                end,
+            })?
+            .await
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        match &response {
+            Ok(Response::SegmentTicket { ticket })
+                if ticket.version == 1
+                    && ticket.authority == input.authority
+                    && ticket.origin == input.origin
+                    && ticket.digest == input.digest
+                    && ticket.start == start
+                    && ticket.end == end
+                    && ticket.expires > 0
+                    && ticket.mac.len() == 64
+                    && ticket
+                        .mac
+                        .bytes()
+                        .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) => {}
+            Ok(Response::Error { .. }) | Err(_) => {}
+            _ => {
+                return Ok(CallToolResult::error(vec![ContentBlock::text(
+                    "invalid segment ticket response",
+                )]));
+            }
+        }
+        Self::render(response)
     }
     #[tool(
         description = "Read receiver identity, supported schema versions and transport limits.",
