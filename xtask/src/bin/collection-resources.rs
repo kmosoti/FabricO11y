@@ -10,6 +10,54 @@ use std::{
     time::{Duration, Instant},
 };
 use xtask::collection_lab::{RESOURCE_WORKLOADS, config, daemon, rss_bytes};
+
+fn parse_args(
+    args: &[String],
+) -> Result<
+    (
+        Vec<xtask::collection_lab::ResourceWorkload>,
+        Option<PathBuf>,
+    ),
+    String,
+> {
+    let mut case = None;
+    let mut binary = None;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--help" | "-h" => {
+                return Err("usage: collection-resources [absolute-spindle-path] [--case short-record|full-width|sequence-width]".into());
+            }
+            "--case" => {
+                i += 1;
+                let value = args.get(i).ok_or("--case requires a workload name")?;
+                if case.replace(value.as_str()).is_some() {
+                    return Err("--case may be specified only once".into());
+                }
+            }
+            value if value.starts_with('-') => return Err(format!("unknown option: {value}")),
+            value => {
+                if binary.replace(value).is_some() {
+                    return Err("at most one absolute spindle path is accepted".into());
+                }
+            }
+        }
+        i += 1;
+    }
+    let selected: Vec<_> = match case {
+        None => RESOURCE_WORKLOADS.to_vec(),
+        Some(name) => RESOURCE_WORKLOADS
+            .iter()
+            .copied()
+            .filter(|workload| workload.case == name)
+            .collect(),
+    };
+    if selected.is_empty() {
+        return Err("unknown workload; choose short-record, full-width, or sequence-width".into());
+    }
+    Ok((selected, binary.map(PathBuf::from)))
+}
+
 fn main() {
     let args: Vec<_> = std::env::args().collect();
     if args.get(1).map(String::as_str) == Some("serve") {
@@ -18,18 +66,18 @@ fn main() {
         spindle::Daemon::open(cfg).unwrap().run().unwrap();
         return;
     }
-    assert!(
-        args.len() <= 2,
-        "usage: collection-resources [absolute-spindle-path]"
-    );
-    let binary = args
-        .get(1)
-        .map(PathBuf::from)
-        .unwrap_or_else(|| std::env::current_exe().unwrap());
+    if args[1..].iter().any(|arg| arg == "--help" || arg == "-h") {
+        println!(
+            "usage: collection-resources [absolute-spindle-path] [--case short-record|full-width|sequence-width]"
+        );
+        return;
+    }
+    let (workloads, binary_arg) = parse_args(&args[1..]).unwrap_or_else(|error| panic!("{error}"));
+    let binary = binary_arg.unwrap_or_else(|| std::env::current_exe().unwrap());
     assert!(binary.is_absolute() && binary.is_file());
     let mut reports = Vec::new();
     // Fixed coverage cases, not performance-selection holdouts.
-    for workload in RESOURCE_WORKLOADS {
+    for workload in workloads {
         let slots = workload.slots;
         let width = workload.record_capacity_bytes;
         let producers = workload.producers;
@@ -234,6 +282,40 @@ fn main() {
         "visible_cgroup_lifetime_peak_bytes":cgroup_peak,
         "scope":"One run per configuration; SDK calls include input drop but exclude input construction; all admission outcomes included. RSS snapshots include harness and allocator, not a hard bound or isolated delta. Daemon peaks are per-child lifetime, sampled before stop. Harness peak is process-lifetime. Cgroup memory.peak is read from normalized self membership only after validating a cgroup2 mount rooted at / on /sys/fs/cgroup and confirming this PID in cgroup.procs before and after; it is cumulative for that cgroup and descendants since creation, not per workload or reset. Proc RSS accounting can be approximate. Warm cache uncontrolled; no latency optimality claim."})
     );
+}
+
+#[cfg(test)]
+mod selector_tests {
+    use super::*;
+
+    #[test]
+    fn defaults_to_all_existing_workloads() {
+        let (selected, binary) = parse_args(&[]).unwrap();
+        assert_eq!(selected, RESOURCE_WORKLOADS.to_vec());
+        assert_eq!(binary, None);
+    }
+
+    #[test]
+    fn selects_exactly_one_workload_and_accepts_binary_path() {
+        let args = vec!["--case".into(), "full-width".into(), "/opt/spindle".into()];
+        let (selected, binary) = parse_args(&args).unwrap();
+        assert_eq!(selected, vec![RESOURCE_WORKLOADS[1]]);
+        assert_eq!(binary, Some(PathBuf::from("/opt/spindle")));
+    }
+
+    #[test]
+    fn rejects_unknown_or_repeated_selection() {
+        assert!(parse_args(&["--case".into(), "other".into()]).is_err());
+        assert!(
+            parse_args(&[
+                "--case".into(),
+                "full-width".into(),
+                "--case".into(),
+                "short-record".into()
+            ])
+            .is_err()
+        );
+    }
 }
 
 mod memory_peak {
