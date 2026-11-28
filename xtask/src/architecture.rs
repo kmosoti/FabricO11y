@@ -21,12 +21,14 @@ const PORTABLE_QUERY_ALLOW: &[&str] = &[
 struct Policy {
     crates: BTreeMap<String, Vec<String>>,
     headless: HeadlessPolicy,
+    optional_crates: BTreeMap<String, Vec<String>>,
 }
 
 #[derive(Deserialize)]
 struct HeadlessPolicy {
     roots: Vec<String>,
     renderer_families: Vec<String>,
+    optional_packages: Vec<String>,
 }
 fn audit(tokens: TokenStream) -> Result<(), String> {
     let mut declaration = false;
@@ -107,6 +109,73 @@ fn check_profile_graph(root_name: &str, graph: &str, allowed: &[&str]) -> Result
     Ok(())
 }
 
+// Only workspace members are reviewed; metadata --no-deps never fetches or
+// builds optional dependency closures. Lockfiles must already be present.
+fn check_optional_metadata(
+    metadata: &serde_json::Value,
+    policy: &Policy,
+    expected_members: &[&str],
+    expected_defaults: &[&str],
+) -> Result<(), String> {
+    let packages = metadata["packages"]
+        .as_array()
+        .ok_or("missing optional packages")?;
+    let members = metadata["workspace_members"]
+        .as_array()
+        .ok_or("missing optional members")?;
+    let defaults = metadata["workspace_default_members"]
+        .as_array()
+        .ok_or("missing optional defaults")?;
+    let names = |ids: &[serde_json::Value]| -> Result<Vec<String>, String> {
+        ids.iter()
+            .map(|id| {
+                let package = packages
+                    .iter()
+                    .find(|p| p["id"] == *id)
+                    .ok_or("unknown optional member")?;
+                Ok(package["name"]
+                    .as_str()
+                    .ok_or("missing optional name")?
+                    .to_owned())
+            })
+            .collect()
+    };
+    let mut actual = names(members)?;
+    let mut expected: Vec<String> = expected_members.iter().map(|s| (*s).into()).collect();
+    actual.sort();
+    expected.sort();
+    if actual != expected {
+        return Err("optional workspace members differ from policy".into());
+    }
+    let mut actual = names(defaults)?;
+    let mut expected: Vec<String> = expected_defaults.iter().map(|s| (*s).into()).collect();
+    actual.sort();
+    expected.sort();
+    if actual != expected {
+        return Err("optional workspace defaults differ from policy".into());
+    }
+    for name in names(members)? {
+        let package = packages
+            .iter()
+            .find(|p| p["name"].as_str() == Some(name.as_str()))
+            .ok_or("missing optional package")?;
+        let allowed = policy
+            .optional_crates
+            .get(&name)
+            .ok_or_else(|| format!("unreviewed optional crate: {name}"))?;
+        for dep in package["dependencies"]
+            .as_array()
+            .ok_or("missing optional dependencies")?
+        {
+            let dep = dep["name"].as_str().ok_or("missing dependency name")?;
+            if !allowed.iter().any(|a| a == dep) {
+                return Err(format!("unreviewed dependency {name} -> {dep}"));
+            }
+        }
+    }
+    Ok(())
+}
+
 pub fn check(root: &Path) -> Result<(), String> {
     let policy: Policy = toml::from_str(
         &fs::read_to_string(root.join("verification/architecture.toml"))
@@ -137,6 +206,35 @@ pub fn check(root: &Path) -> Result<(), String> {
             }
         }
     }
+    for (manifest, members, defaults) in [
+        (
+            "frontend/Cargo.toml",
+            &["fabric-app-core", "fabric-app-parity", "fabric-ui-dom"][..],
+            &["fabric-app-core"][..],
+        ),
+        (
+            "frontend/gateway/Cargo.toml",
+            &["fabric-ui-gateway-core"][..],
+            &["fabric-ui-gateway-core"][..],
+        ),
+    ] {
+        let metadata: serde_json::Value = serde_json::from_str(&super::output(
+            "cargo",
+            &[
+                "metadata",
+                "--no-deps",
+                "--format-version",
+                "1",
+                "--locked",
+                "--offline",
+                "--manifest-path",
+                manifest,
+            ],
+            root,
+        )?)
+        .map_err(|e| e.to_string())?;
+        check_optional_metadata(&metadata, &policy, members, defaults)?;
+    }
     let mut args = vec![
         "tree",
         "--locked",
@@ -155,12 +253,18 @@ pub fn check(root: &Path) -> Result<(), String> {
         .lines()
         .filter_map(|line| line.split_whitespace().next())
     {
-        if policy.headless.renderer_families.iter().any(|family| {
-            package == family
-                || package
-                    .strip_prefix(family)
-                    .is_some_and(|suffix| suffix.starts_with('-') || suffix.starts_with('_'))
-        }) {
+        if policy
+            .headless
+            .optional_packages
+            .iter()
+            .any(|name| name == package)
+            || policy.headless.renderer_families.iter().any(|family| {
+                package == family
+                    || package
+                        .strip_prefix(family)
+                        .is_some_and(|suffix| suffix.starts_with('-') || suffix.starts_with('_'))
+            })
+        {
             return Err(format!(
                 "renderer dependency in default headless graph: {package}"
             ));
@@ -245,6 +349,42 @@ mod tests {
                 .is_err()
             );
         }
+    }
+    #[test]
+    fn optional_metadata_rejects_dependency_and_default_drift() {
+        let policy: super::Policy =
+            toml::from_str(include_str!("../../verification/architecture.toml")).unwrap();
+        let mut metadata = serde_json::json!({
+            "packages": [
+                {"id":"core", "name":"fabric-app-core", "dependencies":[{"name":"serde"}]},
+                {"id":"dom", "name":"fabric-ui-dom", "dependencies":[{"name":"leptos"}]},
+                {"id":"parity", "name":"fabric-app-parity", "dependencies":[]}
+            ],
+            "workspace_members":["core", "dom", "parity"],
+            "workspace_default_members":["core"]
+        });
+        let members = ["fabric-app-core", "fabric-ui-dom", "fabric-app-parity"];
+        assert!(
+            super::check_optional_metadata(&metadata, &policy, &members, &["fabric-app-core"])
+                .is_ok()
+        );
+        metadata["workspace_default_members"] = serde_json::json!(["core", "dom"]);
+        assert!(
+            super::check_optional_metadata(&metadata, &policy, &members, &["fabric-app-core"])
+                .is_err()
+        );
+        metadata["workspace_default_members"] = serde_json::json!(["core"]);
+        metadata["packages"][0]["dependencies"] = serde_json::json!([{"name":"tokio"}]);
+        assert!(
+            super::check_optional_metadata(&metadata, &policy, &members, &["fabric-app-core"])
+                .is_err()
+        );
+        metadata["packages"][0]["dependencies"] = serde_json::json!([]);
+        metadata["workspace_members"] = serde_json::json!(["core", "dom"]);
+        assert!(
+            super::check_optional_metadata(&metadata, &policy, &members, &["fabric-app-core"])
+                .is_err()
+        );
     }
     #[test]
     fn rejects_verification_escapes_not_comments() {
