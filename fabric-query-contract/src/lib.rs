@@ -3,6 +3,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+pub mod live_cursor;
+pub use live_cursor::{LiveCursorRequest, LiveMetric, LiveMetricPoint, LivePage, LossReason};
+
 /// Whether a run identifier is a lowercase, non-nil UUID in Fabric's existing profile.
 pub fn valid_run_id(id: &str) -> bool {
     let bytes = id.as_bytes();

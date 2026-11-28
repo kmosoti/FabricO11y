@@ -174,6 +174,21 @@ impl FabricClient {
         )
     }
 
+    /// Reads the opt-in local live cursor. This never falls back to timestamp history.
+    pub async fn try_query_live_metrics(
+        &self,
+        request: &fabric_query_contract::LiveCursorRequest,
+    ) -> Result<fabric_query_contract::LivePage, String> {
+        match &self.transport {
+            FabricTransport::DirectSocket { daemon_socket, .. } => {
+                self.pool
+                    .live_cursor(daemon_socket, request, QUERY_TIMEOUT)
+                    .await
+            }
+            FabricTransport::Cli => Err("live cursor requires direct daemon socket".into()),
+        }
+    }
+
     /// Queries metric history (`host.mem.available_bytes`), preferring hot UDS metrics when available.
     pub async fn try_query_mem_history(&self) -> Result<Vec<(u64, f64)>, String> {
         if let FabricTransport::DirectSocket {

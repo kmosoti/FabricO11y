@@ -507,6 +507,10 @@ This is a volatile local view, not a durable custody or projection frontier.
 Restart creates a new epoch. It does not cover host-only metrics or remote
 readers, and the collector's polling cadence does not promise a latency bound.
 The existing `hot_metrics` operation and its default budget remain available.
+Rust consumers using `fabric-client` with its direct daemon-socket transport can
+call `FabricClient::try_query_live_metrics` with the shared `LiveCursorRequest`.
+The method enforces the requested response-byte limit and returns an error when
+the socket or cursor is unavailable; it does not fall back to timestamp history.
 
 ## Elastic collector memory
 

@@ -1,6 +1,5 @@
 //! Bounded local-only view of admitted Spindle metric records.
 use fabric_core::MetricPoint;
-use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
 const MAX_ENTRIES: usize = 128;
@@ -11,36 +10,7 @@ pub(crate) const MAX_BUDGET: usize = 1024 * 1024;
 pub(crate) const MAX_PAGE_BYTES: usize = 32 * 1024;
 const MAX_PAGE_ROWS: usize = 64;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LiveMetric {
-    pub record_id: u64,
-    pub point: MetricPoint,
-}
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum LossReason {
-    BeforeEpoch,
-    Evicted,
-    Pressure,
-    Oversized,
-    Invalid,
-    Filtered,
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LivePage {
-    pub version: u8,
-    pub origin: String,
-    pub epoch: String,
-    pub observed_through: u64,
-    pub epoch_start_after: u64,
-    pub oldest_retained: Option<u64>,
-    pub highest_lost: u64,
-    pub highest_lost_reason: Option<LossReason>,
-    pub gap: bool,
-    pub gap_reason: Option<LossReason>,
-    pub next_after: u64,
-    pub entries: Vec<LiveMetric>,
-}
+pub use fabric::query::{LiveMetric, LivePage, LossReason};
 struct Entry {
     id: u64,
     bytes: Box<[u8]>,
