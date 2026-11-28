@@ -150,6 +150,42 @@ generation includes the boot ID. Missed or partially collected intervals are
 reported as gaps on recovery and never backfilled. Polling bounds source work;
 health is maintained in memory and does not recursively collect itself.
 
+### Inspect cgroup device memory
+
+`fabric device-memory --cgroup /user.slice/job.scope --json` inspects the selected
+normalized cgroup v2 membership path. The command also defaults to JSON when
+stdout is not a terminal. It does not select the current process's cgroup
+implicitly; pass the path to inspect. `--table` and `--arrow` are unsupported.
+
+The `fabric.cli.v1` payload reports `availability` as `available` or
+`interface_unavailable`. An available snapshot reports `scope` as `root` or
+`non_root`, followed by lexically sorted region identifiers. A missing file or
+region value is `null`; a measured zero remains `0`. A configured `dmem.max`
+value is encoded as `{"kind":"bytes","bytes":N}`, while its kernel `max`
+sentinel is `{"kind":"unbounded"}`. For example:
+
+```json
+{
+  "schema_version": "fabric.cli.v1",
+  "generated_at_unix_ms": 1795014000000,
+  "command": "device-memory",
+  "data": {
+    "availability": "available",
+    "cgroup_path": "/user.slice/job.scope",
+    "scope": "non_root",
+    "regions": [
+      {
+        "identifier": "gpu0",
+        "capacity_bytes": null,
+        "current_bytes": 0,
+        "peak_bytes": null,
+        "max_bytes": { "kind": "unbounded" }
+      }
+    ]
+  }
+}
+```
+
 ### Export selected host signals to Fabric Server
 
 The resident collector can send summaries from its existing Linux snapshots
