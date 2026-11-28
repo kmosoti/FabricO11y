@@ -476,6 +476,13 @@ added_by = "agent"
 human_ratified = false
 
 [[records]]
+id = "O-0294"
+source_path = "knowledge/observations/O-0294-product-verifier-and-dependency-policy.md"
+date = 2026-11-27
+added_by = "agent"
+human_ratified = false
+
+[[records]]
 id = "O-0300"
 source_path = "knowledge/observations/O-0300-proof-inventory-and-trust-boundaries.md"
 date = 2026-11-27
