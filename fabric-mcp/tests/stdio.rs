@@ -152,14 +152,48 @@ fn cancellation_reaches_canonical_and_capacity_waits_for_actual_exchange() {
                                 tx.send("cancel").unwrap();
                                 Response::Cancelled { query_id }
                             }
-                            Request::IssueSegmentTicket { version, authority, origin, digest, start, end } => {
-                                assert_eq!((version, authority.as_str(), origin.as_str(), digest.as_str(), start, end),
-                                    (1, "authority", "origin", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", 5, 25));
+                            Request::IssueSegmentTicket {
+                                version,
+                                authority,
+                                origin,
+                                digest,
+                                start,
+                                end,
+                            } => {
+                                assert_eq!(
+                                    (version, authority.as_str(), origin.as_str(), start, end),
+                                    (1, "authority", "origin", 5, 25)
+                                );
                                 tx.send("ticket").unwrap();
-                                Response::SegmentTicket { ticket: canonical::SegmentTicket {
-                                    version, authority, origin, digest, start, end, expires: 99,
-                                    mac: "0123456789abcdef".repeat(4),
-                                } }
+                                if digest == "d".repeat(64) {
+                                    Response::SegmentChunk {
+                                        offset: 0,
+                                        bytes: vec![91, 92, 93],
+                                    }
+                                } else {
+                                    let bad_binding = digest == "b".repeat(64);
+                                    let bad_shape = digest == "c".repeat(64);
+                                    Response::SegmentTicket {
+                                        ticket: canonical::SegmentTicket {
+                                            version,
+                                            authority: if bad_binding {
+                                                "wrong-reply-secret".into()
+                                            } else {
+                                                authority
+                                            },
+                                            origin,
+                                            digest,
+                                            start,
+                                            end,
+                                            expires: 99,
+                                            mac: if bad_shape {
+                                                "invalid-reply-secret".into()
+                                            } else {
+                                                "0123456789abcdef".repeat(4)
+                                            },
+                                        },
+                                    }
+                                }
                             }
                             Request::Progress => Response::Progress {
                                 authority: "test".into(),
@@ -287,6 +321,21 @@ fn cancellation_reaches_canonical_and_capacity_waits_for_actual_exchange() {
             "start":5,"end":25,"expires":99,"mac":"0123456789abcdef".repeat(4)
         }})
     );
+    for (id, digit) in [(7, 'b'), (8, 'c'), (9, 'd')] {
+        writeln!(input, "{}", json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"name":"inspect_segment","arguments":{"authority":"authority","origin":"origin","digest":digit.to_string().repeat(64),"start":"5","end":"25"}}})).unwrap();
+        input.flush().unwrap();
+        assert_eq!(
+            events.recv_timeout(Duration::from_secs(5)).unwrap(),
+            "ticket"
+        );
+        let rejected = rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert_eq!(rejected["id"], id);
+        assert_eq!(rejected["result"]["isError"], true);
+        let output = rejected.to_string();
+        assert!(output.contains("invalid segment ticket response"));
+        assert!(!output.contains("reply-secret"));
+        assert!(!output.contains("91,92,93"));
+    }
     let _ = child.kill();
     let _ = child.wait();
     drop(input);
