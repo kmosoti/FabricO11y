@@ -1259,3 +1259,307 @@ fn isolated_cli_live_metric_cursor_socket_profile() {
     ));
     assert!(spindle_thread.join().unwrap().is_ok());
 }
+
+#[test]
+#[ignore = "requires collected fabrico11y.slice and FABRIC_LIVE_CURSOR_BYTES=32768"]
+fn isolated_cli_sustained_cursor_socket_profile() {
+    assert!(
+        in_fabrico11y_slice(),
+        "run inside the collected fabrico11y.slice"
+    );
+    assert_eq!(
+        std::env::var("FABRIC_LIVE_CURSOR_BYTES").as_deref(),
+        Ok("32768")
+    );
+    let root_guard = non_tmp_test_root();
+    let root = root_guard.path();
+    let socket_dir = root.join("sock");
+    let collector_tmp = root.join("ct");
+    for path in [&socket_dir, &collector_tmp] {
+        create_private_dir(path);
+    }
+    let spindle_sock = socket_dir.join("spindle.sock");
+    let collector_data = root.join("collector");
+    let daemon_sock = validated_storage_layout(&collector_data)
+        .unwrap()
+        .state_dir()
+        .join("daemon.sock");
+    let spindle_dir = root.join("sp");
+    let origin = spindle::custody::Store::open(&spindle_dir, 64 * 1024 * 1024)
+        .unwrap()
+        .origin()
+        .to_owned();
+    let mut spindle_daemon = spindle::Daemon::open(spindle::Config {
+        socket: spindle_sock.clone(),
+        storage: spindle_dir,
+        quota_bytes: 64 * 1024 * 1024,
+        forwarding: None,
+        max_connections: 16,
+        client_timeout_ms: 1000,
+        files: Vec::new(),
+        journal: None,
+        host: None,
+    })
+    .unwrap();
+    let spindle_thread = thread::spawn(move || spindle_daemon.run());
+    let ready = Instant::now() + Duration::from_secs(10);
+    while transport::request(
+        &spindle_sock,
+        &Request::Status,
+        Instant::now() + Duration::from_millis(250),
+    )
+    .is_err()
+    {
+        assert!(Instant::now() < ready, "Spindle startup deadline");
+        thread::sleep(Duration::from_millis(20));
+    }
+    let mut sdk_cfg = SdkConfig::local(spindle_sock.clone(), "live-fixture".into()).unwrap();
+    sdk_cfg.delivery_timeout = Duration::from_secs(2);
+    let client = Client::new(sdk_cfg).unwrap();
+    struct OwnedChild(std::process::Child);
+    impl Drop for OwnedChild {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    let executable = std::env::var_os("FABRIC_QUALIFY_CLI")
+        .expect("FABRIC_QUALIFY_CLI must name the exact built fabric executable");
+    let mut collector = OwnedChild(
+        std::process::Command::new(executable)
+            .arg("--data-dir")
+            .arg(&collector_data)
+            .arg("--tmp-dir")
+            .arg(&collector_tmp)
+            .args([
+                "daemon",
+                "--spindle-only",
+                "--interval-ms",
+                "250",
+                "--max-ticks",
+                "80",
+                "--ring-budget-bytes",
+                "2097152",
+                "--max-disk-bytes",
+                "67108864",
+                "--spindle-socket",
+            ])
+            .arg(&spindle_sock)
+            .env("FABRIC_LIVE_CURSOR_BYTES", "32768")
+            .env_remove("FABRIC_RUNTIME_DIR")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    let pid = collector.0.id();
+    let stop_sample = Arc::new(AtomicBool::new(false));
+    let max_fds = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let peak_kib = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let sample_stop = stop_sample.clone();
+    let sample_fds = max_fds.clone();
+    let sample_peak = peak_kib.clone();
+    let sampler = thread::spawn(move || {
+        while !sample_stop.load(Ordering::Relaxed) {
+            if let Ok(status) = fs::read_to_string(format!("/proc/{pid}/status"))
+                && let Some(kib) = status.lines().find_map(|line| {
+                    line.strip_prefix("VmHWM:")
+                        .and_then(|v| v.split_whitespace().next())
+                        .and_then(|v| v.parse::<u64>().ok())
+                })
+            {
+                sample_peak.fetch_max(kib, Ordering::Relaxed);
+            }
+            if let Ok(fds) = fs::read_dir(format!("/proc/{pid}/fd")) {
+                sample_fds.fetch_max(fds.count(), Ordering::Relaxed);
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+    });
+    let ready = Instant::now() + Duration::from_secs(10);
+    while !matches!(
+        query_daemon_socket(&daemon_sock, &DaemonRequest::Ping),
+        Some(DaemonResponse::Pong { .. })
+    ) {
+        assert!(Instant::now() < ready, "collector startup deadline");
+        thread::sleep(Duration::from_millis(20));
+    }
+    let submit = |id: usize| {
+        let admission = client.try_record(
+            Data::Metric {
+                name: format!("live.sample.{id}"),
+                unit: "units".into(),
+                value: id as f64,
+                metric_type: MetricType::Gauge,
+                reset: false,
+            },
+            1_700_000_000_000_000_000,
+        );
+        assert!(
+            matches!(admission, Admission::Accepted { .. }),
+            "{admission:?}"
+        );
+        client
+            .flush(Instant::now() + Duration::from_secs(5))
+            .unwrap()
+            .unwrap()
+            .id
+    };
+    let first_id = submit(0);
+    let ready = Instant::now() + Duration::from_secs(10);
+    let initial = loop {
+        if let Some(DaemonResponse::LiveMetricsV1(page)) = query_daemon_socket(
+            &daemon_sock,
+            &DaemonRequest::LiveMetricsV1 {
+                origin: None,
+                epoch: None,
+                after: 0,
+                count: 64,
+                max_bytes: 32768,
+            },
+        ) && page.entries.iter().any(|entry| entry.record_id == first_id)
+        {
+            break page;
+        }
+        assert!(Instant::now() < ready, "live cursor readiness deadline");
+        thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(initial.origin, origin);
+    assert!(!initial.gap);
+    let epoch = initial.epoch.clone();
+    let mut after = initial.next_after;
+    // Schedule production independently of cursor polling; record actual starts and
+    // correlate returned IDs to the monotonic observation time after both finish.
+    let (starts, ids, seen) = thread::scope(|scope| {
+        let writer = scope.spawn(|| {
+            let schedule = Instant::now() + Duration::from_millis(100);
+            let mut starts = Vec::new();
+            let mut ids = Vec::new();
+            for sample in 1..=20 {
+                let target = schedule + Duration::from_millis((sample - 1) as u64 * 100);
+                if let Some(delay) = target.checked_duration_since(Instant::now()) {
+                    thread::sleep(delay);
+                }
+                starts.push(Instant::now());
+                ids.push(submit(sample));
+            }
+            (starts, ids)
+        });
+        let deadline = Instant::now() + Duration::from_secs(15);
+        let mut seen = Vec::new();
+        while seen.len() < 20 {
+            if let Some(DaemonResponse::LiveMetricsV1(page)) = query_daemon_socket(
+                &daemon_sock,
+                &DaemonRequest::LiveMetricsV1 {
+                    origin: Some(origin.clone()),
+                    epoch: Some(epoch.clone()),
+                    after,
+                    count: 64,
+                    max_bytes: 32768,
+                },
+            ) {
+                assert!(!page.gap, "unexpected loss during scheduled production");
+                let observed = Instant::now();
+                for entry in page.entries {
+                    seen.push((entry.record_id, entry.point.name, observed));
+                }
+                after = page.next_after;
+            }
+            assert!(Instant::now() < deadline, "sustained visibility deadline");
+            thread::sleep(Duration::from_millis(20));
+        }
+        let (starts, ids) = writer.join().unwrap();
+        (starts, ids, seen)
+    });
+    assert_eq!(seen.len(), 20);
+    let interarrival_ms: Vec<_> = starts
+        .windows(2)
+        .map(|pair| pair[1].duration_since(pair[0]).as_millis())
+        .collect();
+    let mut delays_ms = Vec::new();
+    for (index, ((id, name, observed), start)) in seen.iter().zip(&starts).enumerate() {
+        assert_eq!(*id, ids[index]);
+        assert_eq!(name, &format!("live.sample.{}", index + 1));
+        delays_ms.push(observed.duration_since(*start).as_millis());
+    }
+    println!(
+        "scheduled samples=20 nominal_interval_ms=100 actual_interarrival_ms={interarrival_ms:?} submit_through_visibility_ms={delays_ms:?}"
+    );
+    for (bad_origin, bad_epoch) in [
+        ("other".to_string(), epoch.clone()),
+        (origin.clone(), "bad".to_string()),
+    ] {
+        assert!(matches!(
+            query_daemon_socket(
+                &daemon_sock,
+                &DaemonRequest::LiveMetricsV1 {
+                    origin: Some(bad_origin),
+                    epoch: Some(bad_epoch),
+                    after,
+                    count: 1,
+                    max_bytes: 32768
+                }
+            ),
+            Some(DaemonResponse::Error { .. })
+        ));
+    }
+    // Force a bounded-wrap gap using real accepted records without timing this burst.
+    for i in 0..132 {
+        let _ = submit(1000 + i);
+    }
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        if let Some(DaemonResponse::LiveMetricsV1(page)) = query_daemon_socket(
+            &daemon_sock,
+            &DaemonRequest::LiveMetricsV1 {
+                origin: Some(origin.clone()),
+                epoch: Some(epoch.clone()),
+                after,
+                count: 64,
+                max_bytes: 32768,
+            },
+        ) && page.gap
+        {
+            assert!(page.highest_lost > after);
+            assert_eq!(
+                page.highest_lost_reason,
+                Some(fabric_collect::live_cursor::LossReason::Evicted)
+            );
+            assert!(page.oldest_retained.is_some());
+            break;
+        }
+        assert!(Instant::now() < deadline, "cursor wrap deadline");
+        thread::sleep(Duration::from_millis(20));
+    }
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let status = loop {
+        if let Some(status) = collector.0.try_wait().unwrap() {
+            break status;
+        }
+        assert!(Instant::now() < deadline, "collector exit deadline");
+        thread::sleep(Duration::from_millis(20));
+    };
+    stop_sample.store(true, Ordering::Relaxed);
+    sampler.join().unwrap();
+    assert!(status.success(), "isolated collector failed: {status}");
+    let peak_kib = peak_kib.load(Ordering::Relaxed);
+    let max_fds = max_fds.load(Ordering::Relaxed);
+    assert!(
+        peak_kib > 0 && max_fds > 0,
+        "child resource samples unavailable"
+    );
+    println!(
+        "sustained isolated child pid={pid}; submit-through-visibility ms={delays_ms:?}; child sampled VmHWM KiB={peak_kib}; child max sampled FDs={max_fds}; poll_interval_ms=250; sample_interval_ms=20"
+    );
+    drop(client);
+    assert!(matches!(
+        transport::request(
+            &spindle_sock,
+            &Request::Stop,
+            Instant::now() + Duration::from_secs(5)
+        ),
+        Ok(Reply::Stopped)
+    ));
+    assert!(spindle_thread.join().unwrap().is_ok());
+}
