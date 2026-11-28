@@ -291,6 +291,99 @@ fn rotated_credentials_reauthenticate_existing_policy_after_restart() {
 }
 
 #[test]
+fn process_interruption_after_decision_insert_preserves_atomic_acceptance() {
+    use std::process::{Command, Stdio};
+    if let Some(root) = std::env::var_os("FABRIC_TEST_PLAN_CRASH_ROOT") {
+        let config = config(Path::new(&root));
+        let (address, _stop, _server) = start(&config);
+        let body = std::env::var("FABRIC_TEST_PLAN_CRASH_BODY").unwrap();
+        // The test-only ledger hook parks this authenticated exchange after
+        // the insert. A response here would mean the cutpoint was not reached.
+        let response = accept(&address, WRITER, &body);
+        panic!("accept returned before interruption: {response:?}");
+    }
+    let scratch = std::env::var_os("TMPDIR").expect("disk-backed TMPDIR");
+    let scratch = PathBuf::from(scratch);
+    assert!(!scratch.starts_with("/tmp") && !scratch.starts_with("/dev/shm"));
+    let root = tempfile::tempdir_in(&scratch).unwrap();
+    let config = config(root.path());
+    let (address, stop, server) = start(&config);
+    let authority = match exchange(&address, READER, &Request::Progress) {
+        Response::Progress { authority, .. } => authority,
+        other => panic!("{other:?}"),
+    };
+    let raw = proposal(1, 'a');
+    assert!(matches!(
+        exchange(
+            &address,
+            NODE,
+            &Request::Ingest {
+                origin: "origin".into(),
+                records: vec![ForwardRecord {
+                    source_id: 1,
+                    raw: raw.clone()
+                }],
+            }
+        ),
+        Response::Committed { through: 1, .. }
+    ));
+    let body = command(&authority, "crash-command", None, 1, &raw);
+    stop.store(true, Ordering::SeqCst);
+    server.join().unwrap();
+
+    let marker = root.path().join("decision-inserted.marker");
+    let mut child = Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "acceptance_tests::process_interruption_after_decision_insert_preserves_atomic_acceptance"])
+        .env("TMPDIR", &scratch).env("FABRIC_TEST_PLAN_CRASH_ROOT", root.path())
+        .env("FABRIC_TEST_PLAN_CRASH_BODY", &body).env("FABRIC_TEST_PLAN_INSERT_MARKER", &marker)
+        .stdin(Stdio::null()).stdout(Stdio::null()).spawn().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        if fs::read(&marker).is_ok_and(|bytes| bytes == b"decision-inserted-before-head\n") {
+            break;
+        }
+        if let Some(status) = child.try_wait().unwrap() {
+            panic!("crash child exited before cutpoint: {status}");
+        }
+        if Instant::now() >= deadline {
+            child.kill().unwrap();
+            child.wait().unwrap();
+            panic!("crash child cutpoint timed out");
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    child.kill().unwrap();
+    child.wait().unwrap();
+    assert_eq!(
+        fs::read(&marker).unwrap(),
+        b"decision-inserted-before-head\n"
+    );
+    let db = rusqlite::Connection::open(config.storage.join("canonical.sqlite")).unwrap();
+    let count: u64 = db
+        .query_row("SELECT count(*) FROM plan_decision", [], |r| r.get(0))
+        .unwrap();
+    let prior_head: Option<i64> = db
+        .query_row("SELECT head FROM plan_scope WHERE scope='plan'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(count, 0);
+    assert_eq!(prior_head, None);
+    drop(db);
+    let (address, stop, server) = start(&config);
+    let saved = result(accept(&address, WRITER, &body));
+    assert_eq!(result(accept(&address, WRITER, &body)), saved);
+    let db = rusqlite::Connection::open(config.storage.join("canonical.sqlite")).unwrap();
+    let count: u64 = db
+        .query_row("SELECT count(*) FROM plan_decision", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(count, 1);
+    drop(db);
+    stop.store(true, Ordering::SeqCst);
+    server.join().unwrap();
+}
+
+#[test]
 fn competing_acceptance_lost_reply_new_head_and_restart() {
     transaction_fixture();
 }
