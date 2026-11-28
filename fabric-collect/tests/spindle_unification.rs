@@ -1713,3 +1713,217 @@ fn verify_real_cursor_parity(
         direct.next_after
     );
 }
+
+#[test]
+#[ignore = "requires collected fabrico11y.slice and exact CLI"]
+fn isolated_cli_cursor_rejects_pre_restart_token() {
+    assert!(
+        in_fabrico11y_slice(),
+        "run inside collected fabrico11y.slice"
+    );
+    let root_guard = non_tmp_test_root();
+    let root = root_guard.path();
+    let socket_dir = root.join("sock");
+    let collector_tmp = root.join("ct");
+    for path in [&socket_dir, &collector_tmp] {
+        create_private_dir(path);
+    }
+    let spindle_sock = socket_dir.join("spindle.sock");
+    let collector_data = root.join("collector");
+    let daemon_sock = validated_storage_layout(&collector_data)
+        .unwrap()
+        .state_dir()
+        .join("daemon.sock");
+    let spindle_dir = root.join("sp");
+    let origin = spindle::custody::Store::open(&spindle_dir, 64 * 1024 * 1024)
+        .unwrap()
+        .origin()
+        .to_owned();
+    let mut spindle_daemon = spindle::Daemon::open(spindle::Config {
+        socket: spindle_sock.clone(),
+        storage: spindle_dir,
+        quota_bytes: 64 * 1024 * 1024,
+        forwarding: None,
+        max_connections: 16,
+        client_timeout_ms: 1000,
+        files: Vec::new(),
+        journal: None,
+        host: None,
+    })
+    .unwrap();
+    let spindle_thread = thread::spawn(move || spindle_daemon.run());
+    let stack = StackGuard {
+        spindle_sock: spindle_sock.clone(),
+        server_stop: Arc::new(AtomicBool::new(false)),
+        spindle_thread: Some(spindle_thread),
+        server_thread: None,
+    };
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while transport::request(
+        &spindle_sock,
+        &Request::Status,
+        Instant::now() + Duration::from_millis(250),
+    )
+    .is_err()
+    {
+        assert!(Instant::now() < deadline, "Spindle startup deadline");
+        thread::sleep(Duration::from_millis(20));
+    }
+    let mut sdk_cfg = SdkConfig::local(spindle_sock.clone(), "restart-fixture".into()).unwrap();
+    sdk_cfg.delivery_timeout = Duration::from_secs(2);
+    let client = Client::new(sdk_cfg).unwrap();
+    struct OwnedChild(std::process::Child);
+    impl Drop for OwnedChild {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    let executable =
+        std::env::var_os("FABRIC_QUALIFY_CLI").expect("exact fabric executable required");
+    let spawn = || {
+        OwnedChild(
+            Command::new(&executable)
+                .arg("--data-dir")
+                .arg(&collector_data)
+                .arg("--tmp-dir")
+                .arg(&collector_tmp)
+                .args([
+                    "daemon",
+                    "--spindle-only",
+                    "--interval-ms",
+                    "250",
+                    "--max-ticks",
+                    "40",
+                    "--ring-budget-bytes",
+                    "2097152",
+                    "--max-disk-bytes",
+                    "67108864",
+                    "--spindle-socket",
+                ])
+                .arg(&spindle_sock)
+                .env("FABRIC_LIVE_CURSOR_BYTES", "32768")
+                .env_remove("FABRIC_RUNTIME_DIR")
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .unwrap(),
+        )
+    };
+    let wait_ready = || {
+        let deadline = Instant::now() + Duration::from_secs(8);
+        while !matches!(
+            query_daemon_socket(&daemon_sock, &DaemonRequest::Ping),
+            Some(DaemonResponse::Pong { .. })
+        ) {
+            assert!(Instant::now() < deadline, "collector startup deadline");
+            thread::sleep(Duration::from_millis(20));
+        }
+    };
+    let submit = |value: usize| {
+        let admission = client.try_record(
+            Data::Metric {
+                name: format!("restart.sample.{value}"),
+                unit: "units".into(),
+                value: value as f64,
+                metric_type: MetricType::Gauge,
+                reset: false,
+            },
+            1_700_000_000_000_000_000,
+        );
+        assert!(
+            matches!(admission, Admission::Accepted { .. }),
+            "{admission:?}"
+        );
+        client
+            .flush(Instant::now() + Duration::from_secs(5))
+            .unwrap()
+            .unwrap()
+            .id
+    };
+    let find = |expected: u64| {
+        let deadline = Instant::now() + Duration::from_secs(8);
+        loop {
+            if let Some(DaemonResponse::LiveMetricsV1(page)) = query_daemon_socket(
+                &daemon_sock,
+                &DaemonRequest::LiveMetricsV1 {
+                    origin: None,
+                    epoch: None,
+                    after: 0,
+                    count: 64,
+                    max_bytes: 32768,
+                },
+            ) && page.entries.iter().any(|entry| entry.record_id == expected)
+            {
+                break page;
+            }
+            assert!(Instant::now() < deadline, "cursor visibility deadline");
+            thread::sleep(Duration::from_millis(20));
+        }
+    };
+    let wait_exit = |child: &mut OwnedChild| {
+        let deadline = Instant::now() + Duration::from_secs(15);
+        loop {
+            if let Some(status) = child.0.try_wait().unwrap() {
+                assert!(status.success(), "collector failed: {status}");
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "collector graceful exit deadline"
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert!(!daemon_sock.exists(), "daemon socket survived shutdown");
+    };
+    let mut first = spawn();
+    wait_ready();
+    let first_id = submit(1);
+    let old = find(first_id);
+    assert_eq!(old.origin, origin);
+    assert!(!old.gap);
+    assert_eq!(old.next_after, first_id);
+    let first_pid = first.0.id();
+    wait_exit(&mut first);
+    drop(first);
+
+    let mut second = spawn();
+    let second_pid = second.0.id();
+    wait_ready();
+    let second_id = submit(2);
+    assert!(second_id > first_id);
+    let fresh = find(second_id);
+    assert_eq!(fresh.origin, origin);
+    assert_ne!(fresh.epoch, old.epoch);
+    assert_eq!(fresh.next_after, second_id);
+    assert!(
+        fresh
+            .entries
+            .iter()
+            .any(|entry| entry.record_id == second_id && entry.point.name == "restart.sample.2")
+    );
+    match query_daemon_socket(
+        &daemon_sock,
+        &DaemonRequest::LiveMetricsV1 {
+            origin: Some(old.origin.clone()),
+            epoch: Some(old.epoch.clone()),
+            after: old.next_after,
+            count: 64,
+            max_bytes: 32768,
+        },
+    ) {
+        Some(DaemonResponse::Error { message }) => {
+            assert_eq!(message, "live cursor identity mismatch")
+        }
+        other => panic!("old token was not explicitly rejected: {other:?}"),
+    }
+    println!(
+        "restart first_pid={first_pid} second_pid={second_pid} origin={origin} old_epoch={} old_after={} fresh_epoch={} next_record={second_id}",
+        old.epoch, old.next_after, fresh.epoch
+    );
+    wait_exit(&mut second);
+    drop(second);
+    drop(client);
+    stack.shutdown_and_assert();
+}
