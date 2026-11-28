@@ -35,7 +35,9 @@ necessary. Keep the main review, required checks and deployment gate active.
    uploads the Fedora RPM, Debian package and glibc-baseline tarball with read
    access. A `develop` preflight also uploads a separate static browser archive
    built with the pinned release optimizer. It includes no gateway, service, or
-   holder authentication and does not qualify a frontend release profile.
+   holder authentication and does not qualify a frontend release profile. It
+   includes the project license; dependency license and advisory review remains
+   necessary before publication.
    The qualification run also uploads the
    combined bundle, records its source tree and hashes, and attests the bytes.
 3. After qualification succeeds, download and inspect `release-bundle`. Record

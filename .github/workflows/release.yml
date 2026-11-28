@@ -304,7 +304,9 @@ jobs:
           stage="$RUNNER_TEMP/web-stage/$prefix"
           mkdir -p "$stage/assets"
           cp "${assets[@]}" "$stage/assets/"
-          (cd "$stage" && sha256sum assets/* > SHA256SUMS)
+          test -f LICENSE && test ! -L LICENSE
+          cp LICENSE "$stage/LICENSE"
+          (cd "$stage" && sha256sum LICENSE assets/* > SHA256SUMS)
           frontend_lock=$(sha256sum frontend/Cargo.lock | cut -d' ' -f1)
           gateway_lock=$(sha256sum frontend/gateway/Cargo.lock | cut -d' ' -f1)
           jq -n --arg commit "$GITHUB_SHA" --arg tree "$SOURCE_TREE" --arg tag "$RELEASE_TAG" \
@@ -315,11 +317,12 @@ jobs:
           tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -C "$RUNNER_TEMP/web-stage" -cf - "$prefix" | gzip -n > "$archive"
           (cd web-preflight && sha256sum "$prefix.tar.gz" > SHA256SUMS && sha256sum --check --strict SHA256SUMS)
           tar -tzf "$archive" > "$RUNNER_TEMP/web-members"
-          test "$(wc -l < "$RUNNER_TEMP/web-members")" -eq 9
+          test "$(wc -l < "$RUNNER_TEMP/web-members")" -eq 10
           tar -xzf "$archive" -C "$RUNNER_TEMP/web-inspect" --no-same-owner --no-same-permissions
           (cd "$RUNNER_TEMP/web-inspect/$prefix" && sha256sum --check --strict SHA256SUMS)
           cmp "$stage/MANIFEST.json" "$RUNNER_TEMP/web-inspect/$prefix/MANIFEST.json"
-          test "$(find "$RUNNER_TEMP/web-inspect/$prefix" -type f | wc -l)" -eq 7
+          cmp LICENSE "$RUNNER_TEMP/web-inspect/$prefix/LICENSE"
+          test "$(find "$RUNNER_TEMP/web-inspect/$prefix" -type f | wc -l)" -eq 8
           test -z "$(find "$RUNNER_TEMP/web-inspect/$prefix" ! -type d ! -type f -print -quit)"
           rm -r "$RUNNER_TEMP/web-inspect/$prefix"
           test ! -e "$RUNNER_TEMP/web-inspect/$prefix"
