@@ -116,7 +116,7 @@ flowchart LR
     Cancel --> Canonical
 ```
 
-The independent [`fabric-corpus` contract](corpus-contract.md) defines research revision identities and attributed claims without a collector, transport, or storage dependency. Its bounded as-of view freezes explicit revision and relation membership and attributed conjunctive support groups. It retains missing selections, dissent and other relation claims; a group resolves only when its conclusion, every premise and each exact support edge are present. Resolution is not an entailment or custody claim.
+The independent [`fabric-corpus` contract](corpus-contract.md) defines research revision identities and attributed claims without a collector, transport, or storage dependency. Its bounded as-of view freezes explicit revision and relation membership and attributed conjunctive support groups. It retains missing selections, dissent and other relation claims; a group resolves only when its conclusion, every premise and each exact support edge are present. Resolution is not an entailment or custody claim. A bounded, pure lexical rebuild derives directed adjacent-token counts and revision provenance from selected text; missing selections remain explicit.
 
 Canonical plan acceptance uses a separately provisioned decision-writer grant.
 The local SQLite transaction checks its persisted scope owner, recovers an

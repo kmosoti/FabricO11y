@@ -429,3 +429,12 @@ date = 2026-11-27
 added_by = "agent"
 human_ratified = false
 related = []
+
+[[records]]
+id = "D-0203"
+source_path = "knowledge/decisions/D-0203-bounded-lexical.md"
+title = "Bounded lexical rebuild"
+type = "decision"
+date = 2026-11-27
+added_by = "agent"
+human_ratified = false
