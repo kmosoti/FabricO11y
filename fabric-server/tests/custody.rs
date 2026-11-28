@@ -780,3 +780,151 @@ fn versioned_query_authorizes_and_negotiates_before_query_work() {
         matches!(server.call("alpha", Request::QueryWithOperationVersion { request: q, operation_version: 2 }), Response::Error { error } if error == "read credential required")
     );
 }
+
+#[test]
+fn protected_application_reaches_real_canonical_readback() {
+    use fabric::{
+        sdk::{BatchClient, Config as SdkConfig, batch_adapter_reply},
+        spindle::{self, Daemon, custody::Store},
+    };
+    use sha2::{Digest, Sha256};
+    // This fixture runs actual local Spindle and canonical services, without
+    // relying on a simulated receipt or a simulated exact-read response.
+    struct Edge {
+        stop: Arc<AtomicBool>,
+        worker: Option<thread::JoinHandle<()>>,
+    }
+    impl Drop for Edge {
+        fn drop(&mut self) {
+            self.stop.store(true, Ordering::SeqCst);
+            if let Some(worker) = self.worker.take() {
+                worker.join().unwrap();
+            }
+        }
+    }
+    let root = tempfile::tempdir_in(std::env::var_os("TMPDIR").expect("disk TMPDIR")).unwrap();
+    let edge = root.path().join("edge");
+    fs::create_dir(&edge).unwrap();
+    fs::set_permissions(&edge, fs::Permissions::from_mode(0o700)).unwrap();
+    let mut config = spindle::Config {
+        socket: edge.join("socket"),
+        storage: edge.join("store"),
+        quota_bytes: 8 << 20,
+        forwarding: None,
+        max_connections: 16,
+        client_timeout_ms: 500,
+        files: vec![],
+        journal: None,
+        host: None,
+    };
+    let store = Store::open(&config.storage, config.quota_bytes).unwrap();
+    let origin = store.origin().to_owned();
+    drop(store);
+    let receiver_root = root.path().join("receiver");
+    fs::create_dir(&receiver_root).unwrap();
+    fs::set_permissions(&receiver_root, fs::Permissions::from_mode(0o700)).unwrap();
+    let server = Receiver::new(&receiver_root, &[&origin]);
+    let Response::Progress { authority, .. } = server.call("reader", Request::Progress) else {
+        panic!("missing canonical authority")
+    };
+    config.forwarding = Some(spindle::ForwardConfig {
+        endpoint: server.endpoint.clone(),
+        credential_file: server.config.nodes[0].credential_file.clone(),
+        authority: authority.clone(),
+        reclaim_confirmed: false,
+    });
+    let mut daemon = Daemon::open(config.clone()).unwrap();
+    let stop = Arc::new(AtomicBool::new(false));
+    let exit = stop.clone();
+    let edge = Edge {
+        stop,
+        worker: Some(thread::spawn(move || {
+            while !exit.load(Ordering::SeqCst) {
+                daemon.tick().unwrap();
+                thread::sleep(Duration::from_millis(1));
+            }
+        })),
+    };
+    let policy = root.path().join("policy");
+    fs::write(&policy, br#"{"version":2,"policy_id":"test-policy","max_input_bytes":4096,"max_work":1000000,"rules":[],"paths":[{"path":["env","REGION"],"action":{"kind":"scalar","scalar_type":"text"}},{"path":["env","TOKEN"],"action":{"kind":"redact"}}]}"#).unwrap();
+    fs::set_permissions(&policy, fs::Permissions::from_mode(0o600)).unwrap();
+    let mut sdk = SdkConfig::local(config.socket.clone(), "protected-test".into()).unwrap();
+    sdk.delivery_timeout = Duration::from_secs(5);
+    let mut client =
+        BatchClient::open_protected(sdk, &root.path().join("outbox"), &policy, origin.clone())
+            .unwrap();
+    client
+        .configure_reader(
+            server.endpoint.clone(),
+            authority,
+            &server.config.reader_credential_file,
+        )
+        .unwrap();
+    let report_id = "bbbb0000-0000-4000-8000-000000000001";
+    let mut request = serde_json::json!({
+        "command":"record_application", "report_id":report_id,
+        "context":{"run_id":"aaaa0000-0000-4000-8000-000000000001"},
+        "scope":{"origin":origin,"producer":"protected-test"}, "parent_report_id":null,
+        "schema":"example.result.v1", "producer_completion":{"unix_ms":42,"clock":{"clock_id":"producer","source":"fixture","uncertainty_ms":null}},
+        "artifact_json":r#"{"env":{"REGION":"public","TOKEN":"SENTINEL-TOKEN","SECRET":"SENTINEL-VALUE"}}"#, "timestamp_ns":123
+    });
+    let submit = |client: &mut BatchClient, request: &serde_json::Value| {
+        batch_adapter_reply(client, &serde_json::to_vec(request).unwrap())
+    };
+    let first = submit(&mut client, &request);
+    assert_eq!(first["delivery_state"], "custody_confirmed", "{first}");
+    assert_eq!(
+        first["capture"]["omissions"],
+        serde_json::json!(["policy_excluded", "redacted"])
+    );
+    request["artifact_json"] =
+        r#"{"env":{"REGION":"public","TOKEN":"SENTINEL-RETRY-TOKEN","OTHER":"SENTINEL-RETRY-VALUE"}}"#.into();
+    let retry = submit(&mut client, &request);
+    assert_eq!(retry["receipt"], first["receipt"]);
+    assert_eq!(retry["capture"], first["capture"]);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let verified = loop {
+        match client.verify_application(report_id) {
+            Ok(result) => break result,
+            Err(_) if Instant::now() < deadline => thread::sleep(Duration::from_millis(20)),
+            Err(error) => panic!("canonical readback: {error:?}"),
+        }
+    };
+    let permitted = br#"{"env":{"REGION":"public","TOKEN":"[REDACTED]"}}"#;
+    assert_eq!(verified.result.canonical_payload().unwrap(), permitted);
+    verified.result.verify_original_artifact(permitted).unwrap();
+    assert_eq!(
+        verified.result.original_artifact_digest().0.hex,
+        format!("{:x}", Sha256::digest(permitted))
+    );
+    let capture = verified.capture.unwrap();
+    assert_eq!(capture.policy_id, "test-policy");
+    assert_eq!(capture.policy_version, 2);
+    assert_eq!(serde_json::to_value(capture).unwrap(), first["capture"]);
+    drop(client);
+    drop(edge);
+    drop(server);
+    for database in [
+        root.path().join("outbox/outbox.sqlite"),
+        config.storage.join("custody.sqlite"),
+        receiver_root.join("canonical/canonical.sqlite"),
+    ] {
+        assert!(database.is_file(), "{}", database.display());
+        let journal = database.with_extension("sqlite-journal");
+        for path in [database, journal] {
+            match fs::read(&path) {
+                Ok(bytes) => {
+                    assert!(
+                        !bytes.windows(b"SENTINEL".len()).any(|w| w == b"SENTINEL"),
+                        "{}",
+                        path.display()
+                    );
+                }
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::NotFound
+                        && path.extension().is_some_and(|ext| ext == "sqlite-journal") => {}
+                Err(error) => panic!("{}: {error}", path.display()),
+            }
+        }
+    }
+}
