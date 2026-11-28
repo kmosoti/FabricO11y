@@ -149,6 +149,7 @@ fn cancellation_reaches_canonical_and_capacity_waits_for_actual_exchange() {
                                 }
                             }
                             Request::Cancel { query_id } => {
+                                assert_eq!(query_id, "cancel-proof");
                                 tx.send("cancel").unwrap();
                                 Response::Cancelled { query_id }
                             }
@@ -303,12 +304,22 @@ fn cancellation_reaches_canonical_and_capacity_waits_for_actual_exchange() {
     assert!(!serialized_payload.contains("</telemetry_payload>"));
     assert!(!serialized_payload.contains('\x1b'));
     assert!(!progress.to_string().contains("MCP worker busy"));
+    let wait_for_ticket = || {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            match events
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                .unwrap()
+            {
+                "ticket" => break,
+                "cancel" => continue,
+                other => panic!("unexpected mock event: {other}"),
+            }
+        }
+    };
     writeln!(input, "{}", json!({"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"inspect_segment","arguments":{"authority":"authority","origin":"origin","digest":"a".repeat(64),"start":"5","end":"25"}}})).unwrap();
     input.flush().unwrap();
-    assert_eq!(
-        events.recv_timeout(Duration::from_secs(5)).unwrap(),
-        "ticket"
-    );
+    wait_for_ticket();
     let inspected = rx.recv_timeout(Duration::from_secs(5)).unwrap();
     assert_eq!(inspected["id"], 6);
     let frame: Value =
@@ -324,10 +335,7 @@ fn cancellation_reaches_canonical_and_capacity_waits_for_actual_exchange() {
     for (id, digit) in [(7, 'b'), (8, 'c'), (9, 'd')] {
         writeln!(input, "{}", json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"name":"inspect_segment","arguments":{"authority":"authority","origin":"origin","digest":digit.to_string().repeat(64),"start":"5","end":"25"}}})).unwrap();
         input.flush().unwrap();
-        assert_eq!(
-            events.recv_timeout(Duration::from_secs(5)).unwrap(),
-            "ticket"
-        );
+        wait_for_ticket();
         let rejected = rx.recv_timeout(Duration::from_secs(5)).unwrap();
         assert_eq!(rejected["id"], id);
         assert_eq!(rejected["result"]["isError"], true);
