@@ -983,16 +983,22 @@ fn local_live_metric_cursor_socket_profile() {
 #[test]
 #[ignore = "requires collected fabrico11y.slice and FABRIC_LIVE_CURSOR_BYTES=32768"]
 fn isolated_cli_live_metric_cursor_socket_profile() {
-    isolated_cursor_profile(false);
+    isolated_cursor_profile(false, false);
 }
 
 #[test]
 #[ignore = "requires collected fabrico11y.slice and FABRIC_LIVE_CURSOR_BYTES=32768"]
 fn isolated_cli_sustained_cursor_socket_profile() {
-    isolated_cursor_profile(true);
+    isolated_cursor_profile(true, false);
 }
 
-fn isolated_cursor_profile(sustained: bool) {
+#[test]
+#[ignore = "requires collected fabrico11y.slice and exact CLI and MCP executables"]
+fn isolated_cursor_cli_mcp_real_parity() {
+    isolated_cursor_profile(false, true);
+}
+
+fn isolated_cursor_profile(sustained: bool, parity: bool) {
     assert!(
         in_fabrico11y_slice(),
         "run inside the collected fabrico11y.slice"
@@ -1273,8 +1279,9 @@ fn isolated_cursor_profile(sustained: bool) {
         ));
     }
     // Force a bounded-wrap gap using real accepted records without timing this burst.
+    let mut last_burst = 0;
     for i in 0..132 {
-        let _ = submit(1000 + i);
+        last_burst = submit(1000 + i);
     }
     let deadline = Instant::now() + Duration::from_secs(15);
     loop {
@@ -1295,6 +1302,23 @@ fn isolated_cursor_profile(sustained: bool) {
                 Some(fabric_collect::live_cursor::LossReason::Evicted)
             );
             assert!(page.oldest_retained.is_some());
+            if parity {
+                if page.observed_through < last_burst {
+                    assert!(Instant::now() < deadline, "cursor settled deadline");
+                    thread::sleep(Duration::from_millis(20));
+                    continue;
+                }
+                verify_real_cursor_parity(
+                    root,
+                    &collector_data,
+                    &collector_tmp,
+                    &daemon_sock,
+                    &origin,
+                    &epoch,
+                    after,
+                    &page,
+                );
+            }
             break;
         }
         assert!(Instant::now() < deadline, "cursor wrap deadline");
@@ -1335,4 +1359,162 @@ fn isolated_cursor_profile(sustained: bool) {
         Ok(Reply::Stopped)
     ));
     assert!(spindle_thread.join().unwrap().is_ok());
+}
+
+#[allow(clippy::too_many_arguments)]
+fn verify_real_cursor_parity(
+    root: &Path,
+    data: &Path,
+    temp: &Path,
+    socket: &Path,
+    origin: &str,
+    epoch: &str,
+    after: u64,
+    direct: &fabric_collect::live_cursor::LivePage,
+) {
+    use std::io::{Read, Write};
+    use std::os::unix::fs::OpenOptionsExt;
+    use std::process::{Child, Stdio};
+    struct Guard(Child);
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    fn output_file(path: &Path) -> fs::File {
+        fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(path)
+            .unwrap()
+    }
+    fn bounded(path: &Path) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        fs::File::open(path)
+            .unwrap()
+            .take(1_048_577)
+            .read_to_end(&mut bytes)
+            .unwrap();
+        assert!(bytes.len() <= 1_048_576, "subprocess output exceeds bound");
+        bytes
+    }
+    fn wait_response(
+        child: &mut Child,
+        file: &Path,
+        id: u64,
+        deadline: Instant,
+    ) -> serde_json::Value {
+        loop {
+            let bytes = bounded(file);
+            for line in bytes.split(|b| *b == b'\n') {
+                if let Ok(value) = serde_json::from_slice::<serde_json::Value>(line)
+                    && value.get("id").and_then(serde_json::Value::as_u64) == Some(id)
+                {
+                    return value;
+                }
+            }
+            assert!(
+                child.try_wait().unwrap().is_none(),
+                "MCP exited before response"
+            );
+            assert!(Instant::now() < deadline, "MCP response deadline");
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
+    let deadline = Instant::now() + Duration::from_secs(8);
+    let expected = serde_json::to_value(direct).unwrap();
+    assert!(direct.gap && direct.highest_lost > after);
+    let cli = std::env::var_os("FABRIC_QUALIFY_CLI").expect("exact CLI executable");
+    let cli_file = root.join("cursor-cli.json");
+    let mut cli = Guard(
+        Command::new(cli)
+            .arg("--data-dir")
+            .arg(data)
+            .arg("--tmp-dir")
+            .arg(temp)
+            .args(["--json", "live-metrics", "--socket"])
+            .arg(socket)
+            .args([
+                "--origin",
+                origin,
+                "--epoch",
+                epoch,
+                "--after",
+                &after.to_string(),
+                "--count",
+                "64",
+                "--max-bytes",
+                "32768",
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::from(output_file(&cli_file)))
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    let status = loop {
+        if let Some(status) = cli.0.try_wait().unwrap() {
+            break status;
+        }
+        assert!(Instant::now() < deadline, "CLI response deadline");
+        thread::sleep(Duration::from_millis(20));
+    };
+    assert!(status.success(), "CLI cursor failed: {status}");
+    let cli_value: serde_json::Value = serde_json::from_slice(&bounded(&cli_file)).unwrap();
+    assert_eq!(cli_value["schema_version"], "fabric.cli.v1");
+    assert_eq!(cli_value["command"], "live-metrics");
+    assert_eq!(cli_value["data"], expected);
+
+    let credential = root.join("reader.key");
+    let mut key = output_file(&credential);
+    key.write_all(b"fixture-reader-credential").unwrap();
+    drop(key);
+    let mcp = std::env::var_os("FABRIC_QUALIFY_MCP").expect("exact MCP executable");
+    let mcp_file = root.join("cursor-mcp.jsonl");
+    let mut mcp = Guard(
+        Command::new(mcp)
+            .env("FABRIC_ENDPOINT", "127.0.0.1:9")
+            .env_remove("FABRIC_CREDENTIAL")
+            .env_remove("FABRIC_MCP_MODE")
+            .env("FABRIC_CREDENTIAL_FILE", &credential)
+            .env("FABRIC_MCP_LIVE_SOCKET", socket)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::from(output_file(&mcp_file)))
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    let mut input = mcp.0.stdin.take().unwrap();
+    writeln!(input, "{}", serde_json::json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"real-cursor-parity","version":"1"}}})).unwrap();
+    input.flush().unwrap();
+    let initialized = wait_response(&mut mcp.0, &mcp_file, 1, deadline);
+    assert!(initialized["result"].is_object());
+    writeln!(
+        input,
+        "{}",
+        serde_json::json!({"jsonrpc":"2.0","method":"notifications/initialized"})
+    )
+    .unwrap();
+    writeln!(input, "{}", serde_json::json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"live_metrics","arguments":{"origin":origin,"epoch":epoch,"after":after.to_string(),"count":64,"max_bytes":32768}}})).unwrap();
+    input.flush().unwrap();
+    let reply = wait_response(&mut mcp.0, &mcp_file, 2, deadline);
+    let framed: serde_json::Value = serde_json::from_str(
+        reply["result"]["content"][0]["text"]
+            .as_str()
+            .expect("MCP cursor result"),
+    )
+    .unwrap();
+    assert_eq!(framed["untrusted_telemetry"], true);
+    let envelope = &framed["telemetry_payload"];
+    assert_eq!(envelope["schema_version"], "fabric.cli.v1");
+    assert_eq!(envelope["command"], "live-metrics");
+    assert_eq!(envelope["data"], expected);
+    println!(
+        "real daemon cursor parity: CLI, MCP and direct pages equal; gap={} entries={} next_after={}",
+        direct.gap,
+        direct.entries.len(),
+        direct.next_after
+    );
 }
