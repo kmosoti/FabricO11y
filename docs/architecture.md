@@ -243,7 +243,7 @@ or perform eviction or other I/O.
 
 ### Pure alert lifecycle
 
-`fabric-alert` is a dependency-free, single-instance threshold reducer with a
+`fabric-alert` is a Sans-I/O, single-instance threshold reducer with a
 fixed rule and revision, normalized integer profile and source identity. Inputs
 carry an injected evaluation time, source frontier and explicit evidence and
 coverage or a typed missingness reason. Inclusive trigger and recovery thresholds
@@ -254,6 +254,30 @@ covered observation must advance it. Duplicate inputs are idempotent; conflictin
 replay and older time or frontier are rejected before mutation. These are
 caller-supplied claims, not event-time watermarks, custody or authorization.
 Scheduling, configuration, durable state and notification remain separate.
+
+### Local alert journal
+
+The explicitly opened `fabric_server::alert_journal::AlertJournal` provisions
+one authority, scope, rule revision, instance and source profile per
+disk-backed SQLite directory. A single process owns the journal. Each new
+evaluation compares the expected version and restores the reducer against
+the provisioned rule. One transaction writes the next checkpoint and
+immutable event receipt. A lifecycle change adds a stable notification
+intent to that event. Exact historical retries return the stored receipt,
+and conflicts or refusals leave the checkpoint and source frontier intact.
+
+A provision selects up to 4,096 events. The database file is capped at 32 MiB,
+with filesystem space also needed for the rollback journal and owner lock.
+The local API records the caller's evidence and coverage claims. Operator
+authorization, evidence readback and delivery require their own integration.
+
+```mermaid
+flowchart LR
+    EVAL["Provisioned scope and evaluation"] --> CHECK["Expected version and exact replay"]
+    CHECK --> REDUCE["Pure alert lifecycle"]
+    REDUCE --> COMMIT["SQLite checkpoint and immutable event"]
+    COMMIT --> INTENT["Transition intent in event receipt"]
+```
 
 ### Frozen experiment snapshots
 
