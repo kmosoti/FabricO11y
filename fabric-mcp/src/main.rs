@@ -425,6 +425,34 @@ impl PlanWriter {
                 None,
             ));
         }
+        let observed = fabric::observation::decode_versioned(input.proposal_raw.as_bytes())
+            .map_err(|_| ErrorData::invalid_params("invalid proposal observation", None))?;
+        let fabric::observation::StoredObservation::V3(observed) = observed else {
+            return Err(ErrorData::invalid_params(
+                "invalid proposal observation",
+                None,
+            ));
+        };
+        let fabric::observation::Data::JsonLog { fields } = observed.data else {
+            return Err(ErrorData::invalid_params("invalid proposal carrier", None));
+        };
+        let raw = fields
+            .get(fabric::canonical::PROPOSAL_MARKER)
+            .and_then(serde_json::Value::as_str)
+            .filter(|raw| fields.len() == 1 && raw.len() <= 4096)
+            .ok_or_else(|| ErrorData::invalid_params("invalid proposal carrier", None))?;
+        let proposal: fabric::canonical::PlanProposal = serde_json::from_str(raw)
+            .map_err(|_| ErrorData::invalid_params("invalid proposal carrier", None))?;
+        if proposal.version != 1
+            || proposal.scope.0 != input.scope
+            || proposal.proposal_id.len() != 64
+            || !proposal
+                .proposal_id
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        {
+            return Err(ErrorData::invalid_params("invalid proposal carrier", None));
+        }
         let command = fabric::canonical::AcceptPlan {
             version: 1,
             authority: input.authority.clone(),
@@ -464,6 +492,12 @@ impl PlanWriter {
                     || receipt.scope.0 != input.scope
                     || receipt.command_id != input.command_id
                     || receipt.previous_head != input.expected_head
+                    || receipt.proposal_id != proposal.proposal_id
+                    || receipt.head <= 0
+                    || receipt
+                        .previous_head
+                        .is_some_and(|head| receipt.head <= head)
+                    || !valid(&receipt.writer)
                 {
                     return Ok(CallToolResult::error(vec![ContentBlock::text(
                         "invalid acceptance receipt",
