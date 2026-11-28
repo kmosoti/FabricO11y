@@ -139,7 +139,8 @@ mod tests {
     fn legacy_open_and_failed_first_v5_leave_no_series_schema() {
         let scratch = std::env::var_os("TMPDIR").expect("disk TMPDIR required");
         let root = tempfile::tempdir_in(scratch).unwrap();
-        let ledger = super::super::Ledger::open(root.path(), 64 * 1024 * 1024).unwrap();
+        let state = root.path().join("canonical");
+        let ledger = super::super::Ledger::open(&state, 64 * 1024 * 1024).unwrap();
         let count = |db: &Connection| -> u64 {
             db.query_row("SELECT count(*) FROM sqlite_schema WHERE name IN ('v5_series_window','v5_series_clock','v5_series_expiry')", [], |r| r.get(0)).unwrap()
         };
@@ -149,7 +150,7 @@ mod tests {
             .pragma_query_value(None, "page_count", |r| r.get(0))
             .unwrap();
         drop(ledger);
-        let mut ledger = super::super::Ledger::open(root.path(), 64 * 1024 * 1024).unwrap();
+        let mut ledger = super::super::Ledger::open(&state, 64 * 1024 * 1024).unwrap();
         assert_eq!(count(&ledger.conn), 0);
         assert_eq!(
             ledger
@@ -197,7 +198,7 @@ mod tests {
             0
         );
         drop(ledger);
-        let ledger = super::super::Ledger::open(root.path(), 64 * 1024 * 1024).unwrap();
+        let ledger = super::super::Ledger::open(&state, 64 * 1024 * 1024).unwrap();
         assert_eq!(count(&ledger.conn), 0);
         ledger
             .conn
@@ -208,7 +209,7 @@ mod tests {
             .unwrap();
         drop(ledger);
         assert!(
-            matches!(super::super::Ledger::open(root.path(), 64 * 1024 * 1024), Err(error) if error.contains("canonical registry conflict"))
+            matches!(super::super::Ledger::open(&state, 64 * 1024 * 1024), Err(error) if error.contains("canonical registry conflict"))
         );
     }
     #[test]
