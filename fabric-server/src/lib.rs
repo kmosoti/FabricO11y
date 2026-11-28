@@ -7,6 +7,7 @@ pub mod engine;
 mod handshake;
 mod handshake_io;
 pub mod ledger;
+mod segment_ticket;
 mod self_observation;
 mod worker_pool;
 use fabric::{
@@ -142,6 +143,7 @@ struct ReadState {
     admission: FairMutex<()>,
     reader: Mutex<ledger::Reader>,
     authority: String,
+    ticket_key: [u8; 32],
     frontiers: RwLock<BTreeMap<String, u64>>,
     engine: Option<engine::Greptime>,
     telemetry: Option<ServerTelemetry>,
@@ -313,6 +315,7 @@ impl Server {
                 admission: FairMutex::new(()),
                 reader: Mutex::new(state.reader()?),
                 authority: state.authority.clone(),
+                ticket_key: segment_ticket::new_key()?,
                 frontiers: RwLock::new(frontiers),
                 engine: state.engine(),
                 telemetry,
@@ -988,6 +991,60 @@ fn handle(
                 }
             };
             Ok(Response::ProjectionReady { readiness })
+        }
+        Request::IssueSegmentTicket {
+            version,
+            authority,
+            origin,
+            digest,
+            start,
+            end,
+        } => {
+            if !reader || reads.engine.is_some() || authority != reads.authority || !allows(&origin)
+            {
+                return Err("segment access unavailable".into());
+            }
+            let ticket = segment_ticket::issue(
+                &reads.ticket_key,
+                version,
+                authority,
+                origin,
+                digest,
+                start,
+                end,
+            )?;
+            Ok(Response::SegmentTicket { ticket })
+        }
+        Request::ReadSegmentChunk {
+            ticket,
+            offset,
+            length,
+        } => {
+            if !reader
+                || reads.engine.is_some()
+                || ticket.authority != reads.authority
+                || !allows(&ticket.origin)
+            {
+                return Err("segment access unavailable".into());
+            }
+            segment_ticket::verify(&reads.ticket_key, &ticket, offset, length)?;
+            let cancel = reserve(reads, "segment-read", query_lease)?;
+            let deadline = Instant::now() + Duration::from_secs(5);
+            let projection = projection
+                .try_lock()
+                .map_err(|_| "projection segment unavailable")?;
+            let bytes = projection.read_verified_segment_chunk(
+                &fabric_query::transfer::SegmentChunkRequest {
+                    active_authority: &reads.authority,
+                    origin: &ticket.origin,
+                    digest: &ticket.digest,
+                    offset,
+                    length,
+                },
+                &cancel,
+                deadline,
+            )?;
+            Ok(Response::SegmentChunk { offset, bytes })
         }
         Request::Capabilities => Ok(Response::Capabilities {
             authority: reads.authority.clone(),

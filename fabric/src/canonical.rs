@@ -174,6 +174,20 @@ pub struct PlanDecision {
     pub proposal_id: String,
 }
 
+/// A short-lived, receiver-scoped grant to request bytes, not an availability promise.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SegmentTicket {
+    pub version: u32,
+    pub authority: String,
+    pub origin: String,
+    pub digest: String,
+    pub start: u64,
+    pub end: u64,
+    pub expires: u64,
+    pub mac: String,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "command", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Request {
@@ -200,6 +214,19 @@ pub enum Request {
     },
     ProjectionReady {
         request: ProjectionReadyRequest,
+    },
+    IssueSegmentTicket {
+        version: u32,
+        authority: String,
+        origin: String,
+        digest: String,
+        start: u64,
+        end: u64,
+    },
+    ReadSegmentChunk {
+        ticket: SegmentTicket,
+        offset: u64,
+        length: u32,
     },
     Capabilities,
     Query {
@@ -248,6 +275,13 @@ pub enum Response {
     },
     ProjectionReady {
         readiness: ProjectionReadiness,
+    },
+    SegmentTicket {
+        ticket: SegmentTicket,
+    },
+    SegmentChunk {
+        offset: u64,
+        bytes: Vec<u8>,
     },
     Capabilities {
         authority: String,

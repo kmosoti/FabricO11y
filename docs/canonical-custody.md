@@ -250,3 +250,20 @@ new acceptance while existing results remain retryable; there is no automatic
 eviction or epoch/floor protocol. Acceptance is a research decision, not
 authorization for external execution, and its receipt does not assert
 analytical projection visibility.
+
+### Projection segment transfer
+
+A canonical Reader may request a version 1 segment ticket for an enrolled
+origin, the current authority, a SHA-256 segment digest and a bounded half-open
+byte range. The ticket declares permission to request that range for 60 seconds;
+it does not establish that the segment exists or will remain available. Tickets
+are bound to this receiver instance and become invalid when it restarts. Node
+and decision-writer credentials cannot issue or redeem them. Native engine mode
+does not offer this projection transfer.
+
+A Reader redeems the ticket for a nonempty range of at most 16 KiB within its
+scope. Each response is produced from bytes read during a complete bounded hash
+verification of the current manifest segment; missing, changed, ambiguous or
+corrupt artifacts are unavailable. A resumed request must present the ticket
+again and is verified independently. Segments are rebuildable projection data;
+a ticket and a successful transfer do not constitute canonical custody.
