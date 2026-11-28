@@ -17,19 +17,19 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::olap::{
-    FileIdentity, MAX_COMPACT_GROUP_BYTES, MAX_COMPACT_OUTPUT_BYTES, MAX_COMPACT_SEALED_FILE_BYTES,
-    MAX_COMPACTED_FILE_ROWS, MAX_REPLACE_FAN_IN_FILES, MaintenanceLockGuard, O_DIRECTORY_FLAG,
-    O_NOFOLLOW_FLAG, O_NONBLOCK_FLAG, OLAP_DOMAINS, OlapParquetStore, PinnedAuxiliaryFile,
-    PinnedParquetFile, ReplacedInputRecord, SupersededUnlinkOutcome, acquire_maintenance_lock,
-    advance_replace_epoch_on_fd, inspect_regular_file_identity_in_dir_no_symlink, is_eloop_error,
-    is_enotdir_error, is_regular_file_in_dir_no_symlink,
-    load_live_writer_uncommitted_partitions_unlocked, next_part_seq,
-    open_anchor_data_dir_if_exists, open_child_dir_nofollow, open_olap_partition_dir_nofollow,
-    open_regular_file_in_dir_nofollow, proc_fd_child_path, proc_fd_dir_path,
-    reconcile_partition_intent_on_fd, record_replaced_parquet_inputs_on_fd, sha256_bytes_hex,
-    unlink_regular_file_in_dir_if_present, unlink_regular_file_matching_identity_in_dir,
-    unlink_superseded_file_in_dir, validate_parquet_filename,
-    write_atomic_json_in_dir_fd_bounded_pinned,
+    CompactionOutcome, FileIdentity, MAX_COMPACT_GROUP_BYTES, MAX_COMPACT_OUTPUT_BYTES,
+    MAX_COMPACT_SEALED_FILE_BYTES, MAX_COMPACTED_FILE_ROWS, MAX_REPLACE_FAN_IN_FILES,
+    MaintenanceLockGuard, O_DIRECTORY_FLAG, O_NOFOLLOW_FLAG, O_NONBLOCK_FLAG, OLAP_DOMAINS,
+    OlapParquetStore, PinnedAuxiliaryFile, PinnedParquetFile, ReplacedInputRecord,
+    SupersededUnlinkOutcome, acquire_maintenance_lock, advance_replace_epoch_on_fd,
+    inspect_regular_file_identity_in_dir_no_symlink, is_eloop_error, is_enotdir_error,
+    is_regular_file_in_dir_no_symlink, load_live_writer_uncommitted_partitions_unlocked,
+    next_part_seq, open_anchor_data_dir_if_exists, open_child_dir_nofollow,
+    open_olap_partition_dir_nofollow, open_regular_file_in_dir_nofollow, proc_fd_child_path,
+    proc_fd_dir_path, reconcile_partition_intent_on_fd, record_replaced_parquet_inputs_on_fd,
+    sha256_bytes_hex, unlink_regular_file_in_dir_if_present,
+    unlink_regular_file_matching_identity_in_dir, unlink_superseded_file_in_dir,
+    validate_parquet_filename, write_atomic_json_in_dir_fd_bounded_pinned,
 };
 use crate::parquet_guard::open_verified_parquet_batch_reader_from_bytes;
 
@@ -84,7 +84,7 @@ impl RetentionJanitor {
     }
 
     /// Runs compaction, >7d metric downsampling, and disk quota eviction.
-    /// Compaction/downsampling errors in one partition never block disk-cap eviction.
+    /// Scratch reservation refusal defers quota eviction; other maintenance errors do not.
     pub fn run_pass(&self, now_day: Option<NaiveDate>) -> Result<JanitorStats, String> {
         self.run_pass_excluding(now_day, &BTreeSet::new())
     }
@@ -115,6 +115,7 @@ impl RetentionJanitor {
         let mut downsampled_partitions = 0;
         let mut evicted_partitions = 0;
         let mut first_maintenance_err: Option<String> = scan_before_errs.into_iter().next();
+        let mut scratch_refusal: Option<String> = None;
 
         for &domain in OLAP_DOMAINS {
             let (partitions, part_errors) =
@@ -220,7 +221,7 @@ impl RetentionJanitor {
                     file_names
                 };
                 if compaction_candidates.len() > self.config.compaction_file_threshold {
-                    match compact_partition(
+                    match compact_partition_classified(
                         &self.olap,
                         domain,
                         day,
@@ -229,8 +230,11 @@ impl RetentionJanitor {
                         &compaction_candidates,
                         &maint_guard,
                     ) {
-                        Ok(true) => compacted_partitions += 1,
-                        Ok(false) => {}
+                        Ok(CompactionOutcome::Complete(Some(_))) => compacted_partitions += 1,
+                        Ok(CompactionOutcome::Complete(None)) => {}
+                        Ok(CompactionOutcome::ScratchRefused(error)) => {
+                            scratch_refusal = Some(error)
+                        }
                         Err(e) => {
                             if first_maintenance_err.is_none() {
                                 first_maintenance_err = Some(e);
@@ -248,10 +252,12 @@ impl RetentionJanitor {
         {
             first_maintenance_err = Some(err);
         }
-        if admission_kernel::telemetry::disk_needs_eviction(
-            total_bytes_after,
-            self.config.max_disk_bytes,
-        ) {
+        if scratch_refusal.is_none()
+            && admission_kernel::telemetry::disk_needs_eviction(
+                total_bytes_after,
+                self.config.max_disk_bytes,
+            )
+        {
             let mut candidates: Vec<(NaiveDate, &'static str)> = Vec::new();
             for &domain in OLAP_DOMAINS {
                 match list_day_partitions_confined(self.olap.layout(), domain) {
@@ -298,6 +304,11 @@ impl RetentionJanitor {
             }
         }
 
+        if let Some(err) = scratch_refusal {
+            return Err(format!(
+                "scratch reservation refused; quota eviction deferred: {err}"
+            ));
+        }
         if let Some(err) = first_maintenance_err {
             return Err(err);
         }
@@ -788,7 +799,7 @@ fn needs_metrics_downsample_on_fd(part_fd: &File, file_names: &[String]) -> bool
     has_raw || weighted_ds_count > 1
 }
 
-fn compact_partition(
+fn compact_partition_classified(
     olap: &OlapParquetStore,
     domain: &str,
     day: NaiveDate,
@@ -796,8 +807,8 @@ fn compact_partition(
     part_fd: &File,
     file_names: &[String],
     maint: &MaintenanceLockGuard,
-) -> Result<bool, String> {
-    compact_partition_with_limits(
+) -> Result<CompactionOutcome, String> {
+    compact_partition_with_limits_classified(
         olap,
         domain,
         day,
@@ -812,6 +823,7 @@ fn compact_partition(
     )
 }
 
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 fn compact_partition_with_limits(
     olap: &OlapParquetStore,
@@ -826,6 +838,38 @@ fn compact_partition_with_limits(
     max_output_bytes: u64,
     maint: &MaintenanceLockGuard,
 ) -> Result<bool, String> {
+    match compact_partition_with_limits_classified(
+        olap,
+        domain,
+        day,
+        part_dir,
+        part_fd,
+        file_names,
+        max_file_rows,
+        max_sealed_bytes,
+        max_group_bytes,
+        max_output_bytes,
+        maint,
+    )? {
+        CompactionOutcome::Complete(path) => Ok(path.is_some()),
+        CompactionOutcome::ScratchRefused(error) => Err(error),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn compact_partition_with_limits_classified(
+    olap: &OlapParquetStore,
+    domain: &str,
+    day: NaiveDate,
+    part_dir: &Path,
+    part_fd: &File,
+    file_names: &[String],
+    max_file_rows: usize,
+    max_sealed_bytes: u64,
+    max_group_bytes: u64,
+    max_output_bytes: u64,
+    maint: &MaintenanceLockGuard,
+) -> Result<CompactionOutcome, String> {
     let mut unsealed: Vec<(usize, u64, String)> = Vec::with_capacity(file_names.len());
     for fname in file_names {
         let Some((file, meta)) =
@@ -843,7 +887,7 @@ fn compact_partition_with_limits(
         unsealed.push((rows, meta.len(), fname.clone()));
     }
     if unsealed.len() < 2 {
-        return Ok(false);
+        return Ok(CompactionOutcome::Complete(None));
     }
     unsealed.sort_by(|a, b| {
         a.0.cmp(&b.0)
@@ -851,7 +895,7 @@ fn compact_partition_with_limits(
             .then_with(|| a.2.cmp(&b.2))
     });
     if unsealed[0].0.saturating_add(unsealed[1].0) > max_file_rows {
-        return Ok(false);
+        return Ok(CompactionOutcome::Complete(None));
     }
 
     let mut selected = Vec::new();
@@ -870,21 +914,19 @@ fn compact_partition_with_limits(
         selected.push(part_dir.join(fname));
     }
     if selected.len() < 2 {
-        return Ok(false);
+        return Ok(CompactionOutcome::Complete(None));
     }
 
-    Ok(olap
-        .compact_parquet_files_unlocked_with_limits(
-            domain,
-            day,
-            &selected,
-            max_file_rows,
-            max_sealed_bytes,
-            max_group_bytes,
-            max_output_bytes,
-            maint,
-        )?
-        .is_some())
+    olap.compact_parquet_files_classified(
+        domain,
+        day,
+        &selected,
+        max_file_rows,
+        max_sealed_bytes,
+        max_group_bytes,
+        max_output_bytes,
+        maint,
+    )
 }
 
 #[derive(Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize)]
@@ -1484,6 +1526,59 @@ mod tests {
                 .field_with_name(SPINDLE_PROVENANCE_COLUMN)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn scratch_refusal_defers_all_quota_eviction() {
+        let dir = non_tmp_dir();
+        let catalog = crate::CatalogStore::open(dir.path()).unwrap();
+        let olap = OlapParquetStore::new(catalog.layout().clone());
+        let now = Utc::now();
+        let point = |offset: i64| MetricPoint {
+            timestamp_ms: (now - Duration::days(offset)).timestamp_millis(),
+            name: format!("scratch.{offset}"),
+            value: 1.0,
+            host: "h".into(),
+            slice: "agent.slice".into(),
+            unit: "u".into(),
+            pid: None,
+            labels_json: "{}".into(),
+        };
+        olap.write_metrics(&[point(1)]).unwrap();
+        olap.write_metrics(&[point(0)]).unwrap();
+        olap.write_metrics(&[point(0)]).unwrap();
+        let before = olap
+            .list_parquet_files("metrics", None)
+            .unwrap()
+            .into_iter()
+            .map(|p| (p.clone(), fs::read(p).unwrap()))
+            .collect::<Vec<_>>();
+        struct Reset;
+        impl Drop for Reset {
+            fn drop(&mut self) {
+                OlapParquetStore::set_test_allocation_refusal(false);
+            }
+        }
+        OlapParquetStore::set_test_allocation_refusal(true);
+        let reset = Reset;
+        let janitor = RetentionJanitor::new(
+            olap.clone(),
+            JanitorConfig {
+                max_disk_bytes: 1,
+                downsample_after_days: 1000,
+                compaction_file_threshold: 1,
+            },
+        );
+        let err = janitor.run_pass(Some(now.date_naive())).unwrap_err();
+        drop(reset);
+        assert!(err.contains("scratch reservation refused; quota eviction deferred"));
+        let after = olap
+            .list_parquet_files("metrics", None)
+            .unwrap()
+            .into_iter()
+            .map(|p| (p.clone(), fs::read(p).unwrap()))
+            .collect::<Vec<_>>();
+        assert_eq!(after, before);
     }
 
     #[test]
