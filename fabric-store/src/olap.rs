@@ -273,6 +273,7 @@ struct HashingWriter<W: Write> {
     hasher: Sha256,
     written: u64,
     limit: Option<u64>,
+    refused: Arc<AtomicBool>,
 }
 
 #[derive(Debug)]
@@ -301,12 +302,13 @@ fn is_staging_limit(err: &parquet::errors::ParquetError) -> bool {
 }
 
 impl<W: Write> HashingWriter<W> {
-    fn new(inner: W, limit: Option<u64>) -> Self {
+    fn new(inner: W, limit: Option<u64>, refused: Arc<AtomicBool>) -> Self {
         Self {
             inner,
             hasher: Sha256::new(),
             written: 0,
             limit,
+            refused,
         }
     }
 
@@ -322,6 +324,7 @@ impl<W: Write> Write for HashingWriter<W> {
             .limit
             .is_some_and(|max| self.written.checked_add(len).is_none_or(|n| n > max))
         {
+            self.refused.store(true, Ordering::Relaxed);
             return Err(std::io::Error::other(StagingLimit));
         }
         let n = self.inner.write(buf)?;
@@ -4550,18 +4553,21 @@ impl OlapParquetStore {
                 return Err(format!("failed cloning staging parquet fd: {e}"));
             }
         };
+        let refused = Arc::new(AtomicBool::new(false));
         let inner_res = (|| -> Result<Option<(u64, String)>, String> {
             macro_rules! parquet_write {
                 ($op:expr) => {
                     match $op {
                         Ok(value) => value,
-                        Err(err) if is_staging_limit(&err) => return Ok(None),
+                        Err(err) if refused.load(Ordering::Relaxed) || is_staging_limit(&err) => {
+                            return Ok(None)
+                        }
                         Err(err) => return Err(err.to_string()),
                     }
                 };
             }
             let mut writer = parquet_write!(ArrowWriter::try_new(
-                HashingWriter::new(writer_file, max_staged_bytes),
+                HashingWriter::new(writer_file, max_staged_bytes, Arc::clone(&refused)),
                 first_batch.schema(),
                 Some(props),
             ));
@@ -6755,7 +6761,7 @@ mod tests {
 
     #[test]
     fn hashing_writer_enforces_cap_before_forwarding_and_preserves_io_errors() {
-        let mut writer = HashingWriter::new(Vec::new(), Some(4));
+        let mut writer = HashingWriter::new(Vec::new(), Some(4), Arc::new(AtomicBool::new(false)));
         writer.write_all(b"abcd").unwrap();
         let err = writer.write_all(b"e").unwrap_err();
         assert!(
@@ -6776,7 +6782,7 @@ mod tests {
                 Ok(())
             }
         }
-        let err = HashingWriter::new(Broken, Some(4))
+        let err = HashingWriter::new(Broken, Some(4), Arc::new(AtomicBool::new(false)))
             .write_all(b"a")
             .unwrap_err();
         assert_eq!(err.kind(), ErrorKind::BrokenPipe);
