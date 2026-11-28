@@ -343,3 +343,111 @@ fn cancellation_reaches_canonical_and_capacity_waits_for_actual_exchange() {
     stop.store(true, Ordering::SeqCst);
     server.join().unwrap();
 }
+
+/// Authenticated canonical-protocol mock: exercises the actual stdio adapter,
+/// but does not claim to exercise a live ledger or server authorization policy.
+#[test]
+fn writer_mode_exposes_only_acceptance_and_retries_identical_body() {
+    use fabric::canonical::{self, Request, Response};
+    use std::{net::TcpListener, os::unix::fs::PermissionsExt, time::Instant};
+    const WRITER: &str = "writer-credential-for-test";
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let (tx_bodies, bodies) = mpsc::channel();
+    let receipt = r#"{"version":1,"authority":"auth","scope":"plan","command_id":"stable-id","writer":"owner","previous_head":null,"head":1,"proposal_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#.to_owned();
+    let expected_receipt = receipt.clone();
+    let server = std::thread::spawn(move || {
+        for _ in 0..2 {
+            let (mut stream, _) = listener.accept().unwrap();
+            let deadline = Instant::now() + Duration::from_secs(8);
+            let (_, request) =
+                canonical::accept_authenticated_sync(&mut stream, [WRITER], deadline).unwrap();
+            let Request::AcceptPlan { body } = request else {
+                panic!("unexpected writer request")
+            };
+            tx_bodies.send(body).unwrap();
+            canonical::write_frame(
+                &mut stream,
+                &serde_json::to_vec(&Response::PlanAccepted {
+                    decision: receipt.clone(),
+                })
+                .unwrap(),
+                deadline,
+            )
+            .unwrap();
+        }
+    });
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("writer.key");
+    std::fs::write(&path, WRITER).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_fabric-mcp"))
+        .env("FABRIC_ENDPOINT", address.to_string())
+        .env("FABRIC_MCP_MODE", "writer")
+        .env("FABRIC_WRITER_CREDENTIAL_FILE", &path)
+        .env_remove("FABRIC_CREDENTIAL")
+        .env_remove("FABRIC_CREDENTIAL_FILE")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut input = child.stdin.take().unwrap();
+    let output = child.stdout.take().unwrap();
+    let (tx, rx) = mpsc::channel();
+    let reader = std::thread::spawn(move || {
+        for line in BufReader::new(output).lines() {
+            let Ok(line) = line else { break };
+            if let Ok(value) = serde_json::from_str::<Value>(&line)
+                && tx.send(value).is_err()
+            {
+                break;
+            }
+        }
+    });
+    writeln!(input, "{}", json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"writer-test","version":"1"}}})).unwrap();
+    input.flush().unwrap();
+    assert_eq!(rx.recv_timeout(Duration::from_secs(5)).unwrap()["id"], 1);
+    writeln!(
+        input,
+        "{}",
+        json!({"jsonrpc":"2.0","method":"notifications/initialized"})
+    )
+    .unwrap();
+    writeln!(
+        input,
+        "{}",
+        json!({"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}})
+    )
+    .unwrap();
+    input.flush().unwrap();
+    let listed = rx.recv_timeout(Duration::from_secs(5)).unwrap();
+    let tools = listed["result"]["tools"].as_array().unwrap();
+    assert_eq!(tools.len(), 1);
+    assert_eq!(tools[0]["name"], "accept_plan");
+    assert_eq!(tools[0]["annotations"]["readOnlyHint"], false);
+    let raw = "{ \"proposal\": \"exact   bytes\" }";
+    let arguments = json!({"authority":"auth","command_id":"stable-id","scope":"plan","expected_head":null,"origin":"origin","source_id":"1","proposal_raw":raw});
+    for id in [3, 4] {
+        writeln!(input, "{}", json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"name":"accept_plan","arguments":arguments}})).unwrap();
+        input.flush().unwrap();
+        let result = rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert_eq!(result["id"], id);
+        let frame: Value =
+            serde_json::from_str(result["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(frame["untrusted_telemetry"], true);
+        assert_eq!(frame["telemetry_payload"]["decision"], expected_receipt);
+        assert!(!result.to_string().contains(WRITER));
+    }
+    let first = bodies.recv_timeout(Duration::from_secs(5)).unwrap();
+    let second = bodies.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert_eq!(first, second);
+    let sent: Value = serde_json::from_str(&first).unwrap();
+    assert_eq!(sent["command_id"], "stable-id");
+    assert_eq!(sent["proposal_raw"], raw);
+    server.join().unwrap();
+    let _ = child.kill();
+    let _ = child.wait();
+    drop(input);
+    reader.join().unwrap();
+}

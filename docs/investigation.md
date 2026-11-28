@@ -81,6 +81,16 @@ or incompatible state. Interrupted files absent from the manifest are removed
 on reopen. An uncertain publication requires reopening before further work.
 Canonical history supplies replay for rebuilding the projection.
 
+The MCP server defaults to its read-only Reader tools. To run a separate
+writer-only server, set `FABRIC_MCP_MODE=writer`, `FABRIC_ENDPOINT`, and
+`FABRIC_WRITER_CREDENTIAL_FILE` to a private owned decision-writer credential
+file; do not configure the Reader credential variables in that process. The
+writer exposes only `accept_plan`. Supply a stable command ID and preserve all
+arguments, including the exact proposal JSON string, when retrying an uncertain
+outcome. A successful response includes the stored decision receipt in the
+untrusted telemetry envelope. The receiver remains responsible for writer scope,
+authority and acceptance checks.
+
 The stdio `inspect_segment` tool asks the configured Reader for a version 1
 projection-segment range ticket. It returns the complete scoped ticket and its
 receiver-relative expiry in the untrusted telemetry envelope, without reading
