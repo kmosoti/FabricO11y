@@ -197,6 +197,20 @@ from the verified child and is confined to the same outbox. Reader origin grants
 are not per-parent authorization, and this observation is distinct from
 analytical projection visibility.
 
+### Bounded multi-objective frontier
+
+`fabric-evidence::frontier` projects up to 128 attempt rows against an explicit
+profile of at most 16 ordered objectives. Each profile names the dataset, cohort,
+and frozen cutoff by immutable reference; all axes share evaluator and
+configuration and each axis names its objective, direction, unit and aggregation.
+Only feasible, complete rows with the same profile participate. Invalid,
+incomplete and incomparable rows and their evidence references are retained.
+Strict Pareto dominance compares reported integer values directly; equal vectors
+remain on the frontier and the minimum row ID identifies a dominator. Inexact
+values remain attributed measurements, and the projection does not authenticate
+references or establish feasibility, correctness, or authority. Inputs are
+preflight bounded and malformed widths and duplicate row IDs are rejected.
+
 ### Frozen experiment snapshots
 
 `fabric-evidence::snapshot` keeps a bounded case roster, named cutoff and

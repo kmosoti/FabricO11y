@@ -3,6 +3,7 @@ pub mod application_result;
 pub mod attempt_observation;
 pub mod durable_snapshot;
 pub mod evidence_manifest;
+pub mod frontier;
 pub mod snapshot;
 
 pub use application_result::{
