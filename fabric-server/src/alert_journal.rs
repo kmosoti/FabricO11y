@@ -140,10 +140,10 @@ impl AlertJournal {
         flock(&owner, FlockOperation::NonBlockingLockExclusive)
             .map_err(|_| JournalError::Storage)?;
         let path = dir.join("alert.sqlite");
-        if let Ok(m) = fs::symlink_metadata(&path) {
-            if !m.is_file() || m.file_type().is_symlink() {
-                return Err(JournalError::Storage);
-            }
+        if let Ok(m) = fs::symlink_metadata(&path)
+            && (!m.is_file() || m.file_type().is_symlink())
+        {
+            return Err(JournalError::Storage);
         }
         let file = OpenOptions::new()
             .write(true)
