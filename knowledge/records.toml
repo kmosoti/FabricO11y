@@ -577,6 +577,17 @@ added_by = "agent"
 human_ratified = false
 
 [[records]]
+id = "D-0357"
+source_path = "knowledge/decisions/D-0357-local-intent-lease.md"
+title = "One-shot local intent reservation"
+type = "decision"
+status = "proposed"
+date = 2026-11-28
+added_by = "agent"
+human_ratified = false
+related = ["D-0355"]
+
+[[records]]
 id = "D-0217"
 source_path = "knowledge/decisions/D-0217-versioned-trace-parent.md"
 title = "Versioned trace parents"

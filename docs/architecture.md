@@ -263,13 +263,24 @@ disk-backed SQLite directory. A single process owns the journal. Each new
 evaluation compares the expected version and restores the reducer against
 the provisioned rule. One transaction writes the next checkpoint and
 immutable event receipt. A lifecycle change adds a stable notification
-intent to that event. Exact historical retries return the stored receipt,
-and conflicts or refusals leave the checkpoint and source frontier intact.
+intent to that event and a local work row in the same commit. Exact historical
+retries return the stored receipt, and conflicts or refusals leave the
+checkpoint and source frontier intact.
 
 A provision selects up to 4,096 events. The database file is capped at 32 MiB,
 with filesystem space also needed for the rollback journal and owner lock.
 The local API records the caller's evidence and coverage claims. Operator
 authorization, evidence readback and delivery require their own integration.
+
+The work table provides a one-shot local reservation for newly recorded
+intents. At most one lease is active per journal, for at most five minutes.
+Its opaque token is bound to the open journal session and its durable fence;
+the deadline is a process-local monotonic `Instant`, not persisted time.
+State inspection reports the persisted state. Claim and abandon operations
+observe expiration; an expired or abandoned lease becomes uncertain. On
+reopen, an interrupted lease also becomes uncertain. No automatic retry,
+reclaim or delivery confirmation follows. Historical receipt-only intents
+remain `LegacyUnmanaged` after the transactional schema migration.
 
 The local journal can return up to 64 ordered entries per page for its
 provisioned authority and scope. The first page fixes a version frontier;
@@ -283,7 +294,9 @@ flowchart LR
     EVAL["Provisioned scope and evaluation"] --> CHECK["Expected version and exact replay"]
     CHECK --> REDUCE["Pure alert lifecycle"]
     REDUCE --> COMMIT["SQLite checkpoint and immutable event"]
-    COMMIT --> INTENT["Transition intent in event receipt"]
+    COMMIT --> INTENT["Transition intent and queued local work"]
+    INTENT --> LEASE["One-shot local lease"]
+    LEASE --> UNCERTAIN["Uncertain after expiry, abandon or reopen"]
     COMMIT --> READ["Ordered local pages at a fixed version"]
 ```
 
