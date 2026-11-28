@@ -13,6 +13,31 @@ use std::path::Path;
 
 pub use std::os::fd::OwnedFd;
 
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum MirrorSyncFault {
+    StagedFile,
+    DestinationDirectory,
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(crate) static MIRROR_SYNC_FAULT: std::cell::Cell<Option<MirrorSyncFault>> = const { std::cell::Cell::new(None) };
+}
+
+#[cfg(test)]
+fn fail_mirror_sync(target: &str, stage: MirrorSyncFault) -> bool {
+    target == "live_state.json"
+        && MIRROR_SYNC_FAULT.with(|slot| {
+            if slot.get() == Some(stage) {
+                slot.set(None);
+                true
+            } else {
+                false
+            }
+        })
+}
+
 /// Opens an existing directory strictly with `O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC`.
 pub(crate) fn open_dir_fd_nofollow(path: &Path, label: &str) -> Result<OwnedFd, String> {
     open(
@@ -194,7 +219,13 @@ pub(crate) fn write_staged_then_renameat(
     let mut file = File::from(tmp_fd);
     if let Err(err) = enforce_private_file_mode(&file, tmp_name)
         .and_then(|()| file.write_all(bytes).map_err(|e| e.to_string()))
-        .and_then(|()| file.sync_all().map_err(|e| e.to_string()))
+        .and_then(|()| {
+            #[cfg(test)]
+            if fail_mirror_sync(target_name, MirrorSyncFault::StagedFile) {
+                return Err(std::io::Error::other("injected mirror file sync failure").to_string());
+            }
+            file.sync_all().map_err(|e| e.to_string())
+        })
     {
         drop(file);
         let _ = unlinkat(&staging_fd, tmp_name, AtFlags::empty());
@@ -248,6 +279,14 @@ pub(crate) fn write_staged_then_renameat(
         "state dir",
     )?;
     let _ = fsync(&staging_fd);
-    fsync(&state_fd).map_err(|e| format!("failed syncing state dir: {e}"))?;
+    #[cfg(test)]
+    let result = if fail_mirror_sync(target_name, MirrorSyncFault::DestinationDirectory) {
+        Err(Errno::IO)
+    } else {
+        fsync(&state_fd)
+    };
+    #[cfg(not(test))]
+    let result = fsync(&state_fd);
+    result.map_err(|e| format!("failed syncing state dir: {e}"))?;
     Ok(())
 }
