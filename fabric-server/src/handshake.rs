@@ -22,6 +22,7 @@ pub(crate) struct HandshakeAuth {
     pub reader: String,
     pub nodes: BTreeMap<String, String>,
     pub writers: BTreeMap<String, String>,
+    pub writer_bindings: BTreeMap<String, WriterBinding>,
     pub authority: String,
 }
 
@@ -57,7 +58,7 @@ impl HandshakeAuth {
         for (writer, secret) in &self.writers {
             if verify_client_proof(secret, client_nonce, server_nonce, proof) {
                 return Some(ProofPeer {
-                    scope: CredentialScope::Writer(writer.clone()),
+                    scope: CredentialScope::Writer(self.writer_bindings.get(writer)?.clone()),
                     secret: secret.clone(),
                     authority: self.authority.clone(),
                 });
@@ -67,10 +68,18 @@ impl HandshakeAuth {
     }
 }
 
+#[derive(Clone)]
+pub(crate) struct WriterBinding {
+    pub writer: String,
+    pub scope: String,
+    pub origin: String,
+    pub producer: String,
+}
+
 enum CredentialScope {
     Reader,
     Node(String),
-    Writer(String),
+    Writer(WriterBinding),
 }
 
 // A handshake proof alone is not a grant for the request body.
@@ -120,7 +129,7 @@ impl AuthenticatedGrant {
             CredentialScope::Node(origin) => Some(origin),
         }
     }
-    pub(crate) fn writer(&self) -> Option<&str> {
+    pub(crate) fn writer(&self) -> Option<&WriterBinding> {
         match &self.scope {
             CredentialScope::Writer(writer) => Some(writer),
             CredentialScope::Reader | CredentialScope::Node(_) => None,

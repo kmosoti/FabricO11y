@@ -122,6 +122,7 @@ struct Auth {
     reader: String,
     nodes: BTreeMap<String, String>,
     writers: BTreeMap<String, String>,
+    writer_bindings: BTreeMap<String, handshake::WriterBinding>,
 }
 struct QuerySlot {
     active: bool,
@@ -188,6 +189,7 @@ impl Server {
             nodes.insert(node.origin.clone(), token);
         }
         let mut writers = BTreeMap::new();
+        let mut writer_bindings = BTreeMap::new();
         let mut scopes = std::collections::BTreeSet::new();
         let valid = |s: &str| {
             !s.is_empty()
@@ -218,6 +220,15 @@ impl Server {
                 return Err("credentials must have disjoint grants".into());
             }
             writers.insert(grant.writer.clone(), token);
+            writer_bindings.insert(
+                grant.writer.clone(),
+                handshake::WriterBinding {
+                    writer: grant.writer.clone(),
+                    scope: grant.scope.clone(),
+                    origin: grant.origin.clone(),
+                    producer: grant.producer.clone(),
+                },
+            );
         }
         if config
             .node_quota_bytes
@@ -299,6 +310,7 @@ impl Server {
             reader,
             nodes,
             writers,
+            writer_bindings,
         };
         let telemetry = ServerTelemetry::from_env(&auth).unwrap_or_else(|error| {
             eprintln!("fabric-server: self-telemetry disabled: {error}");
@@ -440,6 +452,7 @@ impl Server {
             reader: self.auth.reader.clone(),
             nodes: self.auth.nodes.clone(),
             writers: self.auth.writers.clone(),
+            writer_bindings: self.auth.writer_bindings.clone(),
             authority: self.reads.authority.clone(),
         });
         let preauth_limit = (connection_limit * 4).clamp(16, 128);
@@ -1035,6 +1048,16 @@ fn handle(
     match request {
         Request::AcceptPlan { body } => {
             let writer = writer.ok_or("decision writer credential required")?;
+            observation::check_json_depth(
+                body.as_bytes(),
+                canonical::MAX_ACCEPT_BODY,
+                observation::MAX_DEPTH + 2,
+            )?;
+            let command: canonical::AcceptPlan =
+                serde_json::from_str(&body).map_err(|_| "invalid acceptance command")?;
+            if command.scope.0 != writer.scope || command.origin != writer.origin {
+                return Err("unauthorized plan scope".into());
+            }
             let result = canonical_state(ledger, reads)?.accept_plan(writer, &body)?;
             Ok(Response::PlanAccepted { decision: result })
         }
@@ -1517,6 +1540,7 @@ mod receipt_tests {
             reader: server.auth.reader.clone(),
             nodes: server.auth.nodes.clone(),
             writers: server.auth.writers.clone(),
+            writer_bindings: server.auth.writer_bindings.clone(),
             authority: server.reads.authority.clone(),
         };
         let secret = if credential == "reader" {

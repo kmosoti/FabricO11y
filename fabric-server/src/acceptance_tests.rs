@@ -153,6 +153,57 @@ fn head(result: &str) -> i64 {
 }
 
 #[test]
+fn reassigned_writer_cannot_replay_historical_scope_after_restart() {
+    let scratch = std::env::var_os("TMPDIR").map(PathBuf::from).unwrap();
+    let root = tempfile::tempdir_in(scratch).unwrap();
+    let mut config = config(root.path());
+    let (address, stop, server) = start(&config);
+    let authority = match exchange(&address, READER, &Request::Progress) {
+        Response::Progress { authority, .. } => authority,
+        other => panic!("unexpected progress: {other:?}"),
+    };
+    let old = proposal(1, 'a');
+    let new = proposal(2, 'b').replace("\\\"plan\\\"", "\\\"next\\\"");
+    assert_ne!(new, proposal(2, 'b'));
+    let ingest = Request::Ingest {
+        origin: "origin".into(),
+        records: vec![
+            ForwardRecord {
+                source_id: 1,
+                raw: old.clone(),
+            },
+            ForwardRecord {
+                source_id: 2,
+                raw: new.clone(),
+            },
+        ],
+    };
+    assert!(matches!(
+        exchange(&address, NODE, &ingest),
+        Response::Committed { through: 2, .. }
+    ));
+    let old_body = command(&authority, "old", None, 1, &old);
+    let _saved = result(accept(&address, WRITER, &old_body));
+    stop.store(true, Ordering::SeqCst);
+    server.join().unwrap();
+
+    config.decision_writers[0].scope = "next".into();
+    let (address, stop, server) = start(&config);
+    assert!(matches!(
+        accept(&address, WRITER, &old_body),
+        Response::Error { .. }
+    ));
+    let mut current: AcceptPlan =
+        serde_json::from_str(&command(&authority, "new", None, 2, &new)).unwrap();
+    current.scope = PlanScope("next".into());
+    let body = serde_json::to_string(&current).unwrap();
+    let current_result = result(accept(&address, WRITER, &body));
+    assert_eq!(result(accept(&address, WRITER, &body)), current_result);
+    stop.store(true, Ordering::SeqCst);
+    server.join().unwrap();
+}
+
+#[test]
 fn rotated_credentials_reauthenticate_existing_policy_after_restart() {
     let scratch = std::env::var_os("TMPDIR").map(PathBuf::from).unwrap();
     let root = tempfile::tempdir_in(scratch).unwrap();
