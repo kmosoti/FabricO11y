@@ -9,6 +9,9 @@ pub mod arrow_schemas;
 pub mod evidence_manifest {
     pub use fabric_evidence::evidence_manifest::*;
 }
+pub mod worker_segment {
+    pub use fabric_evidence::worker_segment::*;
+}
 pub mod guide;
 pub mod model;
 pub mod paths;
@@ -59,3 +62,7 @@ pub use ring::{
 };
 pub use sketch::DDSketch;
 pub use terminal::sanitize_terminal_text;
+pub use worker_segment::{
+    Admission as WorkerSegmentAdmission, Completeness as WorkerSegmentCompleteness,
+    Error as WorkerSegmentError, Scope as WorkerSegmentScope, Verifier as WorkerSegmentVerifier,
+};
