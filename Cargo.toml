@@ -3,6 +3,7 @@ members = [
     "admission-kernel",
     "fabric",
     "fabric-core",
+    "fabric-alert",
     "fabric-corpus",
     "fabric-ops",
     "fabric-colloquium",
