@@ -356,21 +356,29 @@ fn enqueue_spindle_record(
         if SpindleProjectionRange::include(&mut staging.range, &key).is_err() {
             return false;
         }
-        let provenance = Some(key.clone());
+        let provenance = Some(key);
         match env {
             IngestEnvelope::Metric(mut pt) => {
                 if pt.timestamp_ms <= 0 {
                     pt.timestamp_ms = now_ms;
                 }
                 hot_metric = cache_hot.then(|| pt.clone());
-                if let Some(cursor) = runtime.live_cursor.lock().as_mut() {
-                    cursor.observe(&key.origin, key.record_id, Some(&pt), cache_hot);
+                if let Some(cursor) = &runtime.live_cursor
+                    && let Some(key) = &provenance
+                {
+                    cursor
+                        .lock()
+                        .observe(&key.origin, key.record_id, Some(&pt), cache_hot);
                 }
                 staging.metrics.push((provenance, pt));
             }
             IngestEnvelope::Log(mut log) => {
-                if let Some(cursor) = runtime.live_cursor.lock().as_mut() {
-                    cursor.observe(&key.origin, key.record_id, None, cache_hot);
+                if let Some(cursor) = &runtime.live_cursor
+                    && let Some(key) = &provenance
+                {
+                    cursor
+                        .lock()
+                        .observe(&key.origin, key.record_id, None, cache_hot);
                 }
                 if log.timestamp_ms <= 0 {
                     log.timestamp_ms = now_ms;
@@ -378,8 +386,12 @@ fn enqueue_spindle_record(
                 staging.logs.push((provenance, log));
             }
             IngestEnvelope::Trace(mut span) => {
-                if let Some(cursor) = runtime.live_cursor.lock().as_mut() {
-                    cursor.observe(&key.origin, key.record_id, None, cache_hot);
+                if let Some(cursor) = &runtime.live_cursor
+                    && let Some(key) = &provenance
+                {
+                    cursor
+                        .lock()
+                        .observe(&key.origin, key.record_id, None, cache_hot);
                 }
                 if span.timestamp_ms <= 0 {
                     span.timestamp_ms = now_ms;
@@ -396,6 +408,26 @@ fn enqueue_spindle_record(
             .push_hot_only(std::slice::from_ref(&pt));
     }
     true
+}
+
+fn enqueue_polled_record(
+    key: SpindleProvenance,
+    env: IngestEnvelope,
+    runtime: &DaemonRuntime,
+    cache_hot: bool,
+    export_node: Option<&str>,
+) -> Result<bool, String> {
+    if is_forwarded_host_signal(&key, &env, export_node) {
+        SpindleProjectionRange::include(&mut runtime.spindle_staging.lock().range, &key)?;
+        if let Some(cursor) = &runtime.live_cursor {
+            cursor
+                .lock()
+                .observe_filtered_metric(&key.origin, key.record_id);
+        }
+        Ok(true)
+    } else {
+        Ok(enqueue_spindle_record(key, env, runtime, cache_hot))
+    }
 }
 
 #[cfg(test)]
@@ -683,7 +715,7 @@ struct DaemonRuntime {
     _writer_lock: fabric_store::WriterLockGuard,
     flush_lock: Mutex<()>,
     ring: RwLock<HotMetricRing>,
-    live_cursor: Mutex<Option<crate::live_cursor::LiveCursor>>,
+    live_cursor: Option<Mutex<crate::live_cursor::LiveCursor>>,
     latest: RwLock<Option<CollectedState>>,
     pending_logs: RwLock<Vec<LogRecord>>,
     pending_traces: RwLock<Vec<TraceSpanRecord>>,
@@ -1088,12 +1120,18 @@ impl DaemonRuntime {
                 count,
                 max_bytes,
             } => {
-                let cursor = self.live_cursor.lock();
-                match cursor
+                match self
+                    .live_cursor
                     .as_ref()
                     .ok_or("live cursor disabled")
                     .and_then(|cursor| {
-                        cursor.page(origin.as_deref(), epoch.as_deref(), after, count, max_bytes)
+                        cursor.lock().page(
+                            origin.as_deref(),
+                            epoch.as_deref(),
+                            after,
+                            count,
+                            max_bytes,
+                        )
                     }) {
                     Ok(page) => DaemonResponse::LiveMetricsV1(page),
                     Err(message) => DaemonResponse::Error {
@@ -1219,7 +1257,7 @@ async fn run_daemon_mode(mut config: DaemonConfig, spindle_only: bool) -> Result
         _writer_lock: writer_lock,
         flush_lock: Mutex::new(()),
         ring: RwLock::new(HotMetricRing::with_capacity_bytes(ring_budget)),
-        live_cursor: Mutex::new(live_cursor),
+        live_cursor: live_cursor.map(Mutex::new),
         latest: RwLock::new(None),
         pending_logs: RwLock::new(Vec::new()),
         pending_traces: RwLock::new(Vec::new()),
@@ -1369,8 +1407,8 @@ async fn run_daemon_mode(mut config: DaemonConfig, spindle_only: bool) -> Result
             _ = ticker.tick() => {
                 tick_count += 1;
                 let cgroup_pressure = crate::resource_budget::cgroup_memory_pressure();
-                if cgroup_pressure && let Some(cursor) = runtime.live_cursor.lock().as_mut() {
-                    cursor.clear_pressure();
+                if cgroup_pressure && let Some(cursor) = &runtime.live_cursor {
+                    cursor.lock().clear_pressure();
                 }
 
                 // Drain bounded queues.
@@ -1405,20 +1443,10 @@ async fn run_daemon_mode(mut config: DaemonConfig, spindle_only: bool) -> Result
                             let mut accepted_cursor = after_id;
                             for (key, env) in poll.records {
                                 let id = key.record_id;
-                                if is_forwarded_host_signal(&key, &env, export_node.as_deref()) {
-                                    let included = SpindleProjectionRange::include(
-                                        &mut runtime.spindle_staging.lock().range,
-                                        &key,
-                                    );
-                                    if let Err(error) = included {
-                                        *runtime.last_spindle_error.write() = Some(error);
-                                        spindle_backpressure = true;
-                                        break;
-                                    }
-                                    if let Some(cursor) = runtime.live_cursor.lock().as_mut() { cursor.observe(&key.origin, key.record_id, None, !cgroup_pressure); }
-                                } else if !enqueue_spindle_record(key, env, &runtime, !cgroup_pressure) {
-                                    spindle_backpressure = true;
-                                    break;
+                                match enqueue_polled_record(key, env, &runtime, !cgroup_pressure, export_node.as_deref()) {
+                                    Ok(true) => {},
+                                    Ok(false) => { spindle_backpressure = true; break; },
+                                    Err(error) => { *runtime.last_spindle_error.write() = Some(error); spindle_backpressure = true; break; },
                                 }
                                 accepted_cursor = id;
                             }
@@ -1573,6 +1601,138 @@ mod tests {
     use super::*;
 
     #[test]
+    fn live_cursor_reports_filtered_metric_but_not_nonmetric_as_loss() {
+        let root =
+            tempfile::tempdir_in(std::env::var_os("TMPDIR").expect("disk-backed TMPDIR")).unwrap();
+        let data_dir = root.path().join("data");
+        let tmp_dir = root.path().join("scratch");
+        fs::create_dir_all(&tmp_dir).unwrap();
+        let catalog = CatalogStore::open(&data_dir).unwrap();
+        let layout = catalog.layout().clone();
+        let olap = OlapParquetStore::new(layout.clone());
+        let janitor = RetentionJanitor::new(olap.clone(), JanitorConfig::default());
+        let guard = SelfPreservationGuard::new(
+            data_dir.to_string_lossy().into_owned(),
+            tmp_dir.to_string_lossy().into_owned(),
+            Arc::new(AtomicU64::new(0)),
+        );
+        let runtime = DaemonRuntime {
+            start_instant: std::time::Instant::now(),
+            config: DaemonConfig {
+                data_dir,
+                tmp_dir,
+                ..Default::default()
+            },
+            catalog,
+            olap,
+            janitor,
+            _writer_lock: fabric_store::try_acquire_writer_lock(&layout).unwrap(),
+            flush_lock: Mutex::new(()),
+            ring: RwLock::new(HotMetricRing::with_capacity_bytes(4096)),
+            live_cursor: Some(Mutex::new(
+                crate::live_cursor::LiveCursor::new(crate::live_cursor::MIN_BUDGET, 0).unwrap(),
+            )),
+            latest: RwLock::new(None),
+            pending_logs: RwLock::new(Vec::new()),
+            pending_traces: RwLock::new(Vec::new()),
+            pending_fs_events: RwLock::new(Vec::new()),
+            polled_spindle_cursor: AtomicU64::new(0),
+            spindle_staging: Mutex::new(SpindleStaging::default()),
+            last_spindle_error: RwLock::new(None),
+            overflow_dropped: Arc::new(AtomicU64::new(0)),
+            guard,
+        };
+        let key = |id, producer: &str| SpindleProvenance {
+            origin: "origin".into(),
+            record_id: id,
+            producer: producer.into(),
+            generation: "generation".into(),
+            sequence: id,
+        };
+        let metric = |name: &str, slice: &str, unit: &str| MetricPoint {
+            timestamp_ms: 1,
+            name: name.into(),
+            value: 1.0,
+            host: "host".into(),
+            slice: slice.into(),
+            unit: unit.into(),
+            pid: None,
+            labels_json: "{}".into(),
+        };
+        assert!(
+            enqueue_polled_record(
+                key(1, "app"),
+                IngestEnvelope::Metric(metric("ordinary", "app", "unit")),
+                &runtime,
+                true,
+                Some("node")
+            )
+            .unwrap()
+        );
+        assert!(
+            enqueue_polled_record(
+                key(2, "fabric.host-export"),
+                IngestEnvelope::Metric(metric("fabric.host.cpu", "spindle", "host/node")),
+                &runtime,
+                true,
+                Some("node")
+            )
+            .unwrap()
+        );
+        assert!(
+            enqueue_polled_record(
+                key(3, "app"),
+                IngestEnvelope::Log(LogRecord {
+                    timestamp_ms: 1,
+                    level: "info".into(),
+                    source: "src".into(),
+                    unit: "unit".into(),
+                    message: "msg".into(),
+                    attributes_json: "{}".into()
+                }),
+                &runtime,
+                true,
+                Some("node")
+            )
+            .unwrap()
+        );
+        let page = match runtime.handle_rpc(DaemonRequest::LiveMetricsV1 {
+            origin: None,
+            epoch: None,
+            after: 0,
+            count: 4,
+            max_bytes: 4096,
+        }) {
+            DaemonResponse::LiveMetricsV1(p) => p,
+            other => panic!("unexpected response: {other:?}"),
+        };
+        assert_eq!(page.observed_through, 3);
+        assert_eq!(page.oldest_retained, Some(1));
+        assert_eq!(page.highest_lost, 2);
+        assert_eq!(
+            page.highest_lost_reason,
+            Some(crate::live_cursor::LossReason::Filtered)
+        );
+        assert!(page.gap);
+        assert_eq!(
+            page.entries
+                .iter()
+                .map(|entry| entry.record_id)
+                .collect::<Vec<_>>(),
+            vec![1]
+        );
+        let next = runtime
+            .live_cursor
+            .as_ref()
+            .unwrap()
+            .lock()
+            .page(Some("origin"), Some(&page.epoch), 2, 4, 4096)
+            .unwrap();
+        assert!(!next.gap);
+        assert_eq!(next.next_after, 3);
+    }
+
+    #[test]
     fn failed_olap_flush_preserves_ring_and_spindle_watermark() {
         let base = std::env::var_os("TMPDIR")
             .filter(|s| !s.is_empty())
@@ -1615,7 +1775,9 @@ mod tests {
             _writer_lock: fabric_store::try_acquire_writer_lock(&layout).expect("writer lock"),
             flush_lock: Mutex::new(()),
             ring: RwLock::new(HotMetricRing::with_capacity_bytes(4096)),
-            live_cursor: Mutex::new(None),
+            live_cursor: Some(Mutex::new(
+                crate::live_cursor::LiveCursor::new(crate::live_cursor::MIN_BUDGET, 0).unwrap(),
+            )),
             latest: RwLock::new(None),
             pending_logs: RwLock::new(Vec::new()),
             pending_traces: RwLock::new(Vec::new()),
@@ -1627,8 +1789,6 @@ mod tests {
             guard,
         };
 
-        *runtime.live_cursor.lock() =
-            Some(crate::live_cursor::LiveCursor::new(crate::live_cursor::MIN_BUDGET, 0).unwrap());
         // Stage metric, log, and trace Spindle records with IDs 1..=6.
         for id in 1..=2 {
             assert!(enqueue_test_spindle_record(
@@ -1824,7 +1984,7 @@ mod tests {
             _writer_lock: fabric_store::try_acquire_writer_lock(&layout).expect("writer lock"),
             flush_lock: Mutex::new(()),
             ring: RwLock::new(HotMetricRing::with_capacity_bytes(4096)),
-            live_cursor: Mutex::new(None),
+            live_cursor: None,
             latest: RwLock::new(None),
             pending_logs: RwLock::new(Vec::new()),
             pending_traces: RwLock::new(Vec::new()),
@@ -1952,7 +2112,7 @@ mod tests {
             _writer_lock: fabric_store::try_acquire_writer_lock(&layout).expect("writer lock"),
             flush_lock: Mutex::new(()),
             ring: RwLock::new(HotMetricRing::with_capacity_bytes(4096)),
-            live_cursor: Mutex::new(None),
+            live_cursor: None,
             latest: RwLock::new(None),
             pending_logs: RwLock::new(Vec::new()),
             pending_traces: RwLock::new(Vec::new()),
@@ -2227,7 +2387,7 @@ mod tests {
             _writer_lock: fabric_store::try_acquire_writer_lock(&layout).expect("writer lock"),
             flush_lock: Mutex::new(()),
             ring: RwLock::new(HotMetricRing::with_capacity_bytes(4096)),
-            live_cursor: Mutex::new(None),
+            live_cursor: None,
             latest: RwLock::new(None),
             pending_logs: RwLock::new(Vec::new()),
             pending_traces: RwLock::new(Vec::new()),
@@ -2432,7 +2592,7 @@ mod tests {
             _writer_lock: fabric_store::try_acquire_writer_lock(&layout).expect("writer lock"),
             flush_lock: Mutex::new(()),
             ring: RwLock::new(HotMetricRing::with_capacity_bytes(65_536)),
-            live_cursor: Mutex::new(None),
+            live_cursor: None,
             latest: RwLock::new(None),
             pending_logs: RwLock::new(Vec::new()),
             pending_traces: RwLock::new(Vec::new()),
@@ -2612,7 +2772,7 @@ mod tests {
             _writer_lock: fabric_store::try_acquire_writer_lock(&layout).expect("writer lock"),
             flush_lock: Mutex::new(()),
             ring: RwLock::new(HotMetricRing::with_capacity_bytes(65_536)),
-            live_cursor: Mutex::new(None),
+            live_cursor: None,
             latest: RwLock::new(None),
             pending_logs: RwLock::new(Vec::new()),
             pending_traces: RwLock::new(Vec::new()),
@@ -2797,7 +2957,7 @@ mod tests {
             _writer_lock: fabric_store::try_acquire_writer_lock(&layout).expect("writer lock"),
             flush_lock: Mutex::new(()),
             ring: RwLock::new(HotMetricRing::with_capacity_bytes(65_536)),
-            live_cursor: Mutex::new(None),
+            live_cursor: None,
             latest: RwLock::new(None),
             pending_logs: RwLock::new(Vec::new()),
             pending_traces: RwLock::new(Vec::new()),

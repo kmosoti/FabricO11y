@@ -495,7 +495,9 @@ from 1 to 64, and `max_bytes` from 1024 to 32768. Once a trusted Spindle origin
 has been observed, the response supplies that origin and a fresh process epoch;
 continue with both values and `next_after`. Wrong origin, epoch, future position,
 or invalid limits are rejected. The operation reports `epoch_start_after`,
-`observed_through`, `highest_lost`, and a `gap` with its reason. A position equal
+`observed_through`, `oldest_retained`, `highest_lost`, and a `gap` with its reason.
+Forwarded host metrics excluded by the collector are reported as filtered loss;
+nonmetric source positions are not. A position equal
 to the highest lost position is beyond that loss; the epoch boundary remains
 separate. Nonmetric source records advance the observed position but are not
 reported as lost metrics. An oversized retained row requires a larger page

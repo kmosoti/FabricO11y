@@ -24,6 +24,7 @@ pub enum LossReason {
     Pressure,
     Oversized,
     Invalid,
+    Filtered,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LivePage {
@@ -32,6 +33,7 @@ pub struct LivePage {
     pub epoch: String,
     pub observed_through: u64,
     pub epoch_start_after: u64,
+    pub oldest_retained: Option<u64>,
     pub highest_lost: u64,
     pub highest_lost_reason: Option<LossReason>,
     pub gap: bool,
@@ -77,6 +79,19 @@ impl LiveCursor {
             self.lost = id;
             self.lost_reason = Some(reason);
         }
+    }
+    pub(crate) fn observe_filtered_metric(&mut self, origin: &str, id: u64) {
+        if id <= self.observed {
+            return;
+        }
+        if self.origin.is_none() {
+            self.origin = Some(origin.to_owned());
+        }
+        if self.origin.as_deref() != Some(origin) {
+            return;
+        }
+        self.observed = id;
+        self.mark_lost(id, LossReason::Filtered);
     }
     pub(crate) fn clear_pressure(&mut self) {
         while let Some(old) = self.entries.pop_front() {
@@ -163,6 +178,7 @@ impl LiveCursor {
             epoch: self.epoch.clone(),
             observed_through: self.observed,
             epoch_start_after: self.epoch_start_after,
+            oldest_retained: self.entries.front().map(|entry| entry.id),
             highest_lost: self.lost,
             highest_lost_reason: self.lost_reason,
             gap: after < self.lost || after < self.epoch_start_after,
@@ -176,6 +192,9 @@ impl LiveCursor {
             next_after: after,
             entries: Vec::new(),
         };
+        if encoded_response_len(&page)? > max_bytes {
+            return Err("live cursor byte bound too small");
+        }
         for entry in self.entries.iter().filter(|e| e.id > after) {
             if page.entries.len() == count {
                 break;
@@ -185,13 +204,7 @@ impl LiveCursor {
                 record_id: entry.id,
                 point,
             });
-            // The response wrapper and newline add fewer than 128 bytes.
-            if serde_json::to_vec(&page)
-                .map_err(|_| "live cursor encoding")?
-                .len()
-                + 128
-                > max_bytes
-            {
+            if encoded_response_len(&page)? > max_bytes {
                 page.entries.pop();
                 if page.entries.is_empty() {
                     return Err("live cursor row exceeds byte bound");
@@ -206,6 +219,12 @@ impl LiveCursor {
         Ok(page)
     }
 }
+fn encoded_response_len(page: &LivePage) -> Result<usize, &'static str> {
+    serde_json::to_vec(&crate::daemon::DaemonResponse::LiveMetricsV1(page.clone()))
+        .map(|bytes| bytes.len().saturating_add(1))
+        .map_err(|_| "live cursor encoding")
+}
+
 struct BoundedWriter {
     bytes: Vec<u8>,
     limit: usize,
