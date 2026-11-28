@@ -688,6 +688,149 @@ fn segment_tickets_bind_real_reader_and_verified_resume() {
 }
 
 #[test]
+fn cursor_routes_fence_configured_and_durable_policy_after_restart() {
+    use canonical::PlanPageRequest;
+    assert!(
+        fs::read_to_string("/proc/self/cgroup")
+            .unwrap()
+            .contains("/fabrico11y.slice/")
+    );
+    let scratch = std::env::var_os("TMPDIR").map(PathBuf::from).unwrap();
+    let root = tempfile::tempdir_in(scratch).unwrap();
+    let mut config = config(root.path());
+    let (address, stop, server) = start(&config);
+    let authority = match exchange(&address, READER, &Request::Progress) {
+        Response::Progress { authority, .. } => authority,
+        other => panic!("{other:?}"),
+    };
+    let raw = proposal(1, 'a');
+    assert!(matches!(
+        exchange(
+            &address,
+            NODE,
+            &Request::Ingest {
+                origin: "origin".into(),
+                records: vec![ForwardRecord {
+                    source_id: 1,
+                    raw: raw.clone()
+                }]
+            }
+        ),
+        Response::Committed { .. }
+    ));
+    let saved = result(accept(
+        &address,
+        WRITER,
+        &command(&authority, "one", None, 1, &raw),
+    ));
+    let second = result(accept(
+        &address,
+        WRITER,
+        &command(&authority, "two", Some(head(&saved)), 1, &raw),
+    ));
+    let scope = PlanScope("plan".into());
+    let make_page = |scope: PlanScope, cursor: Option<String>| Request::PlanPage {
+        request: PlanPageRequest {
+            scope,
+            cursor,
+            limit: 1,
+            ttl_secs: 900,
+        },
+    };
+    let token = match exchange(&address, WRITER, &make_page(scope.clone(), None)) {
+        Response::PlanPage { page } => page.next_cursor.unwrap(),
+        other => panic!("{other:?}"),
+    };
+    let subscription = match exchange(
+        &address,
+        WRITER,
+        &Request::SubscribePlan {
+            scope: scope.clone(),
+        },
+    ) {
+        Response::PlanSubscribed { subscription, .. } => subscription,
+        other => panic!("{other:?}"),
+    };
+    let routes = || {
+        [
+            make_page(scope.clone(), Some(token.clone())),
+            Request::SubscribePlan {
+                scope: scope.clone(),
+            },
+            Request::PollPlanHint {
+                scope: scope.clone(),
+                subscription: subscription.clone(),
+            },
+            Request::RevokePlanCursors {
+                scope: scope.clone(),
+            },
+        ]
+    };
+    let db = rusqlite::Connection::open(config.storage.join("canonical.sqlite")).unwrap();
+    for (field, bad, original) in [
+        ("owner", "other", "owner"),
+        ("origin", "changed", "origin"),
+        ("producer", "changed", "worker"),
+    ] {
+        let sql = format!("UPDATE plan_scope SET {field}=?1 WHERE scope='plan'");
+        db.execute(&sql, [bad]).unwrap();
+        for request in routes() {
+            assert!(
+                matches!(exchange(&address, WRITER, &request), Response::Error { .. }),
+                "{field}: {request:?}"
+            );
+        }
+        db.execute(&sql, [original]).unwrap();
+    }
+    db.execute("UPDATE meta SET value='changed' WHERE key='authority'", [])
+        .unwrap();
+    for request in routes() {
+        assert!(
+            matches!(exchange(&address, WRITER, &request), Response::Error { .. }),
+            "authority: {request:?}"
+        );
+    }
+    db.execute(
+        "UPDATE meta SET value=?1 WHERE key='authority'",
+        [&authority],
+    )
+    .unwrap();
+    assert!(matches!(
+        exchange(
+            &address,
+            WRITER,
+            &make_page(scope.clone(), Some(token.clone()))
+        ),
+        Response::PlanPage { .. }
+    ));
+    assert_eq!(
+        result(accept(
+            &address,
+            WRITER,
+            &command(&authority, "two", Some(head(&saved)), 1, &raw)
+        )),
+        second
+    );
+    drop(db);
+    stop.store(true, Ordering::SeqCst);
+    server.join().unwrap();
+    config.decision_writers[0].scope = "next".into();
+    let (address, stop, server) = start(&config);
+    for request in routes() {
+        assert!(
+            matches!(exchange(&address, WRITER, &request), Response::Error { .. }),
+            "reassigned: {request:?}"
+        );
+    }
+    assert!(matches!(
+        exchange(&address, WRITER, &make_page(PlanScope("next".into()), None)),
+        Response::PlanPage { .. }
+    ));
+    stop.store(true, Ordering::SeqCst);
+    server.join().unwrap();
+}
+
+#[test]
 fn scoped_cursor_survives_restart_and_hints_coalesce() {
     use canonical::{PlanCursorFailure as Failure, PlanPageRequest};
     assert!(
