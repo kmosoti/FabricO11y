@@ -61,6 +61,14 @@ fn decode<T: for<'a> Deserialize<'a>>(bytes: &[u8]) -> Result<T, JournalError> {
     serde_json::from_slice(bytes).map_err(|_| JournalError::Corrupt)
 }
 
+fn write_error(error: rusqlite::Error) -> JournalError {
+    if error.sqlite_error_code() == Some(rusqlite::ErrorCode::DiskFull) {
+        JournalError::Full
+    } else {
+        JournalError::Storage
+    }
+}
+
 fn forbidden_state_path(path: &Path) -> bool {
     ["/tmp", "/dev/shm", "/run/shm"]
         .into_iter()
@@ -235,7 +243,7 @@ impl AlertJournal {
         let tx = self
             .db
             .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(|_| JournalError::Storage)?;
+            .map_err(write_error)?;
         let prior: Option<(i64, Vec<u8>, Vec<u8>)> = tx
             .query_row(
                 "SELECT expected,input,receipt FROM alert_events WHERE id=?1",
@@ -296,13 +304,13 @@ impl AlertJournal {
             "INSERT INTO alert_events VALUES(?1,?2,?3,?4)",
             params![request_id, version, input_bytes, encode(&receipt)?],
         )
-        .map_err(|_| JournalError::Storage)?;
+        .map_err(write_error)?;
         tx.execute(
             "UPDATE alert_state SET version=?1,checkpoint=?2 WHERE id=1",
             params![next, encode(&reducer.checkpoint())?],
         )
-        .map_err(|_| JournalError::Storage)?;
-        tx.commit().map_err(|_| JournalError::Storage)?;
+        .map_err(write_error)?;
+        tx.commit().map_err(write_error)?;
         Ok(receipt)
     }
 }
@@ -446,6 +454,58 @@ mod tests {
         assert_eq!(second.decision.lifecycle, Lifecycle::Inactive);
         assert!(second.intent_id.is_none());
     }
+
+    #[test]
+    fn sqlite_page_capacity_preserves_replay_and_frontier() {
+        let root = tempfile::tempdir_in(std::env::var_os("TMPDIR").expect("disk TMPDIR")).unwrap();
+        let dir = root.path().join("journal");
+        let provision = provision(128);
+        let mut journal = AlertJournal::open(&dir, provision.clone()).unwrap();
+        let initial = input(1, 1, 11);
+        let first = journal
+            .apply("auth", "scope", "initial", 0, initial)
+            .unwrap();
+        let pages: u64 = journal
+            .db
+            .pragma_query_value(None, "page_count", |r| r.get(0))
+            .unwrap();
+        journal
+            .db
+            .pragma_update(None, "max_page_count", pages)
+            .unwrap();
+
+        let mut refused = None;
+        for expected in 1..32 {
+            let id = format!("event-{expected}");
+            let evaluation = input(expected + 1, expected + 1, 11);
+            match journal.apply("auth", "scope", &id, expected, evaluation) {
+                Ok(receipt) => assert_eq!(receipt.version, expected + 1),
+                Err(JournalError::Full) => {
+                    refused = Some((id, expected, evaluation));
+                    break;
+                }
+                Err(error) => panic!("SQLite page limit returned {error:?}"),
+            }
+        }
+        let (id, expected, evaluation) = refused.expect("SQLite page limit must refuse a write");
+        assert_eq!(journal.read(&id).unwrap(), None);
+        assert_eq!(
+            journal
+                .apply("auth", "scope", "initial", 0, initial)
+                .unwrap(),
+            first
+        );
+
+        drop(journal);
+        // Opening the journal restores the configured page limit.
+        let mut reopened = AlertJournal::open(&dir, provision).unwrap();
+        assert_eq!(reopened.read(&id).unwrap(), None);
+        let accepted = reopened
+            .apply("auth", "scope", &id, expected, evaluation)
+            .unwrap();
+        assert_eq!(accepted.version, expected + 1);
+    }
+
     #[test]
     fn committed_alert_survives_owner_process_kill() {
         use std::{
