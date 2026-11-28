@@ -1,0 +1,27 @@
+groups:
+  - id: registry.fabric.v4.span
+    type: attribute_group
+    brief: Explicit trace and span identity for trace-only v4 observations.
+    note: The required top-level span object is scoped by its trace_id. A parent_span_id names at most one parent in that same trace; v4 observations do not express fan-in links. V4 extends the exact v3 descriptor and retains its context and envelope bounds. V4 data accepts only service_request, agent_run, and tool_execution from the inherited data vocabulary. When present, data.trace_id on a service_request must equal span.trace_id.
+    stability: development
+    attributes:
+      - id: fabric.span.trace_id
+        type: string
+        stability: development
+        requirement_level: required
+        brief: Exact lowercase nonzero 32-character hexadecimal trace identifier.
+        note: Plain hexadecimal without a prefix, separator, whitespace, or terminator. The all-zero value is invalid.
+        examples: [4bf92f3577b34da6a3ce929d0e0e4736]
+      - id: fabric.span.span_id
+        type: string
+        stability: development
+        requirement_level: required
+        brief: Exact lowercase 16-character hexadecimal span identifier.
+        note: Plain hexadecimal without a prefix, separator, whitespace, or terminator. It identifies this span within span.trace_id.
+        examples: [00f067aa0ba902b7]
+      - id: fabric.span.parent_span_id
+        type: string
+        stability: development
+        brief: Optional or null lowercase 16-character hexadecimal parent span identifier.
+        note: If present, plain hexadecimal without a prefix, separator, whitespace, or terminator; it must differ from span.span_id and is scoped to the same span.trace_id. Only one parent is allowed.
+        examples: [b7ad6b7169203331]

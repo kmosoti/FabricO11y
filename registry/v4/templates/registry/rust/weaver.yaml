@@ -1,0 +1,5 @@
+templates:
+  - template: descriptor.json.j2
+    filter: '.groups'
+    application_mode: single
+    file_name: descriptor.json
