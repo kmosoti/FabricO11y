@@ -357,7 +357,7 @@ fn writer_mode_exposes_only_acceptance_and_retries_identical_body() {
     let receipt = r#"{"version":1,"authority":"auth","scope":"plan","command_id":"stable-id","writer":"owner","previous_head":null,"head":1,"proposal_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#.to_owned();
     let expected_receipt = receipt.clone();
     let server = std::thread::spawn(move || {
-        for _ in 0..2 {
+        for index in 0..5 {
             let (mut stream, _) = listener.accept().unwrap();
             let deadline = Instant::now() + Duration::from_secs(8);
             let (_, request) =
@@ -366,12 +366,20 @@ fn writer_mode_exposes_only_acceptance_and_retries_identical_body() {
                 panic!("unexpected writer request")
             };
             tx_bodies.send(body).unwrap();
+            let decision = if index < 2 {
+                receipt.clone()
+            } else {
+                let mut value: Value = serde_json::from_str(&receipt).unwrap();
+                match index {
+                    2 => value["proposal_id"] = "b".repeat(64).into(),
+                    3 => value["head"] = 0.into(),
+                    _ => value["writer"] = "invalid writer".into(),
+                }
+                value.to_string()
+            };
             canonical::write_frame(
                 &mut stream,
-                &serde_json::to_vec(&Response::PlanAccepted {
-                    decision: receipt.clone(),
-                })
-                .unwrap(),
+                &serde_json::to_vec(&Response::PlanAccepted { decision }).unwrap(),
                 deadline,
             )
             .unwrap();
@@ -426,7 +434,32 @@ fn writer_mode_exposes_only_acceptance_and_retries_identical_body() {
     assert_eq!(tools.len(), 1);
     assert_eq!(tools[0]["name"], "accept_plan");
     assert_eq!(tools[0]["annotations"]["readOnlyHint"], false);
-    let raw = "{ \"proposal\": \"exact   bytes\" }";
+    let carrier = canonical::PlanProposal {
+        version: 1,
+        scope: canonical::PlanScope("plan".into()),
+        proposal_id: "a".repeat(64),
+    };
+    let mut fields = serde_json::Map::new();
+    fields.insert(
+        canonical::PROPOSAL_MARKER.into(),
+        serde_json::to_string(&carrier).unwrap().into(),
+    );
+    let raw = serde_json::to_string_pretty(&fabric::observation::ObservationV3 {
+        version: fabric::observation::VERSION_V3,
+        registry: fabric::observation::REGISTRY_V3.into(),
+        context: fabric::run::RunContext {
+            run_id: "aaaa0000-0000-0000-0000-000000000001".into(),
+        },
+        identity: fabric::observation::Identity {
+            producer: "worker".into(),
+            generation: "generation".into(),
+            sequence: 1,
+        },
+        timestamp_ns: 7,
+        resource: "local".into(),
+        data: fabric::observation::Data::JsonLog { fields },
+    })
+    .unwrap();
     let arguments = json!({"authority":"auth","command_id":"stable-id","scope":"plan","expected_head":null,"origin":"origin","source_id":"1","proposal_raw":raw});
     for id in [3, 4] {
         writeln!(input, "{}", json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"name":"accept_plan","arguments":arguments}})).unwrap();
@@ -438,6 +471,14 @@ fn writer_mode_exposes_only_acceptance_and_retries_identical_body() {
         assert_eq!(frame["untrusted_telemetry"], true);
         assert_eq!(frame["telemetry_payload"]["decision"], expected_receipt);
         assert!(!result.to_string().contains(WRITER));
+    }
+    for id in [5, 6, 7] {
+        writeln!(input, "{}", json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"name":"accept_plan","arguments":arguments}})).unwrap();
+        input.flush().unwrap();
+        let result = rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert_eq!(result["id"], id);
+        assert_eq!(result["result"]["isError"], true);
+        assert!(result.to_string().contains("invalid acceptance receipt"));
     }
     let first = bodies.recv_timeout(Duration::from_secs(5)).unwrap();
     let second = bodies.recv_timeout(Duration::from_secs(5)).unwrap();
