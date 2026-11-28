@@ -224,3 +224,131 @@ pub fn project(
     }
     Ok(result)
 }
+
+/// Bounded append-only projection over caller-supplied rows, not a canonical feed.
+/// Rows and evidence are claims; a reference does not verify source bytes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Incremental {
+    profile: Profile,
+    rows: BTreeMap<String, Projected>,
+    input_bytes: usize,
+    evidence_count: usize,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AppendWork {
+    pub dominance_checks: usize,
+}
+fn eligible(row: &Candidate, expected: &Profile) -> bool {
+    row.feasibility == Feasibility::Feasible
+        && row.profile == *expected
+        && row
+            .values
+            .iter()
+            .all(|value| matches!(value, Outcome::Known { .. }))
+}
+impl Incremental {
+    pub fn new(expected: Profile) -> Result<Self, FrontierError> {
+        let mut input_bytes = 0;
+        profile(&expected, &mut input_bytes)?;
+        Ok(Self {
+            profile: expected,
+            rows: BTreeMap::new(),
+            input_bytes,
+            evidence_count: 0,
+        })
+    }
+    pub fn rows(&self) -> &BTreeMap<String, Projected> {
+        &self.rows
+    }
+    pub fn input_bytes(&self) -> usize {
+        self.input_bytes
+    }
+    pub fn evidence_count(&self) -> usize {
+        self.evidence_count
+    }
+    /// Validate complete row and global limits before changing retained state.
+    pub fn append(&mut self, row: Candidate) -> Result<AppendWork, FrontierError> {
+        if self.rows.len() >= MAX_ROWS {
+            return Err(FrontierError::Limit);
+        }
+        let mut bytes = self.input_bytes;
+        let mut evidence = self.evidence_count;
+        if !text(&row.row_id) || !text(&row.candidate_id) {
+            return Err(FrontierError::InvalidIdentifier);
+        }
+        add(&mut bytes, row.row_id.len())?;
+        add(&mut bytes, row.candidate_id.len())?;
+        if self.rows.contains_key(&row.row_id) {
+            return Err(FrontierError::DuplicateRow);
+        }
+        if row.evidence.len() > MAX_EVIDENCE_PER_ROW {
+            return Err(FrontierError::Limit);
+        }
+        evidence = evidence
+            .checked_add(row.evidence.len())
+            .ok_or(FrontierError::Limit)?;
+        if evidence > MAX_TOTAL_EVIDENCE {
+            return Err(FrontierError::Limit);
+        }
+        reference(&row.attempt, &mut bytes)?;
+        for item in &row.evidence {
+            reference(item, &mut bytes)?;
+        }
+        profile(&row.profile, &mut bytes)?;
+        if row.values.len() != row.profile.axes.len() {
+            return Err(FrontierError::WidthMismatch);
+        }
+        let mut checks = 0;
+        let mut updates = Vec::new();
+        let status = if row.feasibility == Feasibility::Invalid {
+            Status::Invalid
+        } else if row.profile != self.profile {
+            Status::Incomparable
+        } else if !eligible(&row, &self.profile) {
+            Status::Incomplete
+        } else {
+            let mut dominator = None;
+            for (id, existing) in &self.rows {
+                if !eligible(&existing.candidate, &self.profile) {
+                    continue;
+                }
+                checks += 1;
+                if dominates(&existing.candidate, &row, &self.profile) && dominator.is_none() {
+                    dominator = Some(id.clone());
+                }
+                checks += 1;
+                if dominates(&row, &existing.candidate, &self.profile) {
+                    let better = match &existing.status {
+                        Status::Frontier => true,
+                        Status::Dominated { by_row_id } => row.row_id < *by_row_id,
+                        _ => false,
+                    };
+                    if better {
+                        updates.push(id.clone());
+                    }
+                }
+            }
+            match dominator {
+                Some(by_row_id) => Status::Dominated { by_row_id },
+                None => Status::Frontier,
+            }
+        };
+        for id in updates {
+            self.rows.get_mut(&id).expect("retained row").status = Status::Dominated {
+                by_row_id: row.row_id.clone(),
+            };
+        }
+        self.rows.insert(
+            row.row_id.clone(),
+            Projected {
+                candidate: row,
+                status,
+            },
+        );
+        self.input_bytes = bytes;
+        self.evidence_count = evidence;
+        Ok(AppendWork {
+            dominance_checks: checks,
+        })
+    }
+}

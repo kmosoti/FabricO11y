@@ -219,3 +219,89 @@ fn genuine_tradeoffs_remain_on_frontier() {
     let out = frontier::project(&profile(), vec![row("fast", 1, 1), row("quality", 2, 2)]).unwrap();
     assert!(out.values().all(|entry| entry.status == Status::Frontier));
 }
+
+#[test]
+fn append_only_projection_matches_independent_batch_after_every_row() {
+    use frontier::Incremental;
+    let mut missing = row("missing", 0, 0);
+    missing.values[0] = Outcome::Unknown(UnknownReason::Missing);
+    let mut invalid = row("invalid", 0, 0);
+    invalid.feasibility = Feasibility::Invalid;
+    let mut foreign = row("foreign", 0, 0);
+    foreign.profile.dataset = r("other");
+    let rows = vec![
+        row("z", 8, 2),
+        row("m", 2, 8),
+        row("a", 4, 6),
+        row("b", 4, 6),
+        missing,
+        invalid,
+        foreign,
+        row("extreme", i64::MAX, i64::MIN),
+    ];
+    for ordered in [rows.clone(), rows.iter().cloned().rev().collect()] {
+        let mut state = Incremental::new(profile()).unwrap();
+        let mut prefix = Vec::new();
+        for candidate in ordered {
+            prefix.push(candidate.clone());
+            let work = state.append(candidate).unwrap();
+            assert!(work.dominance_checks <= 2 * (prefix.len() - 1));
+            assert_eq!(
+                state.rows(),
+                &frontier::project(&profile(), prefix.clone()).unwrap()
+            );
+        }
+        assert_eq!(
+            state.rows(),
+            &frontier::project(&profile(), rows.clone()).unwrap()
+        );
+        assert_eq!(
+            state.rows()["z"].status,
+            Status::Dominated {
+                by_row_id: "a".into()
+            }
+        );
+        assert_eq!(
+            state.rows()["a"].status,
+            Status::Dominated {
+                by_row_id: "m".into()
+            }
+        );
+        assert_eq!(
+            state.rows()["b"].status,
+            Status::Dominated {
+                by_row_id: "m".into()
+            }
+        );
+    }
+}
+#[test]
+fn append_refusals_leave_entire_state_unchanged() {
+    use frontier::Incremental;
+    let mut state = Incremental::new(profile()).unwrap();
+    state.append(row("same", 0, 0)).unwrap();
+    let before = state.clone();
+    assert_eq!(
+        state.append(row("same", 1, 1)),
+        Err(FrontierError::DuplicateRow)
+    );
+    assert_eq!(state, before);
+    let mut width = row("width", 0, 0);
+    width.values.pop();
+    assert_eq!(state.append(width), Err(FrontierError::WidthMismatch));
+    assert_eq!(state, before);
+    let mut large = row("large", 0, 0);
+    large.evidence = vec![r("e"); frontier::MAX_EVIDENCE_PER_ROW + 1];
+    assert_eq!(state.append(large), Err(FrontierError::Limit));
+    assert_eq!(state, before);
+    let mut full = Incremental::new(profile()).unwrap();
+    for i in 0..frontier::MAX_ROWS {
+        full.append(row(&format!("row-{i:03}"), 0, 0)).unwrap();
+    }
+    let before = full.clone();
+    assert_eq!(
+        full.append(row("overflow", 0, 0)),
+        Err(FrontierError::Limit)
+    );
+    assert_eq!(full, before);
+}
