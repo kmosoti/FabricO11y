@@ -91,7 +91,7 @@ enum Commands {
     /// Inspect effective configuration as TOML or JSON without starting a daemon.
     Settings(DaemonArgs),
     /// Capture or inspect the latest live host, slice, cgroup, unit, and storage snapshot.
-    Snapshot,
+    Snapshot(SnapshotArgs),
     /// Read an ordered page from the local live metric cursor (JSON only).
     LiveMetrics(live_cursor::Args),
     /// Query historical ZSTD Parquet + hot RAM ring/live state via DataFusion.
@@ -138,6 +138,41 @@ struct QueryArgs {
     /// Maximum rows to return.
     #[arg(long, default_value_t = 200)]
     limit: usize,
+}
+
+#[derive(Debug, Clone, Args)]
+struct SnapshotArgs {
+    /// Emit only host identity, capture time, and collection counts (JSON only).
+    #[arg(long, requires = "json")]
+    summary: bool,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct SnapshotSummary {
+    timestamp_unix_ms: i64,
+    hostname: String,
+    counts: SnapshotCounts,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct SnapshotCounts {
+    processes: usize,
+    cgroups: usize,
+    fs_churn: usize,
+    units: usize,
+}
+
+fn summarize_snapshot(snapshot: &HostSnapshot) -> SnapshotSummary {
+    SnapshotSummary {
+        timestamp_unix_ms: snapshot.timestamp_unix_ms,
+        hostname: snapshot.hostname.clone(),
+        counts: SnapshotCounts {
+            processes: snapshot.processes.len(),
+            cgroups: snapshot.cgroups.len(),
+            fs_churn: snapshot.fs_churn.len(),
+            units: snapshot.units.len(),
+        },
+    }
 }
 
 #[derive(Debug, Args)]
@@ -282,9 +317,12 @@ async fn run() -> Result<(), String> {
             unreachable!("commands dispatched before storage access")
         }
         Commands::LiveMetrics(args) => live_cursor::run(&layout, args, format).await,
-        Commands::Snapshot => {
+        Commands::Snapshot(args) => {
             let snap = fetch_snapshot(&layout, &tmp_dir)?;
             match format {
+                OutputFormat::Json if args.summary => {
+                    emit_json("snapshot", &summarize_snapshot(&snap))
+                }
                 OutputFormat::Json => emit_json("snapshot", &snap),
                 OutputFormat::Arrow => {
                     let batch = snapshot_to_record_batch(&snap)?;
@@ -1102,5 +1140,55 @@ mod tests {
             Ok(())
         });
         assert!(matches!(result, Some(Ok(()))));
+    }
+
+    #[test]
+    fn snapshot_summary_requires_json_and_defaults_to_full_snapshot() {
+        let summary = Cli::try_parse_from(["fabric", "snapshot", "--summary", "--json"])
+            .expect("summary JSON arguments parse");
+        assert!(matches!(
+            summary.command,
+            Commands::Snapshot(SnapshotArgs { summary: true })
+        ));
+
+        assert!(Cli::try_parse_from(["fabric", "snapshot", "--summary"]).is_err());
+        let default = Cli::try_parse_from(["fabric", "snapshot"]).expect("default snapshot parses");
+        assert!(matches!(
+            default.command,
+            Commands::Snapshot(SnapshotArgs { summary: false })
+        ));
+    }
+
+    #[test]
+    fn snapshot_summary_uses_vector_counts_and_omits_detail_rows() {
+        let snapshot = HostSnapshot {
+            timestamp_unix_ms: 1234,
+            hostname: "node-a".to_owned(),
+            processes: vec![Default::default(), Default::default()],
+            cgroups: vec![Default::default()],
+            fs_churn: vec![Default::default(), Default::default(), Default::default()],
+            units: vec![
+                Default::default(),
+                Default::default(),
+                Default::default(),
+                Default::default(),
+            ],
+            ..Default::default()
+        };
+
+        let summary = summarize_snapshot(&snapshot);
+        assert_eq!(summary.timestamp_unix_ms, 1234);
+        assert_eq!(summary.hostname, "node-a");
+        assert_eq!(summary.counts.processes, 2);
+        assert_eq!(summary.counts.cgroups, 1);
+        assert_eq!(summary.counts.fs_churn, 3);
+        assert_eq!(summary.counts.units, 4);
+
+        let json = serde_json::to_value(summary).unwrap();
+        assert_eq!(json.as_object().unwrap().len(), 3);
+        assert!(json.get("processes").is_none());
+        assert!(json.get("memory").is_none());
+        assert!(json.get("self_health").is_none());
+        assert_eq!(json["counts"].as_object().unwrap().len(), 4);
     }
 }

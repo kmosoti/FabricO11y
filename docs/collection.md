@@ -150,6 +150,13 @@ generation includes the boot ID. Missed or partially collected intervals are
 reported as gaps on recovery and never backfilled. Polling bounds source work;
 health is maintained in memory and does not recursively collect itself.
 
+`fabric snapshot --summary --json` returns the live snapshot's host name,
+capture timestamp, and counts of observed processes, cgroups, filesystem churn
+entries, and units. The counts are taken from the same `HostSnapshot` used by
+the full command; the summary does not include detail rows or recollect data.
+The command requires JSON output. Without `--summary`, `fabric snapshot` keeps
+its full JSON, Arrow, and table outputs.
+
 ### Inspect cgroup device memory
 
 `fabric device-memory --cgroup /user.slice/job.scope --json` inspects the selected
