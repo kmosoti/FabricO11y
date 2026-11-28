@@ -1,6 +1,18 @@
 # Product Direction
 
-`FabricO11y` turns Linux workstation, container, autonomous-agent, and OTLP forensics into a **continuous, deterministic CLI-first sensory plane**.
+`FabricO11y` turns Linux workstation, container, autonomous-agent, and application forensics into a **continuous, deterministic CLI-first sensory plane**.
+
+## Interoperability boundary
+
+The current local ingest socket accepts Fabric's bounded tagged JSONL records;
+versioned Spindle observations have their own custody-backed path. Neither is
+an OTLP protocol implementation. Standard OTLP transports and payloads,
+resource/scope metadata, distinct observed/start/end timestamps, and the richer
+histogram, exemplar, arbitrary structured log-body, and span-event/link fields
+are not represented by the current local rows. Future OTLP interoperability is a product aspiration:
+a separate adapter would need an explicit, documented mapping and fidelity
+limits before it could be described as supported. It does not change the current
+wire contract.
 
 ## Core Architectural Principles
 

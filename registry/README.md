@@ -38,10 +38,20 @@ including escape aliases, are rejected. The reserved label keys are
 `context_run_id`, `version`, and `labels`. Labels remain nested under
 `data.labels`; this schema does not flatten them into sibling metric fields.
 
-These V5 registry artifacts specify a wire contract only. They do not mean that
-native ingest accepts V5, that writers/readers negotiate it, or that the runtime
-enforces a bound on active metric-series cardinality. The per-observation limit
-of eight labels is not a cardinality guarantee across observations.
+V5 is an opt-in versioned wire contract, not an OTLP schema. The versioned
+decoder accepts v2, v3, v4, and v5. V5 is accepted as a metric only through
+versioned observation custody; Spindle reserves the bounded generation-scoped
+series membership with the raw record. The collector can project a committed v5
+record into its shared metric row. Spindle and the canonical receiver apply
+separate bounded series-admission limits; the per-observation limit of eight
+labels is not itself a total cardinality guarantee.
+
+The direct local `ingest.sock` JSONL path accepts the separate tagged
+`metric`, `log`, and `trace` records. It does not accept a v5 observation or a
+direct metric row that claims Spindle-v5 provenance: those inputs lack the real
+Spindle custody and series accounting required for v5 projection. This local
+JSON shape is not OTLP JSON. See [architecture](../docs/architecture.md#local-ingest-and-versioned-observation-boundary)
+for the fields retained by each projection.
 
 `registry/v3/fixtures.json`, `registry/v4/fixtures.json`, and
 `registry/v5/fixtures.json` are independent wire-contract cases. The v4 and v5
@@ -51,12 +61,12 @@ the fixture file itself. `cargo xtask registry generate` updates generated
 version 3, 4 and 5 descriptors; it refuses any version 2 drift and checks the v4
 and v5 fixture digests before writing.
 
-The v2 descriptor accompanies the checked-in Rust vocabulary. Existing Rust types
-and runtime validation enforce only wire schemas already implemented by the
-application; the V5 artifacts above remain spec-only until runtime acceptance and
-writer/reader negotiation are implemented. Descriptors are retained with custody
-records, and changing one under an existing registry identity is rejected on
-store open. Incompatible evolution requires a new schema identity.
+The v2 descriptor accompanies the checked-in Rust vocabulary. Versioned runtime
+validation enforces each implemented observation schema, and descriptors are
+retained with custody records; changing one under an existing registry identity
+is rejected on store open. The descriptors do not imply OTLP transport support or
+general reader/writer negotiation. Incompatible evolution requires a new schema
+identity.
 
 ```sh
 sh .github/scripts/install-schema-tools.sh

@@ -1,6 +1,6 @@
 # FabricO11y Architecture
 
-`FabricO11y` is a **headless-by-default, CLI-first Linux host, autonomous-agent, and OTLP observability sensory plane** built in pure Rust (Edition 2024, Rust 1.100.0). It combines strictly bounded live Linux telemetry collection (`cgroups` v2, `/proc` PSI/swap/zram0, systemd unit hygiene, `inotify`/fd filesystem churn, optional GPU sysfs, and local Spindle/OTLP ingest) with an embedded pure-Rust converged storage and causal attribution engine rooted under `/data/fabrico11y`.
+`FabricO11y` is a **headless-by-default, CLI-first Linux host, autonomous-agent, and application telemetry sensory plane** built in pure Rust (Edition 2024, Rust 1.100.0). It combines strictly bounded live Linux telemetry collection (`cgroups` v2, `/proc` PSI/swap/zram0, systemd unit hygiene, `inotify`/fd filesystem churn, optional GPU sysfs, versioned Spindle custody projection, and a local tagged-JSONL ingest socket) with an embedded pure-Rust converged storage and causal attribution engine rooted under `/data/fabrico11y`.
 
 ## 1. Crate & Authority Boundaries
 
@@ -509,6 +509,37 @@ individual outcomes unavailable. Deadline checks occur around I/O and between gu
 individual footer, page and Arrow operations are not preemptible mid-call. Rows beyond the
 caller's barrier are not looked up. The lock is held for this inspection; this can delay
 projection work for other origins. Native engine mode remains unavailable.
+
+### Local ingest and versioned observation boundary
+
+The local Unix `ingest.sock` listener reads bounded newline-delimited JSON. Its
+custom direct records are tagged `metric`, `log`, or `trace` and use the Rust
+`MetricPoint`, `LogRecord`, and `TraceSpanRecord` fields. This is a Fabric-local
+JSONL shape, not OTLP JSON, OTLP/HTTP, or OTLP/gRPC. Direct metrics carry one
+scalar value and one millisecond timestamp; logs carry a string message and one
+timestamp; traces carry one timestamp and duration plus trace/span/optional
+parent IDs. Versioned nanosecond timestamps are projected by truncating to
+milliseconds, and nanosecond durations are converted to floating-point
+milliseconds; the shared rows do not preserve nanosecond precision. The records have `host`, `slice`, `unit`, `source`, and JSON attribute
+strings, not OTLP resource or instrumentation-scope objects. They do not encode
+metric histograms, exponential histograms, summaries, exemplars, temporality or
+start timestamps; log bodies/observed timestamps and severity numbers; or trace
+start/end timestamps, events, links, OTLP status code/message pairs, or
+instrumentation-scope/resource attributes.
+
+The separate versioned `fabric::observation` wire format has immutable v2,
+context-bearing v3, trace-only v4, and metric-only v5 envelopes. The Spindle
+custody projection decodes all four and maps them into the shared local metric,
+log, and trace rows; the raw Spindle record remains the custody evidence. V5
+nested labels are projected only for a committed Spindle record, whose custody
+path performs generation-scoped series accounting. Spindle and the canonical
+receiver apply separate bounded series-admission limits. Projection reads a bounded
+record prefix within its 250 ms poll budget. Direct ingest rejects a v5
+frame and rejects a direct metric that claims v5 Spindle provenance, since a
+JSON line alone does not establish that custody. V2/v3 data variants and v4
+trace observations map to the same narrower shared rows; this projection does
+not provide general OTLP field preservation or negotiation. See the
+[registry wire contract](../registry/README.md) for version details.
 
 ### Versioned trace parents
 
