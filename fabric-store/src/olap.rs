@@ -2807,13 +2807,25 @@ enum PublishStageError {
     PostRenameSync(String),
 }
 
+#[cfg(test)]
+thread_local! {
+    static TEST_ALLOCATION_REFUSAL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 enum StagingOutcome {
+    ScratchRefused(String),
     Empty,
     Staged(StagedParquetFile),
     ExceededMaxBytes,
 }
 
+pub(crate) enum CompactionOutcome {
+    Complete(Option<PathBuf>),
+    ScratchRefused(String),
+}
+
 enum ReplaceOutcome {
+    ScratchRefused(String),
     Empty,
     Published(PathBuf, u64),
     ExceededMaxBytes,
@@ -3990,9 +4002,36 @@ impl OlapParquetStore {
         max_output_bytes: u64,
         maint: &MaintenanceLockGuard,
     ) -> Result<Option<PathBuf>, String> {
+        match self.compact_parquet_files_classified(
+            domain,
+            day,
+            inputs,
+            max_file_rows,
+            max_sealed_bytes,
+            max_group_bytes,
+            max_output_bytes,
+            maint,
+        )? {
+            CompactionOutcome::Complete(path) => Ok(path),
+            CompactionOutcome::ScratchRefused(error) => Err(error),
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn compact_parquet_files_classified(
+        &self,
+        domain: &str,
+        day: NaiveDate,
+        inputs: &[PathBuf],
+        max_file_rows: usize,
+        max_sealed_bytes: u64,
+        max_group_bytes: u64,
+        max_output_bytes: u64,
+        maint: &MaintenanceLockGuard,
+    ) -> Result<CompactionOutcome, String> {
         let domain = validate_olap_domain(domain)?;
         if inputs.len() < 2 {
-            return Ok(None);
+            return Ok(CompactionOutcome::Complete(None));
         }
         self.ensure_store_root_durable()?;
         let part_dir = self
@@ -4105,12 +4144,15 @@ impl OlapParquetStore {
                         fan_in_cap = MAX_REPLACE_FAN_IN_FILES;
                     }
                 }
+                ReplaceOutcome::ScratchRefused(error) => {
+                    return Ok(CompactionOutcome::ScratchRefused(error));
+                }
                 ReplaceOutcome::Empty => {
                     fan_in_cap = MAX_REPLACE_FAN_IN_FILES;
                 }
             }
         }
-        Ok(last_out)
+        Ok(CompactionOutcome::Complete(last_out))
     }
 
     pub(crate) fn write_batches_to_partition<I>(
@@ -4209,6 +4251,7 @@ impl OlapParquetStore {
         )? {
             ReplaceOutcome::Published(path, _) => Ok(Some(path)),
             ReplaceOutcome::Empty | ReplaceOutcome::ExceededMaxBytes => Ok(None),
+            ReplaceOutcome::ScratchRefused(error) => Err(error),
         }
     }
 
@@ -4248,6 +4291,9 @@ impl OlapParquetStore {
             false,
             max_staged_bytes,
         )? {
+            StagingOutcome::ScratchRefused(error) => {
+                return Ok(ReplaceOutcome::ScratchRefused(error));
+            }
             StagingOutcome::Empty => return Ok(ReplaceOutcome::Empty),
             StagingOutcome::ExceededMaxBytes => return Ok(ReplaceOutcome::ExceededMaxBytes),
             StagingOutcome::Staged(s) => s,
@@ -4443,8 +4489,14 @@ impl OlapParquetStore {
             None,
         )? {
             StagingOutcome::Empty | StagingOutcome::ExceededMaxBytes => Ok(None),
+            StagingOutcome::ScratchRefused(error) => Err(error),
             StagingOutcome::Staged(s) => Ok(Some(s)),
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_test_allocation_refusal(value: bool) {
+        TEST_ALLOCATION_REFUSAL.with(|flag| flag.set(value));
     }
 
     fn write_batches_to_staging_bounded<I>(
@@ -4458,6 +4510,39 @@ impl OlapParquetStore {
     ) -> Result<StagingOutcome, String>
     where
         I: IntoIterator<Item = Result<RecordBatch, String>>,
+    {
+        self.write_batches_to_staging_with_allocator(
+            domain,
+            day,
+            final_file_name,
+            batches,
+            write_if_empty,
+            max_staged_bytes,
+            |file, len| {
+                #[cfg(test)]
+                if TEST_ALLOCATION_REFUSAL.with(std::cell::Cell::get) {
+                    return Err(std::io::Error::from_raw_os_error(28));
+                }
+                rustix::fs::fallocate(file, rustix::fs::FallocateFlags::empty(), 0, len)
+                    .map_err(std::io::Error::from)
+            },
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn write_batches_to_staging_with_allocator<I, F>(
+        &self,
+        domain: &str,
+        day: NaiveDate,
+        final_file_name: Option<&str>,
+        batches: I,
+        write_if_empty: bool,
+        max_staged_bytes: Option<u64>,
+        allocate: F,
+    ) -> Result<StagingOutcome, String>
+    where
+        I: IntoIterator<Item = Result<RecordBatch, String>>,
+        F: FnOnce(&File, u64) -> std::io::Result<()>,
     {
         let domain = validate_olap_domain(domain)?;
         let mut iter = batches.into_iter();
@@ -4553,6 +4638,20 @@ impl OlapParquetStore {
                 return Err(format!("failed cloning staging parquet fd: {e}"));
             }
         };
+        if let Some(limit) = max_staged_bytes.filter(|limit| *limit != 0)
+            && let Err(err) = allocate(&file, limit)
+        {
+            let _ = unlink_regular_file_matching_identity_in_dir(
+                &staging_dir_fd,
+                &staging_name,
+                Some(&base_id),
+                "staging parquet",
+            );
+            let _ = staging_dir_fd.sync_all();
+            return Ok(StagingOutcome::ScratchRefused(format!(
+                "staging allocation failed: {err}"
+            )));
+        }
         let refused = Arc::new(AtomicBool::new(false));
         let inner_res = (|| -> Result<Option<(u64, String)>, String> {
             macro_rules! parquet_write {
@@ -4581,6 +4680,11 @@ impl OlapParquetStore {
             }
             let hashing = parquet_write!(writer.into_inner());
             let (mut synced_file, written_len, sha256) = hashing.finish();
+            if max_staged_bytes.is_some() {
+                synced_file
+                    .set_len(written_len)
+                    .map_err(|e| format!("staging truncate failed: {e}"))?;
+            }
             synced_file.sync_all().map_err(|e| e.to_string())?;
             let post_meta = synced_file
                 .metadata()
@@ -6786,6 +6890,87 @@ mod tests {
             .write_all(b"a")
             .unwrap_err();
         assert_eq!(err.kind(), ErrorKind::BrokenPipe);
+    }
+
+    #[test]
+    fn bounded_staging_reserves_same_inode_and_cleans_allocation_failures() {
+        let dir = non_tmp_dir();
+        let catalog = crate::CatalogStore::open(dir.path()).unwrap();
+        let layout = catalog.layout().clone();
+        let olap = OlapParquetStore::new(layout.clone());
+        let point = MetricPoint {
+            timestamp_ms: 1_700_000_000_000,
+            name: "reserve".into(),
+            value: 1.0,
+            host: "h".into(),
+            slice: "agent.slice".into(),
+            unit: "u".into(),
+            pid: None,
+            labels_json: "{}".into(),
+        };
+        let source = olap
+            .write_metrics(std::slice::from_ref(&point))
+            .unwrap()
+            .pop()
+            .unwrap();
+        let before = sha256_regular_file(&File::open(&source).unwrap()).unwrap();
+        let day = day_from_ms(point.timestamp_ms);
+        let batch = metrics_to_record_batch(&[point]).unwrap();
+        let observed = std::cell::Cell::new(None);
+        let result = olap
+            .write_batches_to_staging_with_allocator(
+                "metrics",
+                day,
+                None,
+                std::iter::once(Ok(batch.clone())),
+                true,
+                Some(1024 * 1024),
+                |file, len| {
+                    rustix::fs::fallocate(file, rustix::fs::FallocateFlags::empty(), 0, len)
+                        .map_err(std::io::Error::from)?;
+                    let meta = file.metadata()?;
+                    assert_eq!(meta.len(), len);
+                    assert!(meta.blocks() * 512 >= len);
+                    observed.set(Some((meta.dev(), meta.ino())));
+                    Ok(())
+                },
+            )
+            .unwrap();
+        let StagingOutcome::Staged(staged) = result else {
+            panic!("staging failed")
+        };
+        let path = layout.staging_dir().join(&staged.staging_name);
+        let meta = fs::metadata(&path).unwrap();
+        assert_eq!(observed.get(), Some((meta.dev(), meta.ino())));
+        assert_eq!(meta.len(), staged.len);
+        assert!(meta.len() < 1024 * 1024);
+        ParquetRecordBatchReaderBuilder::try_new(File::open(&path).unwrap())
+            .unwrap()
+            .build()
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap();
+        drop(staged);
+        for errno in [28, 95] {
+            let result = olap.write_batches_to_staging_with_allocator(
+                "metrics",
+                day,
+                None,
+                std::iter::once(Ok(batch.clone())),
+                true,
+                Some(1024),
+                |_, _| Err(std::io::Error::from_raw_os_error(errno)),
+            );
+            assert!(
+                matches!(result, Ok(StagingOutcome::ScratchRefused(error)) if error.contains("staging allocation failed"))
+            );
+            assert_eq!(fs::read_dir(layout.staging_dir()).unwrap().count(), 0);
+            assert_eq!(
+                sha256_regular_file(&File::open(&source).unwrap()).unwrap(),
+                before
+            );
+        }
     }
 
     #[test]
