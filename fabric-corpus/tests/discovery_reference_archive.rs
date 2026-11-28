@@ -225,6 +225,71 @@ fn archived_text(view: &PortableView) -> &str {
     assert!(revisions.next().is_none());
     &body.text
 }
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ReadRecord {
+    root: String,
+    text: String,
+    view: String,
+}
+fn portable_record(view: &PortableView, expected_view: [u8; 32]) -> ReadRecord {
+    let mut entries = view.view().revisions().iter();
+    let (root, body) = entries.next().unwrap();
+    assert!(entries.next().is_none());
+    let body = body.as_ref().unwrap();
+    assert_eq!(body.kind, Kind::Observation);
+    assert!(body.sources.is_empty() && body.parents.is_empty() && body.extensions.is_empty());
+    assert!(view.view().relations().is_empty() && view.view().groups().is_empty());
+    let availability = view.availability().get(root).unwrap();
+    assert_eq!(
+        (availability.archive, availability.current),
+        (Availability::Exact, Availability::Exact)
+    );
+    ReadRecord {
+        root: hex(root),
+        text: body.text.clone(),
+        view: hex(&expected_view),
+    }
+}
+fn jsonl_record(record: &ReadRecord) -> Vec<u8> {
+    let mut out=serde_json::to_vec(&serde_json::json!({"version":1,"root":record.root,"text":record.text,"view":record.view,"kind":"observation","sources":0,"archive":"exact","current":"exact"})).unwrap();
+    out.push(b'\n');
+    out
+}
+fn read_jsonl(
+    bytes: &[u8],
+    expected_digest: [u8; 32],
+    expected_root: &str,
+    expected_view: &str,
+) -> Result<ReadRecord, &'static str> {
+    if bytes.len() > MAX_ARCHIVE || bytes.last() != Some(&b'\n') || hash(bytes) != expected_digest {
+        return Err("bytes");
+    }
+    let content = std::str::from_utf8(bytes).map_err(|_| "utf8")?;
+    let mut lines = content.lines();
+    let line = lines.next().ok_or("missing")?;
+    if lines.next().is_some() {
+        return Err("duplicate");
+    }
+    let value: serde_json::Value = serde_json::from_str(line).map_err(|_| "json")?;
+    let object = value.as_object().ok_or("shape")?;
+    if object.len() != 8
+        || value["version"] != 1
+        || value["root"] != expected_root
+        || value["view"] != expected_view
+        || value["kind"] != "observation"
+        || value["sources"] != 0
+        || value["archive"] != "exact"
+        || value["current"] != "exact"
+    {
+        return Err("identity");
+    }
+    let text = value["text"].as_str().ok_or("text")?.to_owned();
+    Ok(ReadRecord {
+        root: expected_root.to_owned(),
+        text,
+        view: expected_view.to_owned(),
+    })
+}
 struct OwnedDir(PathBuf);
 impl Drop for OwnedDir {
     fn drop(&mut self) {
@@ -249,11 +314,23 @@ fn archive_worker() {
     let dir = PathBuf::from(env::var_os("FABRIC_REFERENCE_DIR").unwrap());
     let mode = env::var("FABRIC_REFERENCE_MODE").unwrap();
     assert!(mode == "fixed" || mode == "aware");
+    let storage = env::var("FABRIC_REFERENCE_STORAGE").unwrap();
+    assert!(storage == "portable" || storage == "jsonl");
     let mut texts = Vec::new();
     for i in 0..2 {
         let expected = parse_hash(&env::var(format!("FABRIC_REFERENCE_HASH_{i}")).unwrap());
-        let view = read_verified(&dir.join(format!("{i}.bin")), expected);
-        texts.push(archived_text(&view).to_owned());
+        let root = env::var(format!("FABRIC_REFERENCE_ROOT_{i}")).unwrap();
+        let record = if storage == "portable" {
+            let view = read_verified(&dir.join(format!("{i}.bin")), expected);
+            let record = portable_record(&view, expected);
+            assert_eq!(record.root, root);
+            record
+        } else {
+            let jsonl = bounded_bytes(&dir.join(format!("{i}.jsonl")));
+            let digest = parse_hash(&env::var(format!("FABRIC_JSONL_HASH_{i}")).unwrap());
+            read_jsonl(&jsonl, digest, &root, &hex(&expected)).unwrap()
+        };
+        texts.push(record.text);
     }
     assert_eq!(texts, ["room", "full"]);
     let original = bounded_bytes(&dir.join("0.bin"));
@@ -377,6 +454,83 @@ fn scripted_consumers_replay_same_verified_portable_archive() {
         permissions.set_readonly(true);
         file.set_permissions(permissions).unwrap();
     }
+    let archive_records: Vec<_> = snapshots
+        .iter()
+        .map(|(bytes, digest)| {
+            portable_record(&PortableView::import(bytes, *digest).unwrap(), *digest)
+        })
+        .collect();
+    let jsonl: Vec<_> = archive_records.iter().map(jsonl_record).collect();
+    for i in 0..2 {
+        write_exact(&dir.0, &format!("{i}.jsonl"), &jsonl[i]);
+        assert_eq!(
+            read_jsonl(
+                &jsonl[i],
+                hash(&jsonl[i]),
+                &archive_records[i].root,
+                &archive_records[i].view
+            ),
+            Ok(archive_records[i].clone())
+        );
+    }
+    let mut corrupted = jsonl[0].clone();
+    corrupted[0] ^= 1;
+    assert!(
+        read_jsonl(
+            &corrupted,
+            hash(&jsonl[0]),
+            &archive_records[0].root,
+            &archive_records[0].view
+        )
+        .is_err()
+    );
+    assert!(
+        read_jsonl(
+            b"",
+            hash(b""),
+            &archive_records[0].root,
+            &archive_records[0].view
+        )
+        .is_err()
+    );
+    let truncated = &jsonl[0][..jsonl[0].len() - 1];
+    assert!(
+        read_jsonl(
+            truncated,
+            hash(truncated),
+            &archive_records[0].root,
+            &archive_records[0].view
+        )
+        .is_err()
+    );
+    let duplicate = [jsonl[0].as_slice(), jsonl[0].as_slice()].concat();
+    assert!(
+        read_jsonl(
+            &duplicate,
+            hash(&duplicate),
+            &archive_records[0].root,
+            &archive_records[0].view
+        )
+        .is_err()
+    );
+    assert!(
+        read_jsonl(
+            &jsonl[0],
+            hash(&jsonl[0]),
+            &archive_records[1].root,
+            &archive_records[0].view
+        )
+        .is_err()
+    );
+    assert!(
+        read_jsonl(
+            &jsonl[0],
+            hash(&jsonl[0]),
+            &archive_records[0].root,
+            &archive_records[1].view
+        )
+        .is_err()
+    );
     let basis = PortableView::import(&snapshots[0].0, snapshots[0].1).unwrap();
     let root = *basis.view().revisions().keys().next().unwrap();
     let policy = [3; 32];
@@ -415,54 +569,61 @@ fn scripted_consumers_replay_same_verified_portable_archive() {
         }
     });
     let mut results = Vec::new();
-    for mode in ["fixed", "aware"] {
-        let mut command = Command::new(env::current_exe().unwrap());
-        command
-            .arg("--exact")
-            .arg("archive_worker")
-            .arg("--ignored")
-            .arg("--nocapture")
-            .env("FABRIC_REFERENCE_DIR", &dir.0)
-            .env("FABRIC_REFERENCE_MODE", mode)
-            .env("FABRIC_REFERENCE_HASH_0", hex(&snapshots[0].1))
-            .env("FABRIC_REFERENCE_HASH_1", hex(&snapshots[1].1))
-            .env("FABRIC_HANDOFF_ROOT", hex(&root))
-            .env("FABRIC_HANDOFF_POLICY", hex(&policy))
-            .env("FABRIC_HANDOFF_DIGEST", hex(&handoff.digest()))
-            .env("FABRIC_CHANGED_DIGEST", hex(&changed.1))
-            .env("FABRIC_MISSING_DIGEST", hex(&missing.1));
-        let (status, stdout, stderr) = bounded_worker(command);
-        assert!(
-            status.success(),
-            "worker {mode}: {}",
-            String::from_utf8_lossy(&stderr)
-        );
-        let stdout = String::from_utf8(stdout).unwrap();
-        assert_eq!(
-            stdout
-                .lines()
-                .filter(|line| *line == "HANDOFF_REPLAY_OK")
-                .count(),
-            1
-        );
-        let rows = records(&stdout);
-        assert_eq!(rows.len(), ATTEMPTS);
-        let mut accepted = 0;
-        for (n, row) in rows.iter().enumerate() {
-            let fields: Vec<u8> = row.split_whitespace().map(|x| x.parse().unwrap()).collect();
+    for storage in ["portable", "jsonl"] {
+        for mode in ["fixed", "aware"] {
+            let mut command = Command::new(env::current_exe().unwrap());
+            command
+                .arg("--exact")
+                .arg("archive_worker")
+                .arg("--ignored")
+                .arg("--nocapture")
+                .env("FABRIC_REFERENCE_DIR", &dir.0)
+                .env("FABRIC_REFERENCE_MODE", mode)
+                .env("FABRIC_REFERENCE_STORAGE", storage)
+                .env("FABRIC_REFERENCE_ROOT_0", &archive_records[0].root)
+                .env("FABRIC_REFERENCE_ROOT_1", &archive_records[1].root)
+                .env("FABRIC_JSONL_HASH_0", hex(&hash(&jsonl[0])))
+                .env("FABRIC_JSONL_HASH_1", hex(&hash(&jsonl[1])))
+                .env("FABRIC_REFERENCE_HASH_0", hex(&snapshots[0].1))
+                .env("FABRIC_REFERENCE_HASH_1", hex(&snapshots[1].1))
+                .env("FABRIC_HANDOFF_ROOT", hex(&root))
+                .env("FABRIC_HANDOFF_POLICY", hex(&policy))
+                .env("FABRIC_HANDOFF_DIGEST", hex(&handoff.digest()))
+                .env("FABRIC_CHANGED_DIGEST", hex(&changed.1))
+                .env("FABRIC_MISSING_DIGEST", hex(&missing.1));
+            let (status, stdout, stderr) = bounded_worker(command);
             assert!(
-                row_valid(&fields, n, mode, &expected),
-                "unmatched archive row {row}"
+                status.success(),
+                "worker {mode}: {}",
+                String::from_utf8_lossy(&stderr)
             );
-            accepted += usize::from(fields[5]);
+            let stdout = String::from_utf8(stdout).unwrap();
+            assert_eq!(
+                stdout
+                    .lines()
+                    .filter(|line| *line == "HANDOFF_REPLAY_OK")
+                    .count(),
+                1
+            );
+            let rows = records(&stdout);
+            assert_eq!(rows.len(), ATTEMPTS);
+            let mut accepted = 0;
+            for (n, row) in rows.iter().enumerate() {
+                let fields: Vec<u8> = row.split_whitespace().map(|x| x.parse().unwrap()).collect();
+                assert!(
+                    row_valid(&fields, n, mode, &expected),
+                    "unmatched archive row {row}"
+                );
+                accepted += usize::from(fields[5]);
+            }
+            results.push(accepted);
+            println!(
+                "storage={storage} mode={mode} attempts={ATTEMPTS} accepted={accepted} refused={} archive_snapshots=2",
+                ATTEMPTS - accepted
+            );
         }
-        results.push(accepted);
-        println!(
-            "mode={mode} attempts={ATTEMPTS} accepted={accepted} refused={} archive_snapshots=2",
-            ATTEMPTS - accepted
-        );
     }
-    assert_eq!(results, [0, 2]);
+    assert_eq!(results, [0, 2, 0, 2]);
     // Both consumers used identical immutable bytes and independently held digests.
     for (i, (bytes, digest)) in snapshots.iter().enumerate() {
         let stored = fs::read(dir.0.join(format!("{i}.bin"))).unwrap();
