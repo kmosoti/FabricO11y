@@ -31,6 +31,29 @@ pub struct Receipt {
     pub version: u64,
     pub decision: Decision,
 }
+/// Local pagination position, meaningful only for the explicitly opened store.
+/// This is not an authenticated token and must not be accepted as one.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PagePosition {
+    pub through: u64,
+    pub after: u64,
+}
+/// A stored evaluation and its immutable receipt in commit order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct JournalEntry {
+    pub request_id: String,
+    pub expected_version: u64,
+    pub input: Evaluation,
+    pub receipt: Receipt,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct JournalPage {
+    pub through: u64,
+    pub entries: Vec<JournalEntry>,
+    pub next: Option<PagePosition>,
+}
+/// Maximum returned entries per local read.
+pub const MAX_PAGE_ENTRIES: u32 = 64;
 #[derive(Debug)]
 pub enum JournalError {
     Invalid,
@@ -223,6 +246,94 @@ impl AlertJournal {
             .optional()
             .map_err(|_| JournalError::Storage)?;
         bytes.map(|value| decode(&value)).transpose()
+    }
+    /// Read a bounded immutable page in version order. `None` fixes the current
+    /// version as the high-water mark; subsequent positions retain that mark.
+    /// Positions belong to this explicitly opened store and provide no security
+    /// boundary or cross-store identity. Authority and scope are caller claims.
+    pub fn read_page(
+        &self,
+        authority: &str,
+        scope: &str,
+        position: Option<PagePosition>,
+        limit: u32,
+    ) -> Result<JournalPage, JournalError> {
+        if authority != self.provision.authority || scope != self.provision.scope {
+            return Err(JournalError::ScopeMismatch);
+        }
+        if limit == 0 || limit > MAX_PAGE_ENTRIES {
+            return Err(JournalError::Invalid);
+        }
+        let current: i64 = self
+            .db
+            .query_row("SELECT version FROM alert_state WHERE id=1", [], |r| {
+                r.get(0)
+            })
+            .map_err(|_| JournalError::Storage)?;
+        if current < 0 || current as u64 > u64::from(self.provision.capacity) {
+            return Err(JournalError::Corrupt);
+        }
+        // There is no schema index or uniqueness constraint on `expected`.
+        // Verify the bounded history globally so a duplicate at a page boundary
+        // cannot hide a gap or be silently skipped by the next page.
+        let (count, distinct, min, max): (i64, i64, Option<i64>, Option<i64>) = self.db
+            .query_row("SELECT count(*),count(DISTINCT expected),min(expected),max(expected) FROM alert_events", [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .map_err(|_| JournalError::Storage)?;
+        if count != current
+            || distinct != count
+            || (current == 0 && (min.is_some() || max.is_some()))
+            || (current > 0 && (min != Some(0) || max != Some(current - 1)))
+        {
+            return Err(JournalError::Corrupt);
+        }
+        let (through, after) = match position {
+            None => (current as u64, 0),
+            Some(p) if p.after < p.through && p.through <= current as u64 => (p.through, p.after),
+            Some(_) => return Err(JournalError::Invalid),
+        };
+        let expected_count = (through - after).min(u64::from(limit)) as usize;
+        let mut stmt = self.db.prepare(
+            "SELECT id,expected,input,receipt FROM alert_events WHERE expected>=?1 AND expected<?2 ORDER BY expected LIMIT ?3"
+        ).map_err(|_| JournalError::Storage)?;
+        let mut rows = stmt
+            .query(params![after as i64, through as i64, limit])
+            .map_err(|_| JournalError::Storage)?;
+        let mut entries = Vec::with_capacity(expected_count);
+        while let Some(row) = rows.next().map_err(|_| JournalError::Storage)? {
+            let request_id: String = row.get(0).map_err(|_| JournalError::Corrupt)?;
+            let expected: i64 = row.get(1).map_err(|_| JournalError::Corrupt)?;
+            let input: Vec<u8> = row.get(2).map_err(|_| JournalError::Corrupt)?;
+            let receipt: Vec<u8> = row.get(3).map_err(|_| JournalError::Corrupt)?;
+            let receipt: Receipt = decode(&receipt)?;
+            let wanted = after + entries.len() as u64;
+            if !valid_id(&request_id)
+                || expected < 0
+                || expected as u64 != wanted
+                || receipt.version != wanted + 1
+            {
+                return Err(JournalError::Corrupt);
+            }
+            entries.push(JournalEntry {
+                request_id,
+                expected_version: wanted,
+                input: decode(&input)?,
+                receipt,
+            });
+        }
+        if entries.len() != expected_count {
+            return Err(JournalError::Corrupt);
+        }
+        let end = after + entries.len() as u64;
+        let next = (end < through).then_some(PagePosition {
+            through,
+            after: end,
+        });
+        Ok(JournalPage {
+            through,
+            entries,
+            next,
+        })
     }
     /// ID is caller-stable within this store. All state and intent commit together.
     pub fn apply(
@@ -504,6 +615,120 @@ mod tests {
             .apply("auth", "scope", &id, expected, evaluation)
             .unwrap();
         assert_eq!(accepted.version, expected + 1);
+    }
+
+    #[test]
+    fn page_is_bounded_scoped_ordered_and_frozen_across_reopen() {
+        let root = tempfile::tempdir_in(std::env::var_os("TMPDIR").expect("disk TMPDIR")).unwrap();
+        let path = root.path().join("journal");
+        let mut journal = AlertJournal::open(&path, provision(8)).unwrap();
+        let empty = journal.read_page("auth", "scope", None, 2).unwrap();
+        assert_eq!(empty.through, 0);
+        assert!(empty.entries.is_empty() && empty.next.is_none());
+        let first = journal
+            .apply("auth", "scope", "z", 0, input(1, 1, 11))
+            .unwrap();
+        let second = journal
+            .apply("auth", "scope", "a", 1, input(2, 3, 11))
+            .unwrap();
+        let third = journal
+            .apply("auth", "scope", "m", 2, input(3, 4, 11))
+            .unwrap();
+        let page = journal.read_page("auth", "scope", None, 2).unwrap();
+        assert_eq!(page.through, 3);
+        assert_eq!(
+            page.entries
+                .iter()
+                .map(|e| e.request_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["z", "a"]
+        );
+        assert_eq!(page.entries[0].receipt, first);
+        assert_eq!(page.entries[1].receipt, second);
+        let cursor = page.next.unwrap();
+        journal
+            .apply("auth", "scope", "new", 3, input(4, 5, 11))
+            .unwrap();
+        drop(journal);
+        let journal = AlertJournal::open(&path, provision(8)).unwrap();
+        let last = journal
+            .read_page("auth", "scope", Some(cursor.clone()), 2)
+            .unwrap();
+        assert_eq!(last.through, 3);
+        assert_eq!(last.entries.len(), 1);
+        assert_eq!(last.entries[0].receipt, third);
+        assert!(last.next.is_none());
+        assert_eq!(
+            last,
+            journal.read_page("auth", "scope", Some(cursor), 2).unwrap()
+        );
+        assert!(matches!(
+            journal.read_page("foreign", "scope", None, 1),
+            Err(JournalError::ScopeMismatch)
+        ));
+        assert!(matches!(
+            journal.read_page("auth", "foreign", None, 1),
+            Err(JournalError::ScopeMismatch)
+        ));
+        for limit in [0, MAX_PAGE_ENTRIES + 1] {
+            assert!(matches!(
+                journal.read_page("auth", "scope", None, limit),
+                Err(JournalError::Invalid)
+            ));
+        }
+        for position in [
+            PagePosition {
+                through: 5,
+                after: 0,
+            },
+            PagePosition {
+                through: 3,
+                after: 3,
+            },
+        ] {
+            assert!(matches!(
+                journal.read_page("auth", "scope", Some(position), 1),
+                Err(JournalError::Invalid)
+            ));
+        }
+    }
+    #[test]
+    fn page_refuses_corrupt_order_and_receipt() {
+        let root = tempfile::tempdir_in(std::env::var_os("TMPDIR").expect("disk TMPDIR")).unwrap();
+        let mut journal = AlertJournal::open(&root.path().join("journal"), provision(4)).unwrap();
+        journal
+            .apply("auth", "scope", "one", 0, input(1, 1, 11))
+            .unwrap();
+        journal
+            .apply("auth", "scope", "two", 1, input(2, 3, 11))
+            .unwrap();
+        journal
+            .db
+            .execute("UPDATE alert_events SET expected=0 WHERE id='two'", [])
+            .unwrap();
+        assert!(matches!(
+            journal.read_page("auth", "scope", None, 1),
+            Err(JournalError::Corrupt)
+        ));
+        journal
+            .db
+            .execute(
+                "UPDATE alert_events SET expected=1,receipt=x'00' WHERE id='two'",
+                [],
+            )
+            .unwrap();
+        assert!(matches!(
+            journal.read_page(
+                "auth",
+                "scope",
+                Some(PagePosition {
+                    through: 2,
+                    after: 1
+                }),
+                1
+            ),
+            Err(JournalError::Corrupt)
+        ));
     }
 
     #[test]
