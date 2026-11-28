@@ -13,6 +13,7 @@ pub mod guide;
 pub mod model;
 pub mod paths;
 pub mod query_spec;
+pub mod retention;
 pub mod ring;
 pub mod sketch;
 pub mod terminal;
