@@ -204,17 +204,22 @@ impl LiveCursor {
                 record_id: entry.id,
                 point,
             });
+            let previous_after = page.next_after;
+            page.next_after = entry.id;
             if encoded_response_len(&page)? > max_bytes {
                 page.entries.pop();
+                page.next_after = previous_after;
                 if page.entries.is_empty() {
                     return Err("live cursor row exceeds byte bound");
                 }
                 break;
             }
-            page.next_after = entry.id;
         }
         if page.entries.is_empty() && !self.entries.iter().any(|e| e.id > after) {
             page.next_after = self.observed;
+        }
+        if encoded_response_len(&page)? > max_bytes {
+            return Err("live cursor byte bound too small");
         }
         Ok(page)
     }
@@ -317,6 +322,35 @@ mod tests {
         assert!(restarted_page.gap);
         assert_eq!(restarted_page.gap_reason, Some(LossReason::BeforeEpoch));
     }
+    #[test]
+    fn response_bound_counts_cursor_digit_growth() {
+        let mut cursor = LiveCursor::new(MIN_BUDGET, 0).unwrap();
+        cursor.origin = Some("origin".into());
+        let mut found = false;
+        for len in 0..1024 {
+            cursor.observed = 9;
+            cursor.entries.clear();
+            cursor.used = FIXED_CHARGE;
+            cursor.observe("origin", 10, Some(&metric(&"x".repeat(len))), true);
+            let actual = cursor
+                .page(Some("origin"), Some(&cursor.epoch), 9, 1, MAX_PAGE_BYTES)
+                .unwrap();
+            let mut stale = actual.clone();
+            stale.next_after = 9;
+            if encoded_response_len(&stale).unwrap() == 1024 {
+                assert_eq!(encoded_response_len(&actual).unwrap(), 1025);
+                assert!(
+                    cursor
+                        .page(Some("origin"), Some(&cursor.epoch), 9, 1, 1024)
+                        .is_err()
+                );
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "must construct exact digit-growth boundary");
+    }
+
     #[test]
     fn bounded_wrap_and_response_limits_do_not_fake_progress() {
         let mut cursor = LiveCursor::new(MIN_BUDGET, 0).unwrap();
