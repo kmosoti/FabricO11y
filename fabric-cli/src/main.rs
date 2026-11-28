@@ -143,7 +143,7 @@ struct QueryArgs {
 #[derive(Debug, Clone, Args)]
 struct SnapshotArgs {
     /// Emit only host identity, capture time, and collection counts (JSON only).
-    #[arg(long, requires = "json")]
+    #[arg(long, requires = "json", conflicts_with_all = ["arrow", "table"])]
     summary: bool,
 }
 
@@ -1152,6 +1152,14 @@ mod tests {
         ));
 
         assert!(Cli::try_parse_from(["fabric", "snapshot", "--summary"]).is_err());
+        for incompatible in ["--arrow", "--table"] {
+            assert!(
+                Cli::try_parse_from(["fabric", "snapshot", "--summary", incompatible]).is_err()
+            );
+            assert!(
+                Cli::try_parse_from(["fabric", incompatible, "snapshot", "--summary"]).is_err()
+            );
+        }
         let default = Cli::try_parse_from(["fabric", "snapshot"]).expect("default snapshot parses");
         assert!(matches!(
             default.command,
