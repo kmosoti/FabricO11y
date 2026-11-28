@@ -328,16 +328,24 @@ impl CatalogStore {
         let db = self.open_db_with_retry()?;
         let write_txn = db.begin_write().map_err(|e| e.to_string())?;
         {
-            // Live-snapshot tables reflect only active entities/units/edges; replace cleanly each cycle.
-            let _ = write_txn.delete_table(ENTITIES_TABLE);
+            // Retain only current entities and avoid rewriting byte-identical nodes.
             let mut entities = write_txn
                 .open_table(ENTITIES_TABLE)
                 .map_err(|e| e.to_string())?;
+            entities
+                .retain(|id, _| graph.nodes().contains_key(id))
+                .map_err(|e| e.to_string())?;
             for (id, node) in graph.nodes() {
                 let bytes = serde_json::to_vec(node).map_err(|e| e.to_string())?;
-                entities
-                    .insert(id.as_str(), bytes.as_slice())
-                    .map_err(|e| e.to_string())?;
+                let unchanged = entities
+                    .get(id.as_str())
+                    .map_err(|e| e.to_string())?
+                    .is_some_and(|old| old.value() == bytes.as_slice());
+                if !unchanged {
+                    entities
+                        .insert(id.as_str(), bytes.as_slice())
+                        .map_err(|e| e.to_string())?;
+                }
             }
 
             let _ = write_txn.delete_table(ADJ_OUT_TABLE);
@@ -824,6 +832,41 @@ mod tests {
         );
         let loaded = store.load_live_state().unwrap().unwrap();
         assert_eq!(loaded.snapshot.hostname, "workstation-01");
+    }
+
+    #[test]
+    fn commit_cycle_updates_existing_entity_bytes() {
+        let dir = non_tmp_dir();
+        let store = CatalogStore::open(dir.path()).unwrap();
+        let mut snapshot = HostSnapshot {
+            timestamp_unix_ms: 1_700_000_000_000,
+            hostname: "fixed".into(),
+            units: vec![fabric_core::UnitRecord {
+                name: "same.scope".into(),
+                slice: "fixed.slice".into(),
+                active_state: "active".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let drift = DriftReport::default();
+        let first = CausalGraph::from_snapshot(&snapshot, &[]);
+        store.commit_cycle(&snapshot, &drift, &first).unwrap();
+        snapshot.units[0].active_state = "failed".into();
+        let updated = CausalGraph::from_snapshot(&snapshot, &[]);
+        assert_ne!(
+            first.nodes()["unit:same.scope"],
+            updated.nodes()["unit:same.scope"]
+        );
+        store.commit_cycle(&snapshot, &drift, &updated).unwrap();
+        let db = store.open_db_with_retry().unwrap();
+        let txn = db.begin_read().unwrap();
+        let table = txn.open_table(ENTITIES_TABLE).unwrap();
+        let actual = table.get("unit:same.scope").unwrap().unwrap();
+        assert_eq!(
+            actual.value(),
+            serde_json::to_vec(&updated.nodes()["unit:same.scope"]).unwrap()
+        );
     }
 
     #[test]
