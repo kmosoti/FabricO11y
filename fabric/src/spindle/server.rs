@@ -72,6 +72,42 @@ struct Connection {
 // Internally tagged unit variants otherwise accept extra object fields even
 // with serde's deny_unknown_fields. Preserve the closed command grammar at
 // both dispatch paths before any command can perform work.
+
+// Inspect only borrowed raw top-level values. In particular, observation span
+// strings never pass through an owned Value merely to distinguish commands.
+fn classify_frame(bytes: &[u8]) -> Result<(bool, bool), String> {
+    use serde::de::{MapAccess, Visitor};
+    use serde_json::value::RawValue;
+    observation::check_json(bytes, observation::MAX_FRAME)?;
+    let raw: &RawValue = serde_json::from_slice(bytes).map_err(err)?;
+    if !raw.get().starts_with('{') {
+        return Ok((false, false));
+    }
+    struct ScanVisitor;
+    impl<'de> Visitor<'de> for ScanVisitor {
+        type Value = (bool, bool);
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("a JSON object")
+        }
+        fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Self::Value, M::Error> {
+            let (mut command, mut v4) = (false, false);
+            while let Some(key) = map.next_key::<String>()? {
+                let value: &'de RawValue = map.next_value()?;
+                command |= key == "command";
+                // A top-level span is also suspicious when a malformed or
+                // duplicate version tries to disguise a v4-like frame.
+                v4 |= key == "span" || (key == "version" && value.get() == "4");
+            }
+            Ok((command, v4))
+        }
+    }
+    serde::de::Deserializer::deserialize_map(
+        &mut serde_json::Deserializer::from_slice(bytes),
+        ScanVisitor,
+    )
+    .map_err(err)
+}
+
 fn parse_request(value: serde_json::Value) -> Result<Request, String> {
     if let Some(object) = value.as_object()
         && matches!(
@@ -654,9 +690,12 @@ impl Daemon {
         bytes: &[u8],
         _peer: &local_peer::AcceptedLocalPeer,
     ) -> Result<Option<super::custody::RemoteJob>, String> {
-        observation::check_json(bytes, observation::MAX_FRAME)?;
-        let value: serde_json::Value = serde_json::from_slice(bytes).map_err(err)?;
-        if value.get("command").is_some() {
+        let (command, v4) = classify_frame(bytes)?;
+        if command {
+            if v4 {
+                observation::validate_v4_raw(bytes)?;
+            }
+            let value: serde_json::Value = serde_json::from_slice(bytes).map_err(err)?;
             let request = parse_request(value)?;
             self.check_read_origin(&request)?;
             if let Request::Read { after, limit }
@@ -687,11 +726,20 @@ impl Daemon {
         bytes: &[u8],
         _peer: &local_peer::AcceptedLocalPeer,
     ) -> Result<(Vec<u8>, bool), String> {
-        let request = observation::check_json(bytes, observation::MAX_FRAME)
-            .and_then(|()| serde_json::from_slice::<serde_json::Value>(bytes).map_err(err));
+        let request = classify_frame(bytes).and_then(|(command, v4)| {
+            if !command {
+                return Ok(None);
+            }
+            if v4 {
+                observation::validate_v4_raw(bytes)?;
+            }
+            serde_json::from_slice::<serde_json::Value>(bytes)
+                .map(Some)
+                .map_err(err)
+        });
         let mut keep_alive = false;
         let reply = match request {
-            Ok(v) if v.get("command").is_some() => match parse_request(v) {
+            Ok(Some(v)) => match parse_request(v) {
                 Ok(Request::Status) => Reply::Status {
                     status: self.health(),
                 },
@@ -728,7 +776,7 @@ impl Daemon {
                 }
                 Err(e) => Reply::Error { error: err(e) },
             },
-            Ok(_) => {
+            Ok(None) => {
                 if observation::decode_versioned(bytes)
                     .is_ok_and(|o| observation::reserved_producer(&o.identity().producer))
                 {
@@ -1526,6 +1574,40 @@ mod batch_publication_tests {
 mod connection_accounting_tests {
     use super::*;
     use std::net::Shutdown;
+
+    #[test]
+    fn borrowed_classification_and_v4_raw_rejection_precede_dispatch() {
+        assert_eq!(classify_frame(br#"null"#).unwrap(), (false, false));
+        assert_eq!(classify_frame(br#"[1,2]"#).unwrap(), (false, false));
+        assert_eq!(
+            classify_frame(br#"{"command":null}"#).unwrap(),
+            (true, false)
+        );
+        assert_eq!(
+            classify_frame(br#"{"comm\u0061nd":"status"}"#).unwrap(),
+            (true, false)
+        );
+        assert_eq!(
+            classify_frame(br#"{"nested":{"command":"status"}}"#).unwrap(),
+            (false, false)
+        );
+        assert_eq!(
+            classify_frame(br#"{"version":4,"command":null}"#).unwrap(),
+            (true, true)
+        );
+        let temp = tempfile::tempdir_in(std::env::var_os("TMPDIR").unwrap()).unwrap();
+        let mut daemon = Daemon::open(config(temp.path())).unwrap();
+        let raw = br#"{"version":4,"registry":"fabrico11y/4","context":{"run_id":"00000000-0000-4000-8000-000000000001"},"identity":{"producer":"producer","generation":"generation","sequence":1},"timestamp_ns":1,"resource":"r","data":{"kind":"service_request","service":"s","operation":"o","duration_ns":1,"status":"ok","trace_id":null},"span":{"trace_id":"\u00311111111111111111111111111111111","span_id":"2222222222222222"}}"#;
+        let (socket, _other) = UnixStream::pair().unwrap();
+        let peer = local_peer::authenticate(&socket).unwrap().unwrap();
+        assert!(daemon.prepare_remote(raw, &peer).is_err());
+        let reply: Reply = serde_json::from_slice(&daemon.handle(raw).unwrap()).unwrap();
+        assert!(matches!(reply, Reply::Error { .. }));
+        assert_eq!(daemon.store.count().unwrap(), 0);
+        let reply: Reply =
+            serde_json::from_slice(&daemon.handle(br#"{"command":null}"#).unwrap()).unwrap();
+        assert!(matches!(reply, Reply::Error { .. }));
+    }
 
     fn config(root: &std::path::Path) -> Config {
         fs::set_permissions(root, fs::Permissions::from_mode(0o700)).unwrap();

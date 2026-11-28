@@ -179,6 +179,7 @@ INSERT OR IGNORE INTO custody_state VALUES('clock_floor','0');").map_err(err)?;
             return Err("invalid persisted lease key".into());
         }
         retain_descriptor(&conn, observation::REGISTRY_V3, observation::DESCRIPTOR_V3)?;
+        retain_descriptor(&conn, observation::REGISTRY_V4, observation::DESCRIPTOR_V4)?;
         File::open(dir).and_then(|f| f.sync_all()).map_err(err)?;
         Ok(Self {
             conn,
@@ -1012,7 +1013,10 @@ impl Store {
                     Ok(observation::StoredObservation::V2(_)) => {
                         Some(Ok((id, producer, generation, sequence)))
                     }
-                    Ok(observation::StoredObservation::V3(_)) => None,
+                    Ok(
+                        observation::StoredObservation::V3(_)
+                        | observation::StoredObservation::V4(_),
+                    ) => None,
                     Err(error) => Some(Err(error)),
                 }
             })
