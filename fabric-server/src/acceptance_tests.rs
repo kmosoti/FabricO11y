@@ -135,11 +135,21 @@ fn head(result: &str) -> i64 {
 
 #[test]
 fn competing_acceptance_lost_reply_new_head_and_restart() {
+    transaction_fixture();
+}
+
+#[test]
+#[ignore = "requires a collected unit in fabrico11y.slice"]
+fn competing_acceptance_confined_qualification() {
     assert!(
         fs::read_to_string("/proc/self/cgroup")
             .unwrap()
             .contains("/fabrico11y.slice/")
     );
+    transaction_fixture();
+}
+
+fn transaction_fixture() {
     let scratch = std::env::var_os("TMPDIR").map(PathBuf::from).unwrap();
     let root = tempfile::tempdir_in(scratch).unwrap();
     let config = config(root.path());
