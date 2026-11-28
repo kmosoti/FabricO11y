@@ -94,3 +94,15 @@ The caller can lower each fixed hard cap: 4 MiB scanned text, 262144 tokens,
 count, plus 32 bytes per selected digest, missing digest and provenance entry;
 it is not a wire format or an allocator measurement. Costs also report scanned
 bytes, tokens and pair occurrences. Limit failure returns no partial result.
+
+## Frozen citation context
+
+`fabric-corpus::context` assembles caller-selected citations over an immutable
+as-of view. Before verification it bounds the request to 128 citations, 8 MiB
+of total supplied artifact bytes and 1 MiB of total requested passage bytes.
+It verifies supplied captured bytes and passage hashes against the source claim
+in the selected revision. An unselected revision fails; a selected missing
+revision, omitted captured bytes and an external-only source remain distinct
+from verified supplied bytes. Invalid supplied bytes reject the context. The
+view retains selected dissent and relation claims. Neither a recorded claim nor
+a digest establishes authorization, custody, availability, or truth.

@@ -438,3 +438,12 @@ type = "decision"
 date = 2026-11-27
 added_by = "agent"
 human_ratified = false
+
+[[records]]
+id = "D-0204"
+source_path = "knowledge/decisions/D-0204-frozen-context.md"
+title = "Frozen citation context"
+type = "decision"
+date = 2026-11-27
+added_by = "agent"
+human_ratified = false
