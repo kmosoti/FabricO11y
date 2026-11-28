@@ -4,6 +4,8 @@
 //! not authenticate a backend, retain an artifact, or perform eviction.
 use fabric_core::retention::VerifiedArchive;
 use serde::{Deserialize, Serialize};
+use std::fs::{File, Metadata};
+use std::os::unix::fs::{FileExt, MetadataExt};
 
 pub const MAX_MANIFEST_BYTES: usize = 4096;
 pub const MAX_ARTIFACT_BYTES: usize = 16 * 1024 * 1024;
@@ -48,6 +50,12 @@ pub enum RestoreError {
     Identity,
     UnsupportedProfile,
     ArtifactDigest,
+    /// A handle could not be read or inspected.
+    Unavailable,
+    /// A supplied handle is not a regular file.
+    NotRegular,
+    /// The file changed while it was being read.
+    Changed,
 }
 
 fn valid_id(id: &str) -> bool {
@@ -70,6 +78,27 @@ pub fn verify_restore(
     expected: &ExpectedRestore,
 ) -> Result<VerifiedArchive, RestoreError> {
     let manifest_bytes = manifest_bytes.ok_or(RestoreError::MissingManifest)?;
+    let manifest = validate_manifest(manifest_bytes, expected)?;
+    let artifact = artifact.ok_or(RestoreError::MissingArtifact)?;
+    if artifact.len() > MAX_ARTIFACT_BYTES {
+        return Err(RestoreError::Size);
+    }
+    if artifact.len() as u64 != manifest.artifact_len
+        || manifest.artifact_digest != expected.artifact_digest
+        || !digest_matches(artifact, &expected.artifact_digest)
+    {
+        return Err(RestoreError::ArtifactDigest);
+    }
+    Ok(VerifiedArchive {
+        id: expected.candidate_id,
+        digest: expected.artifact_digest,
+    })
+}
+
+fn validate_manifest(
+    manifest_bytes: &[u8],
+    expected: &ExpectedRestore,
+) -> Result<Manifest, RestoreError> {
     if manifest_bytes.len() > MAX_MANIFEST_BYTES {
         return Err(RestoreError::Size);
     }
@@ -98,14 +127,99 @@ pub fn verify_restore(
     if manifest.artifact_len == 0 || manifest.artifact_len > MAX_ARTIFACT_BYTES as u64 {
         return Err(RestoreError::Size);
     }
-    let artifact = artifact.ok_or(RestoreError::MissingArtifact)?;
-    if artifact.len() > MAX_ARTIFACT_BYTES {
+    Ok(manifest)
+}
+
+fn regular_metadata(file: &File) -> Result<Metadata, RestoreError> {
+    let metadata = file.metadata().map_err(|_| RestoreError::Unavailable)?;
+    if !metadata.is_file() {
+        return Err(RestoreError::NotRegular);
+    }
+    Ok(metadata)
+}
+
+fn same_snapshot(a: &Metadata, b: &Metadata) -> bool {
+    a.dev() == b.dev()
+        && a.ino() == b.ino()
+        && a.len() == b.len()
+        && a.mtime() == b.mtime()
+        && a.mtime_nsec() == b.mtime_nsec()
+        && a.ctime() == b.ctime()
+        && a.ctime_nsec() == b.ctime_nsec()
+}
+
+fn read_at_exact(file: &File, mut offset: u64, mut out: &mut [u8]) -> Result<(), RestoreError> {
+    while !out.is_empty() {
+        match file.read_at(out, offset) {
+            Ok(0) => return Err(RestoreError::Changed),
+            Ok(n) => {
+                offset += n as u64;
+                out = &mut out[n..];
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => return Err(RestoreError::Unavailable),
+        }
+    }
+    Ok(())
+}
+
+fn check_end(file: &File, length: u64, initial: &Metadata) -> Result<(), RestoreError> {
+    let mut extra = [0];
+    let n = loop {
+        match file.read_at(&mut extra, length) {
+            Ok(n) => break n,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => return Err(RestoreError::Unavailable),
+        }
+    };
+    if n != 0 || !same_snapshot(initial, &regular_metadata(file)?) {
+        return Err(RestoreError::Changed);
+    }
+    Ok(())
+}
+
+/// Verify caller-authorized open regular files without changing their offsets.
+/// The result attests only to bytes read in this call, not future availability.
+pub fn verify_restore_files(
+    manifest_file: Option<&File>,
+    artifact_file: Option<&File>,
+    expected: &ExpectedRestore,
+) -> Result<VerifiedArchive, RestoreError> {
+    let manifest_file = manifest_file.ok_or(RestoreError::MissingManifest)?;
+    let manifest_meta = regular_metadata(manifest_file)?;
+    if manifest_meta.len() > MAX_MANIFEST_BYTES as u64 {
         return Err(RestoreError::Size);
     }
-    if artifact.len() as u64 != manifest.artifact_len
+    let mut manifest_bytes = vec![0; manifest_meta.len() as usize];
+    read_at_exact(manifest_file, 0, &mut manifest_bytes)?;
+    check_end(manifest_file, manifest_meta.len(), &manifest_meta)?;
+    let manifest = validate_manifest(&manifest_bytes, expected)?;
+    let artifact_file = artifact_file.ok_or(RestoreError::MissingArtifact)?;
+    let artifact_meta = regular_metadata(artifact_file)?;
+    if artifact_meta.len() > MAX_ARTIFACT_BYTES as u64 {
+        return Err(RestoreError::Size);
+    }
+    if artifact_meta.len() != manifest.artifact_len
         || manifest.artifact_digest != expected.artifact_digest
-        || !digest_matches(artifact, &expected.artifact_digest)
     {
+        return Err(RestoreError::ArtifactDigest);
+    }
+    let mut hasher = crate::olap::Sha256::new();
+    let mut buf = [0u8; 8192];
+    let mut offset = 0;
+    while offset < manifest.artifact_len {
+        let n = (manifest.artifact_len - offset).min(buf.len() as u64) as usize;
+        read_at_exact(artifact_file, offset, &mut buf[..n])?;
+        hasher.update(&buf[..n]);
+        offset += n as u64;
+    }
+    check_end(artifact_file, offset, &artifact_meta)?;
+    let expected_hex: String = expected
+        .artifact_digest
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    if hasher.finish_hex() != expected_hex {
         return Err(RestoreError::ArtifactDigest);
     }
     Ok(VerifiedArchive {
@@ -152,6 +266,81 @@ mod tests {
             archive: None,
         }
     }
+    #[test]
+    fn file_restore_checks_exact_bytes_without_moving_offsets() {
+        use std::io::{Seek, SeekFrom};
+        let root = tempfile::tempdir_in(PathBuf::from(
+            std::env::var_os("TMPDIR").expect("disk TMPDIR"),
+        ))
+        .unwrap();
+        let data = vec![b'x'; 20_000];
+        let artifact_digest = digest(&data);
+        let manifest = Manifest {
+            version: 1,
+            authority: "authority".into(),
+            origin: "origin".into(),
+            candidate_id: 7,
+            profile: Profile::Exact,
+            artifact_len: data.len() as u64,
+            artifact_digest,
+        };
+        let encoded = serde_json::to_vec(&manifest).unwrap();
+        let expected = ExpectedRestore {
+            authority: "authority".into(),
+            origin: "origin".into(),
+            candidate_id: 7,
+            manifest_digest: digest(&encoded),
+            artifact_digest,
+        };
+        let mp = root.path().join("manifest");
+        let ap = root.path().join("artifact");
+        fs::write(&mp, &encoded).unwrap();
+        fs::write(&ap, &data).unwrap();
+        let mut mf = File::open(&mp).unwrap();
+        let mut af = File::open(&ap).unwrap();
+        mf.seek(SeekFrom::Start(3)).unwrap();
+        af.seek(SeekFrom::Start(5)).unwrap();
+        assert_eq!(
+            verify_restore_files(Some(&mf), Some(&af), &expected),
+            verify_restore(Some(&encoded), Some(&data), &expected)
+        );
+        assert_eq!(mf.stream_position().unwrap(), 3);
+        assert_eq!(af.stream_position().unwrap(), 5);
+        assert_eq!(
+            verify_restore_files(None, Some(&af), &expected),
+            Err(RestoreError::MissingManifest)
+        );
+        assert_eq!(
+            verify_restore_files(Some(&mf), None, &expected),
+            Err(RestoreError::MissingArtifact)
+        );
+        let directory = File::open(root.path()).unwrap();
+        assert_eq!(
+            verify_restore_files(Some(&mf), Some(&directory), &expected),
+            Err(RestoreError::NotRegular)
+        );
+        let write_only = fs::OpenOptions::new().write(true).open(&ap).unwrap();
+        assert_eq!(
+            verify_restore_files(Some(&mf), Some(&write_only), &expected),
+            Err(RestoreError::Unavailable)
+        );
+        fs::write(&ap, b"short").unwrap();
+        assert_eq!(
+            verify_restore_files(Some(&mf), Some(&af), &expected),
+            Err(RestoreError::ArtifactDigest)
+        );
+        fs::write(&ap, vec![b'y'; data.len()]).unwrap();
+        assert_eq!(
+            verify_restore_files(Some(&mf), Some(&af), &expected),
+            Err(RestoreError::ArtifactDigest)
+        );
+        fs::write(&mp, vec![b'x'; MAX_MANIFEST_BYTES + 1]).unwrap();
+        assert_eq!(
+            verify_restore_files(Some(&mf), Some(&af), &expected),
+            Err(RestoreError::Size)
+        );
+    }
+
     #[test]
     fn local_restore_binds_identity_and_only_exact_verified_bytes_feed_planner() {
         let root = tempfile::tempdir_in(PathBuf::from(

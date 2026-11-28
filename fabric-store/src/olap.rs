@@ -155,7 +155,7 @@ const SHA256_K: [u32; 64] = [
     0xc671_78f2,
 ];
 
-struct Sha256 {
+pub(crate) struct Sha256 {
     state: [u32; 8],
     total_len: u64,
     block: [u8; 64],
@@ -163,7 +163,7 @@ struct Sha256 {
 }
 
 impl Sha256 {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             state: [
                 0x6a09_e667,
@@ -220,7 +220,7 @@ impl Sha256 {
         }
     }
 
-    fn update(&mut self, mut data: &[u8]) {
+    pub(crate) fn update(&mut self, mut data: &[u8]) {
         self.total_len = self.total_len.wrapping_add(data.len() as u64);
         if self.block_len > 0 {
             let take = (64 - self.block_len).min(data.len());
@@ -245,7 +245,7 @@ impl Sha256 {
         }
     }
 
-    fn finish_hex(mut self) -> String {
+    pub(crate) fn finish_hex(mut self) -> String {
         let total_bits = self.total_len.wrapping_mul(8);
         self.block[self.block_len] = 0x80;
         self.block_len += 1;
