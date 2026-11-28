@@ -1293,6 +1293,17 @@ pub fn batch_adapter_reply(client: &mut BatchClient, bytes: &[u8]) -> serde_json
     fn error_reply(error: BatchError) -> serde_json::Value {
         serde_json::json!({"error":error.to_string(),"code":error.code()})
     }
+    // A different durable pending report forces the Full return before a new
+    // report can be staged. Other Full causes (including disk failure) remain
+    // unclassified unless that distinct pending report is still observable.
+    fn blocked_by_pending(client: &BatchClient, error: &BatchError, report_id: &str) -> bool {
+        matches!(error, BatchError::Full)
+            && client
+                .status()
+                .ok()
+                .and_then(|s| s.pending_report_id)
+                .is_some_and(|pending| pending != report_id)
+    }
     match observation::check_json(bytes, observation::MAX_FRAME)
         .and_then(|()| serde_json::from_slice::<Command>(bytes).map_err(|error| error.to_string()))
     {
@@ -1303,7 +1314,9 @@ pub fn batch_adapter_reply(client: &mut BatchClient, bytes: &[u8]) -> serde_json
                     serde_json::json!({"report_id":report_id,"delivery_state":"custody_confirmed","projection":"unchecked","receipt":receipt})
                 }
                 Err(error) => {
-                    let state = if matches!(error, BatchError::GenerationCapacity { .. }) {
+                    let blocked = blocked_by_pending(client, &error, &report_id);
+                    let state = if blocked || matches!(error, BatchError::GenerationCapacity { .. })
+                    {
                         Some("refused_before_acceptance")
                     } else if matches!(
                         error,
@@ -1354,7 +1367,9 @@ pub fn batch_adapter_reply(client: &mut BatchClient, bytes: &[u8]) -> serde_json
                         .and_then(|s| s.pending_report_id)
                         .as_deref()
                         == Some(report_id.as_str());
-                    let state = if matches!(error, BatchError::GenerationCapacity { .. }) {
+                    let blocked = blocked_by_pending(client, &error, &report_id);
+                    let state = if blocked || matches!(error, BatchError::GenerationCapacity { .. })
+                    {
                         Some("refused_before_acceptance")
                     } else if pending {
                         Some("outcome_unknown")
@@ -1363,7 +1378,7 @@ pub fn batch_adapter_reply(client: &mut BatchClient, bytes: &[u8]) -> serde_json
                     };
                     let staged = if pending {
                         Some(true)
-                    } else if matches!(error, BatchError::GenerationCapacity { .. }) {
+                    } else if blocked || matches!(error, BatchError::GenerationCapacity { .. }) {
                         Some(false)
                     } else {
                         None
