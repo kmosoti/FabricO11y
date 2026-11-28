@@ -465,3 +465,12 @@ type = "decision"
 date = 2026-11-27
 added_by = "agent"
 human_ratified = false
+
+[[records]]
+id = "D-0207"
+source_path = "knowledge/decisions/D-0207-prior-failure-claims.md"
+title = "Prior-failure claims"
+type = "decision"
+date = 2026-11-27
+added_by = "agent"
+human_ratified = false
