@@ -199,6 +199,281 @@ pub fn replay_archive(
     })
 }
 
+/// Limits include every byte of each one-attempt FWCA file and every attempt.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CaptureLimits {
+    pub max_bytes: usize,
+    pub max_attempts: usize,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EventReceipt {
+    pub ordinal: u32,
+    pub scope: WorkerSegmentScope,
+    pub digest: PhysicalFileDigest,
+    pub bytes: usize,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CaptureError {
+    Limit,
+    Poisoned,
+    AfterTerminal,
+    Rejected(WorkerSegmentError),
+    UnexpectedEntries,
+    Archive(ArchiveError),
+    Storage(String),
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CaptureReplay {
+    pub scope: WorkerSegmentScope,
+    pub completeness: WorkerSegmentCompleteness,
+    pub outcomes: Vec<AttemptOutcome>,
+}
+/// New captures require an exclusively controlled parent and job directory.
+/// A caller must retain every receipt independently. No restart writer, sender
+/// authentication, transport acknowledgement, or custody guarantee is provided.
+pub struct IncrementalCapture {
+    dir: File,
+    scope: WorkerSegmentScope,
+    limits: CaptureLimits,
+    count: usize,
+    bytes: usize,
+    failed: bool,
+    terminal: bool,
+    verifier: WorkerSegmentVerifier,
+}
+fn capture_filename(ordinal: usize) -> String {
+    format!("{ordinal:08}.fwca")
+}
+/// Deterministic single-component directory name; IDs are caller-supplied claims.
+pub fn capture_directory_name(scope: WorkerSegmentScope) -> String {
+    let mut name = String::from("worker-");
+    for byte in scope.job {
+        name.push_str(&format!("{byte:02x}"));
+    }
+    name.push('-');
+    for byte in scope.epoch {
+        name.push_str(&format!("{byte:02x}"));
+    }
+    name
+}
+impl IncrementalCapture {
+    /// Exclusively creates a fresh, private job directory under the pinned parent.
+    pub fn create(
+        parent: &File,
+        scope: WorkerSegmentScope,
+        limits: CaptureLimits,
+    ) -> Result<Self, CaptureError> {
+        use rustix::fs::{Mode, OFlags, mkdirat, openat};
+        if limits.max_bytes == 0
+            || limits.max_bytes > MAX_WORKER_ARCHIVE_BYTES
+            || limits.max_attempts == 0
+            || limits.max_attempts > MAX_WORKER_ARCHIVE_ATTEMPTS
+        {
+            return Err(CaptureError::Limit);
+        }
+        if !parent
+            .metadata()
+            .map_err(|e| CaptureError::Storage(e.to_string()))?
+            .is_dir()
+        {
+            return Err(CaptureError::Storage("parent is not a directory".into()));
+        }
+        let name = capture_directory_name(scope);
+        mkdirat(parent, name.as_str(), Mode::from_raw_mode(0o700))
+            .map_err(|e| CaptureError::Storage(e.to_string()))?;
+        let fd = openat(
+            parent,
+            name.as_str(),
+            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+            Mode::empty(),
+        )
+        .map_err(|e| CaptureError::Storage(e.to_string()))?;
+        let dir = File::from(fd);
+        parent
+            .sync_all()
+            .map_err(|e| CaptureError::Storage(e.to_string()))?;
+        Ok(Self {
+            dir,
+            scope,
+            limits,
+            count: 0,
+            bytes: 0,
+            failed: false,
+            terminal: false,
+            verifier: WorkerSegmentVerifier::new(scope),
+        })
+    }
+    pub fn directory(&self) -> &File {
+        &self.dir
+    }
+    /// A refusal or storage failure permanently poisons this writer.
+    pub fn append(&mut self, attempt: AttemptedEvent<'_>) -> Result<EventReceipt, CaptureError> {
+        if self.failed {
+            return Err(CaptureError::Poisoned);
+        }
+        let result = self.append_inner(attempt);
+        if result.is_err() {
+            self.failed = true;
+        }
+        result
+    }
+    fn append_inner(&mut self, attempt: AttemptedEvent<'_>) -> Result<EventReceipt, CaptureError> {
+        use rustix::fs::{AtFlags, Mode, OFlags, linkat, openat};
+        if self.terminal {
+            return Err(CaptureError::AfterTerminal);
+        }
+        let size = encoded_size(&[attempt]).map_err(CaptureError::Archive)?;
+        let total = self.bytes.checked_add(size).ok_or(CaptureError::Limit)?;
+        if total > self.limits.max_bytes || self.count >= self.limits.max_attempts {
+            return Err(CaptureError::Limit);
+        }
+        let mut next = self.verifier.clone();
+        match attempt.kind {
+            AttemptKind::Segment => next.append(attempt.bytes, attempt.claim),
+            AttemptKind::Terminal => next.seal(attempt.bytes, attempt.claim),
+        }
+        .map_err(CaptureError::Rejected)?;
+        let encoded = encode_archive(self.scope, &[attempt]).map_err(CaptureError::Archive)?;
+        let fd = openat(
+            &self.dir,
+            ".",
+            OFlags::TMPFILE | OFlags::WRONLY | OFlags::CLOEXEC,
+            Mode::from_raw_mode(0o600),
+        )
+        .map_err(|e| CaptureError::Storage(e.to_string()))?;
+        let mut file = File::from(fd);
+        file.write_all(&encoded)
+            .map_err(|e| CaptureError::Storage(e.to_string()))?;
+        file.sync_all()
+            .map_err(|e| CaptureError::Storage(e.to_string()))?;
+        let ordinal = self.count + 1;
+        linkat(
+            &file,
+            "",
+            &self.dir,
+            capture_filename(ordinal),
+            AtFlags::EMPTY_PATH,
+        )
+        .map_err(|e| CaptureError::Storage(e.to_string()))?;
+        self.dir
+            .sync_all()
+            .map_err(|e| CaptureError::Storage(e.to_string()))?;
+        self.verifier = next;
+        self.terminal = attempt.kind == AttemptKind::Terminal;
+        self.count = ordinal;
+        self.bytes = total;
+        Ok(EventReceipt {
+            ordinal: ordinal as u32,
+            scope: self.scope,
+            digest: physical_digest(&encoded),
+            bytes: encoded.len(),
+        })
+    }
+}
+
+/// Replay only the exact ordered, independently supplied receipts. The supplied
+/// directory must remain exclusively controlled while this check is in progress.
+pub fn replay_capture(
+    dir: &File,
+    scope: WorkerSegmentScope,
+    receipts: &[EventReceipt],
+) -> Result<CaptureReplay, CaptureError> {
+    use std::os::fd::AsRawFd;
+    if receipts.len() > MAX_WORKER_ARCHIVE_ATTEMPTS {
+        return Err(CaptureError::Limit);
+    }
+    let mut expected_total = 0usize;
+    for (index, receipt) in receipts.iter().enumerate() {
+        if receipt.ordinal as usize != index + 1 || receipt.scope != scope {
+            return Err(CaptureError::UnexpectedEntries);
+        }
+        expected_total = expected_total
+            .checked_add(receipt.bytes)
+            .ok_or(CaptureError::Limit)?;
+        if expected_total > MAX_WORKER_ARCHIVE_BYTES {
+            return Err(CaptureError::Limit);
+        }
+    }
+    let path = format!("/proc/self/fd/{}", dir.as_raw_fd());
+    let mut observed = 0usize;
+    for entry in std::fs::read_dir(path).map_err(|e| CaptureError::Storage(e.to_string()))? {
+        let entry = entry.map_err(|e| CaptureError::Storage(e.to_string()))?;
+        observed += 1;
+        if observed > receipts.len() {
+            return Err(CaptureError::UnexpectedEntries);
+        }
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            return Err(CaptureError::UnexpectedEntries);
+        };
+        let Some(digits) = name.strip_suffix(".fwca") else {
+            return Err(CaptureError::UnexpectedEntries);
+        };
+        if digits.len() != 8 || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+            return Err(CaptureError::UnexpectedEntries);
+        }
+        let ordinal = digits
+            .parse::<usize>()
+            .map_err(|_| CaptureError::UnexpectedEntries)?;
+        if ordinal == 0 || ordinal > receipts.len() {
+            return Err(CaptureError::UnexpectedEntries);
+        }
+    }
+    if observed != receipts.len() {
+        return Err(CaptureError::UnexpectedEntries);
+    }
+    let mut verifier = WorkerSegmentVerifier::new(scope);
+    let mut outcomes = Vec::with_capacity(receipts.len());
+    let mut terminal_seen = false;
+    for receipt in receipts {
+        if terminal_seen {
+            return Err(CaptureError::AfterTerminal);
+        }
+        let bytes = read_non_symlink_bytes_in_dir_bounded_if_present(
+            dir,
+            &capture_filename(receipt.ordinal as usize),
+            "worker capture event",
+            receipt.bytes as u64,
+        )
+        .map_err(CaptureError::Storage)?
+        .ok_or(CaptureError::Archive(ArchiveError::MissingArchive))?;
+        if bytes.len() != receipt.bytes {
+            return Err(CaptureError::Archive(ArchiveError::DigestMismatch));
+        }
+        receipt
+            .digest
+            .verify_exact_bytes(&bytes)
+            .map_err(|_| CaptureError::Archive(ArchiveError::DigestMismatch))?;
+        let (actual_scope, count) = validate_archive(&bytes).map_err(CaptureError::Archive)?;
+        if actual_scope != scope {
+            return Err(CaptureError::Archive(ArchiveError::ScopeMismatch));
+        }
+        if count != 1 {
+            return Err(CaptureError::Archive(ArchiveError::Malformed));
+        }
+        let mut reader = Reader::new(&bytes);
+        reader.header().map_err(CaptureError::Archive)?;
+        let kind = reader.kind().map_err(CaptureError::Archive)?;
+        let size = reader.u32().map_err(CaptureError::Archive)? as usize;
+        let event = reader.take(size).map_err(CaptureError::Archive)?;
+        let claim = reader.claim().map_err(CaptureError::Archive)?;
+        let result = match kind {
+            AttemptKind::Segment => verifier.append(event, &claim),
+            AttemptKind::Terminal => verifier.seal(event, &claim),
+        };
+        // An incremental producer refuses rejected attempts; foreign or invalid
+        // inputs never become a complete replay even with caller-supplied files.
+        result.map_err(CaptureError::Rejected)?;
+        terminal_seen = kind == AttemptKind::Terminal;
+        outcomes.push(AttemptOutcome { kind, result });
+    }
+    Ok(CaptureReplay {
+        scope,
+        completeness: verifier.completeness(),
+        outcomes,
+    })
+}
+
 fn encode_archive(
     scope: WorkerSegmentScope,
     attempts: &[AttemptedEvent<'_>],
@@ -594,6 +869,295 @@ mod tests {
             "worker_capture::tests::independent_job_archives_replay_in_fresh_process",
             "complete.marker"
         ));
+    }
+
+    #[test]
+    fn incremental_capture_seals_only_after_bounded_verified_events() {
+        let (temp, parent) = fixture_dir();
+        let sc = scope();
+        let first = segment(sc, 1, [0; 32]);
+        let first_claim = claim(&first);
+        let mut verifier = WorkerSegmentVerifier::new(sc);
+        verifier.append(&first, &first_claim).unwrap();
+        let seal = terminal(sc, 1, verifier.digest());
+        let seal_claim = claim(&seal);
+        let limits = CaptureLimits {
+            max_bytes: MAX_WORKER_ARCHIVE_BYTES,
+            max_attempts: 4,
+        };
+        let mut writer = IncrementalCapture::create(&parent, sc, limits).unwrap();
+        assert!(IncrementalCapture::create(&parent, sc, limits).is_err());
+        let first_receipt = writer
+            .append(event(AttemptKind::Segment, &first, &first_claim))
+            .unwrap();
+        let terminal_receipt = writer
+            .append(event(AttemptKind::Terminal, &seal, &seal_claim))
+            .unwrap();
+        let reopened = crate::olap::open_standalone_dir_nofollow(
+            &temp.path().join(capture_directory_name(sc)),
+            "job",
+        )
+        .unwrap()
+        .unwrap();
+        let receipts = [first_receipt.clone(), terminal_receipt.clone()];
+        let replay = replay_capture(&reopened, sc, &receipts).unwrap();
+        assert_eq!(replay.completeness, WorkerSegmentCompleteness::Complete);
+        assert_eq!(replay.outcomes.len(), 2);
+        assert_eq!(
+            writer.append(event(AttemptKind::Terminal, &seal, &seal_claim)),
+            Err(CaptureError::AfterTerminal)
+        );
+        assert_eq!(
+            writer.append(event(AttemptKind::Segment, &first, &first_claim)),
+            Err(CaptureError::Poisoned)
+        );
+        let job_path = temp.path().join(capture_directory_name(sc));
+        let mut extra_receipt = terminal_receipt.clone();
+        extra_receipt.ordinal = 3;
+        fs::copy(
+            job_path.join(capture_filename(2)),
+            job_path.join(capture_filename(3)),
+        )
+        .unwrap();
+        assert_eq!(
+            replay_capture(
+                &reopened,
+                sc,
+                &[
+                    first_receipt.clone(),
+                    terminal_receipt.clone(),
+                    extra_receipt.clone()
+                ]
+            ),
+            Err(CaptureError::AfterTerminal)
+        );
+        fs::remove_file(job_path.join(capture_filename(3))).unwrap();
+        extra_receipt.digest = first_receipt.digest.clone();
+        extra_receipt.bytes = first_receipt.bytes;
+        fs::copy(
+            job_path.join(capture_filename(1)),
+            job_path.join(capture_filename(3)),
+        )
+        .unwrap();
+        assert_eq!(
+            replay_capture(
+                &reopened,
+                sc,
+                &[
+                    first_receipt.clone(),
+                    terminal_receipt.clone(),
+                    extra_receipt
+                ]
+            ),
+            Err(CaptureError::AfterTerminal)
+        );
+        fs::remove_file(job_path.join(capture_filename(3))).unwrap();
+
+        let second_scope = WorkerSegmentScope { job: [8; 16], ..sc };
+        let second = segment(second_scope, 1, [0; 32]);
+        let second_claim = claim(&second);
+        let mut second_verifier = WorkerSegmentVerifier::new(second_scope);
+        second_verifier.append(&second, &second_claim).unwrap();
+        let second_seal = terminal(second_scope, 1, second_verifier.digest());
+        let second_seal_claim = claim(&second_seal);
+        let mut second_writer = IncrementalCapture::create(&parent, second_scope, limits).unwrap();
+        second_writer
+            .append(event(AttemptKind::Segment, &second, &second_claim))
+            .unwrap();
+        second_writer
+            .append(event(
+                AttemptKind::Terminal,
+                &second_seal,
+                &second_seal_claim,
+            ))
+            .unwrap();
+        assert_eq!(
+            second_writer.append(event(AttemptKind::Segment, &second, &second_claim)),
+            Err(CaptureError::AfterTerminal)
+        );
+        assert_eq!(
+            replay_capture(
+                &reopened,
+                sc,
+                &[terminal_receipt.clone(), first_receipt.clone()]
+            ),
+            Err(CaptureError::UnexpectedEntries)
+        );
+        assert_eq!(
+            replay_capture(
+                &reopened,
+                WorkerSegmentScope { job: [9; 16], ..sc },
+                &receipts
+            ),
+            Err(CaptureError::UnexpectedEntries)
+        );
+        let extra = temp
+            .path()
+            .join(capture_directory_name(sc))
+            .join("unexpected");
+        fs::write(&extra, b"extra").unwrap();
+        assert_eq!(
+            replay_capture(&reopened, sc, &receipts),
+            Err(CaptureError::UnexpectedEntries)
+        );
+        fs::remove_file(extra).unwrap();
+        fs::write(
+            temp.path()
+                .join(capture_directory_name(sc))
+                .join(capture_filename(1)),
+            b"tampered",
+        )
+        .unwrap();
+        assert_eq!(
+            replay_capture(&reopened, sc, &receipts),
+            Err(CaptureError::Archive(ArchiveError::DigestMismatch))
+        );
+
+        let limited_scope = WorkerSegmentScope { job: [7; 16], ..sc };
+        let limited_first = segment(limited_scope, 1, [0; 32]);
+        let limited_claim = claim(&limited_first);
+        let first_event = event(AttemptKind::Segment, &limited_first, &limited_claim);
+        let size = encoded_size(&[first_event]).unwrap();
+        let mut limited = IncrementalCapture::create(
+            &parent,
+            limited_scope,
+            CaptureLimits {
+                max_bytes: size,
+                max_attempts: 2,
+            },
+        )
+        .unwrap();
+        let receipt = limited.append(first_event).unwrap();
+        let mut limited_verifier = WorkerSegmentVerifier::new(limited_scope);
+        limited_verifier
+            .append(&limited_first, &limited_claim)
+            .unwrap();
+        let limited_seal = terminal(limited_scope, 1, limited_verifier.digest());
+        let limited_seal_claim = claim(&limited_seal);
+        assert_eq!(
+            limited.append(event(
+                AttemptKind::Terminal,
+                &limited_seal,
+                &limited_seal_claim
+            )),
+            Err(CaptureError::Limit)
+        );
+        assert_eq!(
+            limited.append(event(
+                AttemptKind::Terminal,
+                &limited_seal,
+                &limited_seal_claim
+            )),
+            Err(CaptureError::Poisoned)
+        );
+        let reopened = crate::olap::open_standalone_dir_nofollow(
+            &temp.path().join(capture_directory_name(limited_scope)),
+            "job",
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            replay_capture(&reopened, limited_scope, &[receipt])
+                .unwrap()
+                .completeness,
+            WorkerSegmentCompleteness::MissingTerminal
+        );
+    }
+
+    #[test]
+    fn incremental_prefix_survives_child_interruption_without_terminal() {
+        use std::{
+            io::Write,
+            process::{Command, Stdio},
+            time::{Duration, Instant},
+        };
+        let tmp = std::path::PathBuf::from(std::env::var_os("TMPDIR").expect("disk-backed TMPDIR"));
+        assert!(!tmp.starts_with("/tmp") && !tmp.starts_with("/dev/shm"));
+        if let Some(root) = std::env::var_os("FABRIC_WORKER_INCREMENTAL_ROOT") {
+            let parent = crate::olap::open_standalone_dir_nofollow(Path::new(&root), "parent")
+                .unwrap()
+                .unwrap();
+            let mut writer = IncrementalCapture::create(
+                &parent,
+                scope(),
+                CaptureLimits {
+                    max_bytes: MAX_WORKER_ARCHIVE_BYTES,
+                    max_attempts: 4,
+                },
+            )
+            .unwrap();
+            let first = segment(scope(), 1, [0; 32]);
+            let first_claim = claim(&first);
+            let receipt = writer
+                .append(event(AttemptKind::Segment, &first, &first_claim))
+                .unwrap();
+            let marker = std::env::var_os("FABRIC_WORKER_INCREMENTAL_MARKER").unwrap();
+            let mut marker = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(marker)
+                .unwrap();
+            write!(marker, "{}\n{}\n", receipt.digest.0.hex, receipt.bytes).unwrap();
+            marker.sync_all().unwrap();
+            loop {
+                std::thread::park();
+            }
+        }
+        let (temp, parent) = fixture_dir();
+        let marker = temp.path().join("receipt.marker");
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "worker_capture::tests::incremental_prefix_survives_child_interruption_without_terminal"])
+            .env("TMPDIR", &tmp).env("FABRIC_WORKER_INCREMENTAL_ROOT", temp.path()).env("FABRIC_WORKER_INCREMENTAL_MARKER", &marker)
+            .stdin(Stdio::null()).stdout(Stdio::null()).spawn().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let (digest, bytes) = loop {
+            if let Ok(text) = fs::read_to_string(&marker) {
+                let mut lines = text.lines();
+                if let (Some(digest), Some(bytes), None) =
+                    (lines.next(), lines.next(), lines.next())
+                    && digest.len() == 64
+                    && digest.bytes().all(|b| b.is_ascii_hexdigit())
+                    && let Ok(bytes) = bytes.parse::<usize>()
+                {
+                    break (digest.to_owned(), bytes);
+                }
+            }
+            if let Some(status) = child.try_wait().unwrap() {
+                panic!("child exited before receipt: {status}");
+            }
+            if Instant::now() >= deadline {
+                child.kill().unwrap();
+                child.wait().unwrap();
+                panic!("child receipt timed out");
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        child.kill().unwrap();
+        use std::os::unix::process::ExitStatusExt;
+        assert_eq!(child.wait().unwrap().signal(), Some(9));
+        drop(parent);
+        let dir = crate::olap::open_standalone_dir_nofollow(
+            &temp.path().join(capture_directory_name(scope())),
+            "job",
+        )
+        .unwrap()
+        .unwrap();
+        let receipt = EventReceipt {
+            ordinal: 1,
+            scope: scope(),
+            bytes,
+            digest: PhysicalFileDigest(DigestClaim {
+                algorithm: DigestAlgorithm::Sha256,
+                representation: DigestRepresentation::ExactBytes,
+                hex: digest,
+            }),
+        };
+        let replay = replay_capture(&dir, scope(), &[receipt]).unwrap();
+        assert_eq!(
+            replay.completeness,
+            WorkerSegmentCompleteness::MissingTerminal
+        );
+        assert_eq!(replay.outcomes.len(), 1);
     }
 
     #[test]
