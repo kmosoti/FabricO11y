@@ -4,7 +4,7 @@
 //! correctness, authorization, or truth. The caller obtains and authorizes the
 //! bytes; this module performs no I/O and never follows a locator. V1 limits the
 //! entire supplied artifact to the existing corpus canonical byte budget.
-use crate::{Corpus, MAX_CANONICAL_BYTES, RevisionDigest, SourceClaim};
+use crate::{Corpus, MAX_CANONICAL_BYTES, RevisionBody, RevisionDigest, SourceClaim};
 use sha2::{Digest, Sha256};
 
 /// V1 is an exact byte range, not a character or parser-derived offset.
@@ -48,16 +48,30 @@ fn artifact<'artifact, 'corpus>(
     let record = corpus
         .revision(revision)
         .ok_or(CitationError::MissingRevision)?;
+    artifact_body(record, source_index, bytes)
+}
+
+pub(crate) fn source_claim(
+    record: &RevisionBody,
+    source_index: u32,
+) -> Result<&SourceClaim, CitationError> {
     let index = usize::try_from(source_index).map_err(|_| CitationError::MissingSource)?;
-    let source = record
+    record
         .sources
         .get(index)
-        .ok_or(CitationError::MissingSource)?;
+        .ok_or(CitationError::MissingSource)
+}
+
+fn artifact_body<'artifact, 'corpus>(
+    record: &'corpus RevisionBody,
+    source_index: u32,
+    bytes: Option<&'artifact [u8]>,
+) -> Result<(&'artifact [u8], &'corpus str, [u8; 32]), CitationError> {
     let SourceClaim::Captured {
         artifact_sha256,
         parser,
         ..
-    } = source
+    } = source_claim(record, source_index)?
     else {
         return Err(CitationError::ExternalOnly);
     };
@@ -108,8 +122,18 @@ impl CitationV1 {
         corpus: &'corpus Corpus,
         bytes: Option<&'artifact [u8]>,
     ) -> Result<ResolvedPassage<'artifact, 'corpus>, CitationError> {
-        let (bytes, parser, artifact_sha256) =
-            artifact(corpus, &self.revision, self.source_index, bytes)?;
+        let record = corpus
+            .revision(&self.revision)
+            .ok_or(CitationError::MissingRevision)?;
+        self.resolve_body(record, bytes)
+    }
+
+    pub(crate) fn resolve_body<'artifact, 'corpus>(
+        &self,
+        record: &'corpus RevisionBody,
+        bytes: Option<&'artifact [u8]>,
+    ) -> Result<ResolvedPassage<'artifact, 'corpus>, CitationError> {
+        let (bytes, parser, artifact_sha256) = artifact_body(record, self.source_index, bytes)?;
         let selected = passage(bytes, self.start, self.end)?;
         let digest: [u8; 32] = Sha256::digest(selected).into();
         if digest != self.passage_sha256 {
