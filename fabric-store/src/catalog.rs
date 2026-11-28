@@ -835,6 +835,229 @@ mod tests {
     }
 
     #[test]
+    fn catalog_survives_cold_process_reopen() {
+        use fabric_graph::{EdgeKind, GraphEdge, GraphNode, NodeKind};
+        use std::{
+            collections::BTreeMap,
+            process::{Command, Stdio},
+            time::{Duration, Instant},
+        };
+
+        let mut snapshot = HostSnapshot {
+            timestamp_unix_ms: 1_700_000_000_123,
+            hostname: "cold-catalog".into(),
+            units: vec![fabric_core::UnitRecord {
+                name: "example.service".into(),
+                slice: "example.slice".into(),
+                active_state: "active".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        if std::env::var_os("FABRIC_CATALOG_COLD_NEWER").is_some() {
+            snapshot.timestamp_unix_ms += 1;
+        }
+        let drift = DriftReport::default();
+        let mut graph = CausalGraph::new();
+        graph.upsert_node("one", NodeKind::Agent, "One", BTreeMap::new());
+        graph.upsert_node("two", NodeKind::SystemdUnit, "Two", BTreeMap::new());
+        graph.add_edge("one", "two", EdgeKind::Controls, 1.0, "known edge");
+        let tmp = std::path::PathBuf::from(
+            std::env::var_os("TMPDIR").expect("disk-backed TMPDIR required"),
+        );
+        assert!(!tmp.starts_with("/tmp") && !tmp.starts_with("/dev/shm"));
+
+        if let Some(root) = std::env::var_os("FABRIC_CATALOG_COLD_ROOT") {
+            let store = CatalogStore::open(root).unwrap();
+            let db = store.open_db_with_retry().unwrap();
+            if std::env::var_os("FABRIC_CATALOG_COLD_ABANDON").is_some() {
+                use std::io::Write;
+                let txn = db.begin_write().unwrap();
+                {
+                    let mut entities = txn.open_table(ENTITIES_TABLE).unwrap();
+                    entities.insert("one", b"uncommitted".as_slice()).unwrap();
+                    let mut watermarks = txn.open_table(WATERMARKS_TABLE).unwrap();
+                    watermarks.insert("collector_last_ms", 42).unwrap();
+                }
+                let marker =
+                    std::env::var_os("FABRIC_CATALOG_COLD_MARKER").expect("completion marker");
+                fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(marker)
+                    .unwrap()
+                    .write_all(b"staged-no-commit\n")
+                    .unwrap();
+                // Deliberately bypass transaction and database destructors.
+                std::process::exit(0);
+            }
+            let txn = db.begin_read().unwrap();
+            let entries = |table: TableDefinition<&str, &[u8]>| {
+                txn.open_table(table)
+                    .unwrap()
+                    .iter()
+                    .unwrap()
+                    .map(|row| {
+                        let (key, value) = row.unwrap();
+                        (key.value().to_owned(), value.value().to_vec())
+                    })
+                    .collect::<BTreeMap<_, _>>()
+            };
+            let nodes = [
+                GraphNode {
+                    id: "one".into(),
+                    kind: NodeKind::Agent,
+                    label: "One".into(),
+                    metadata: BTreeMap::new(),
+                },
+                GraphNode {
+                    id: "two".into(),
+                    kind: NodeKind::SystemdUnit,
+                    label: "Two".into(),
+                    metadata: BTreeMap::new(),
+                },
+            ];
+            let expected_nodes = nodes
+                .iter()
+                .map(|node| (node.id.clone(), serde_json::to_vec(node).unwrap()))
+                .collect();
+            assert_eq!(entries(ENTITIES_TABLE), expected_nodes);
+            let edge = GraphEdge {
+                src: "one".into(),
+                dst: "two".into(),
+                kind: EdgeKind::Controls,
+                weight: 1.0,
+                note: "known edge".into(),
+            };
+            let edge_bytes = serde_json::to_vec(&vec![edge]).unwrap();
+            assert_eq!(
+                entries(ADJ_OUT_TABLE),
+                BTreeMap::from([("one".into(), edge_bytes.clone())])
+            );
+            assert_eq!(
+                entries(ADJ_IN_TABLE),
+                BTreeMap::from([("two".into(), edge_bytes)])
+            );
+            assert_eq!(
+                entries(UNITS_TABLE),
+                BTreeMap::from([(
+                    "example.service".into(),
+                    serde_json::to_vec(&snapshot.units[0]).unwrap()
+                )])
+            );
+            assert_eq!(
+                txn.open_table(WATERMARKS_TABLE)
+                    .unwrap()
+                    .get("collector_last_ms")
+                    .unwrap()
+                    .unwrap()
+                    .value(),
+                snapshot.timestamp_unix_ms as u64
+            );
+            let live = store.load_live_state().unwrap().unwrap();
+            assert_eq!(
+                serde_json::to_vec(&live.snapshot).unwrap(),
+                serde_json::to_vec(&snapshot).unwrap()
+            );
+            assert_eq!(live.graph, graph);
+            use std::io::Write;
+            let marker = std::env::var_os("FABRIC_CATALOG_COLD_MARKER").expect("completion marker");
+            let mut marker = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(marker)
+                .unwrap();
+            marker.write_all(b"cold-reopen-ok\n").unwrap();
+            return;
+        }
+        let dir = tempfile::tempdir_in(&tmp).unwrap();
+        let run_child = |name: &str, marker: &str, newer: bool, abandon: bool| {
+            let marker = dir.path().join(marker);
+            let mut command = Command::new(std::env::current_exe().unwrap());
+            if newer {
+                command.env("FABRIC_CATALOG_COLD_NEWER", "1");
+            }
+            if abandon {
+                command.env("FABRIC_CATALOG_COLD_ABANDON", "1");
+            }
+            let mut child = command
+                .args(["--exact", name])
+                .env("TMPDIR", &tmp)
+                .env("FABRIC_CATALOG_COLD_ROOT", dir.path())
+                .env("FABRIC_CATALOG_COLD_MARKER", &marker)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap();
+            let deadline = Instant::now() + Duration::from_secs(30);
+            loop {
+                if let Some(status) = child.try_wait().unwrap() {
+                    assert!(status.success(), "cold reopen failed: {status}");
+                    break;
+                }
+                if Instant::now() >= deadline {
+                    child.kill().unwrap();
+                    child.wait().unwrap();
+                    panic!("cold reopen timed out");
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            fs::read(marker).is_ok_and(|bytes| {
+                bytes
+                    == if abandon {
+                        b"staged-no-commit\n".as_slice()
+                    } else {
+                        b"cold-reopen-ok\n".as_slice()
+                    }
+            })
+        };
+        for iteration in 0..2 {
+            let store = CatalogStore::open(dir.path()).unwrap();
+            store.commit_cycle(&snapshot, &drift, &graph).unwrap();
+            drop(store);
+            if iteration == 0 {
+                assert!(!run_child(
+                    "catalog::tests::intentionally_missing_cold_test",
+                    "absent.marker",
+                    false,
+                    false
+                ));
+            }
+            assert!(run_child(
+                "catalog::tests::catalog_survives_cold_process_reopen",
+                &format!("verified-{iteration}.marker"),
+                false,
+                false,
+            ));
+            if iteration == 0 {
+                assert!(run_child(
+                    "catalog::tests::catalog_survives_cold_process_reopen",
+                    "abandoned.marker",
+                    false,
+                    true
+                ));
+                assert!(run_child(
+                    "catalog::tests::catalog_survives_cold_process_reopen",
+                    "after-abandon.marker",
+                    false,
+                    false
+                ));
+            }
+        }
+        snapshot.timestamp_unix_ms += 1;
+        let store = CatalogStore::open(dir.path()).unwrap();
+        store.commit_cycle(&snapshot, &drift, &graph).unwrap();
+        drop(store);
+        assert!(run_child(
+            "catalog::tests::catalog_survives_cold_process_reopen",
+            "newer.marker",
+            true,
+            false
+        ));
+    }
+
+    #[test]
     fn commit_cycle_updates_existing_entity_bytes() {
         let dir = non_tmp_dir();
         let store = CatalogStore::open(dir.path()).unwrap();
