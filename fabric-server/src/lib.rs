@@ -7,8 +7,8 @@ pub mod engine;
 mod handshake;
 mod handshake_io;
 pub mod ledger;
-mod segment_ticket;
 mod plan_cursor;
+mod segment_ticket;
 mod self_observation;
 mod worker_pool;
 use fabric::{
@@ -1079,18 +1079,14 @@ fn handle(
             Ok(Response::PlanAccepted { decision: result })
         }
         Request::PlanPage { request } => {
-            let writer = writer
-                .as_deref()
-                .ok_or("decision writer credential required")?;
+            let writer = writer.ok_or("decision writer credential required")?;
             match canonical_state(ledger, reads)?.plan_page(writer, &request)? {
                 Ok(page) => Ok(Response::PlanPage { page }),
                 Err(reason) => Ok(Response::PlanCursorFailure { reason }),
             }
         }
         Request::RevokePlanCursors { scope } => {
-            let writer = writer
-                .as_deref()
-                .ok_or("decision writer credential required")?;
+            let writer = writer.ok_or("decision writer credential required")?;
             let mut state = canonical_state(ledger, reads)?;
             state.revoke_plan_cursors(writer, &scope.0)?;
             if let Ok(mut hints) = reads.plan_hints.lock() {
@@ -1099,13 +1095,11 @@ fn handle(
             Ok(Response::PlanCursorsRevoked)
         }
         Request::SubscribePlan { scope } => {
-            let writer = writer
-                .as_deref()
-                .ok_or("decision writer credential required")?;
+            let writer = writer.ok_or("decision writer credential required")?;
             let state = canonical_state(ledger, reads)?;
             let (epoch, frontier) = state.plan_cursor_identity(writer, &scope.0)?;
             let mut hints = reads.plan_hints.lock().map_err(|_| "hint lock")?;
-            let subscription = hints.subscribe(writer, &scope.0, epoch)?;
+            let subscription = hints.subscribe(&writer.writer, &scope.0, epoch)?;
             drop(hints);
             // Registration and the captured frontier share the canonical lock with commit/signal.
             drop(state);
@@ -1123,13 +1117,11 @@ fn handle(
             scope,
             subscription,
         } => {
-            let writer = writer
-                .as_deref()
-                .ok_or("decision writer credential required")?;
+            let writer = writer.ok_or("decision writer credential required")?;
             let state = canonical_state(ledger, reads)?;
             let (epoch, _) = state.plan_cursor_identity(writer, &scope.0)?;
             let mut hints = reads.plan_hints.lock().map_err(|_| "hint lock")?;
-            match hints.poll(writer, &scope.0, epoch, &subscription) {
+            match hints.poll(&writer.writer, &scope.0, epoch, &subscription) {
                 Ok(pending) => Ok(Response::PlanHint { pending }),
                 Err(reason) => Ok(Response::PlanCursorFailure { reason }),
             }

@@ -509,24 +509,37 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
         tx.commit().map_err(err)
     }
 
-    /// The caller has authenticated a decision writer; scope ownership remains authoritative here.
-    pub(crate) fn plan_cursor_identity(
-        &self,
-        writer: &str,
+    fn checked_cursor_identity(
+        conn: &rusqlite::Connection,
+        authority: &str,
+        binding: &crate::handshake::WriterBinding,
         scope: &str,
     ) -> Result<(i64, i64), String> {
-        if scope.is_empty() || scope.len() > 128 {
+        if scope != binding.scope || scope.is_empty() || scope.len() > 128 {
             return Err("unauthorized plan scope".into());
         }
-        self.conn.query_row("SELECT e.epoch, COALESCE((SELECT MAX(id) FROM plan_decision WHERE scope=?1),0) FROM plan_scope s JOIN plan_cursor_epoch e ON e.scope=s.scope WHERE s.scope=?1 AND s.owner=?2", params![scope, writer], |r| Ok((r.get(0)?, r.get(1)?)))
+        conn.query_row("SELECT e.epoch, COALESCE((SELECT MAX(id) FROM plan_decision WHERE scope=?1),0) FROM plan_scope s JOIN plan_cursor_epoch e ON e.scope=s.scope WHERE s.scope=?1 AND s.owner=?2 AND s.origin=?3 AND s.producer=?4 AND EXISTS (SELECT 1 FROM meta WHERE key='authority' AND value=?5)", params![scope, binding.writer, binding.origin, binding.producer, authority], |r| Ok((r.get(0)?, r.get(1)?)))
             .optional().map_err(err)?.ok_or_else(|| "unauthorized plan scope".to_string())
     }
-    pub(crate) fn revoke_plan_cursors(&mut self, writer: &str, scope: &str) -> Result<(), String> {
-        if scope.is_empty() || scope.len() > 128 {
-            return Err("unauthorized plan scope".into());
-        }
-        let tx = self.conn.transaction().map_err(err)?;
-        let changed = tx.execute("UPDATE plan_cursor_epoch SET epoch=epoch+1 WHERE scope=?1 AND epoch<9223372036854775807 AND EXISTS (SELECT 1 FROM plan_scope WHERE scope=?1 AND owner=?2)", params![scope, writer]).map_err(err)?;
+    pub(crate) fn plan_cursor_identity(
+        &self,
+        binding: &crate::handshake::WriterBinding,
+        scope: &str,
+    ) -> Result<(i64, i64), String> {
+        Self::checked_cursor_identity(&self.conn, &self.authority, binding, scope)
+    }
+    pub(crate) fn revoke_plan_cursors(
+        &mut self,
+        binding: &crate::handshake::WriterBinding,
+        scope: &str,
+    ) -> Result<(), String> {
+        let authority = self.authority.clone();
+        let tx = self
+            .conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(err)?;
+        Self::checked_cursor_identity(&tx, &authority, binding, scope)?;
+        let changed = tx.execute("UPDATE plan_cursor_epoch SET epoch=epoch+1 WHERE scope=?1 AND epoch<9223372036854775807", [scope]).map_err(err)?;
         if changed != 1 {
             return Err("unauthorized plan scope or exhausted epoch".into());
         }
@@ -534,12 +547,16 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
     }
     pub(crate) fn plan_page(
         &mut self,
-        writer: &str,
+        binding: &crate::handshake::WriterBinding,
         request: &fabric::canonical::PlanPageRequest,
     ) -> Result<Result<fabric::canonical::PlanPage, fabric::canonical::PlanCursorFailure>, String>
     {
         use fabric::canonical::{PlanCursorFailure as Failure, PlanDecision, PlanPage};
-        let (epoch, frontier) = self.plan_cursor_identity(writer, &request.scope.0)?;
+        let authority = self.authority.clone();
+        let writer = binding.writer.as_str();
+        let tx = self.conn.transaction().map_err(err)?;
+        let (epoch, frontier) =
+            Self::checked_cursor_identity(&tx, &authority, binding, &request.scope.0)?;
         if request.limit == 0
             || request.limit > 64
             || request.ttl_secs == 0
@@ -547,8 +564,7 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
         {
             return Ok(Err(Failure::Invalid));
         }
-        let key: String = self
-            .conn
+        let key: String = tx
             .query_row(
                 "SELECT value FROM meta WHERE key='plan_cursor_key'",
                 [],
@@ -561,7 +577,7 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
             .as_secs();
         let mut cursor = if let Some(token) = &request.cursor {
             let Some(cursor) =
-                crate::plan_cursor::decode(token, &key, &self.authority, writer, &request.scope.0)
+                crate::plan_cursor::decode(token, &key, &authority, writer, &request.scope.0)
             else {
                 return Ok(Err(Failure::Invalid));
             };
@@ -573,8 +589,7 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
             }
             cursor
         } else {
-            let count: i64 = self
-                .conn
+            let count: i64 = tx
                 .query_row(
                     "SELECT count(*) FROM plan_decision WHERE scope=?1 AND id<=?2",
                     params![request.scope.0, frontier],
@@ -599,8 +614,7 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
         {
             return Ok(Err(Failure::Invalid));
         }
-        let count: i64 = self
-            .conn
+        let count: i64 = tx
             .query_row(
                 "SELECT count(*) FROM plan_decision WHERE scope=?1 AND id<=?2",
                 params![request.scope.0, cursor.frontier],
@@ -610,7 +624,7 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
         if count != cursor.count {
             return Ok(Err(Failure::Gap));
         }
-        let mut stmt = self.conn.prepare("SELECT id,result FROM plan_decision WHERE scope=?1 AND id>?2 AND id<=?3 ORDER BY id LIMIT ?4").map_err(err)?;
+        let mut stmt = tx.prepare("SELECT id,result FROM plan_decision WHERE scope=?1 AND id>?2 AND id<=?3 ORDER BY id LIMIT ?4").map_err(err)?;
         let rows: Vec<(i64, String)> = stmt
             .query_map(
                 params![
@@ -630,7 +644,7 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
             let decision = serde_json::from_str::<PlanDecision>(&row).map_err(err)?;
             if decision.head != id
                 || decision.scope != request.scope
-                || decision.authority != self.authority
+                || decision.authority != authority
             {
                 return Ok(Err(Failure::Gap));
             }
@@ -641,7 +655,7 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
             Some(crate::plan_cursor::encode(
                 &cursor,
                 &key,
-                &self.authority,
+                &authority,
                 writer,
                 &request.scope.0,
             )?)
@@ -649,7 +663,7 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
             None
         };
         Ok(Ok(PlanPage {
-            authority: self.authority.clone(),
+            authority: authority.clone(),
             scope: request.scope.clone(),
             frontier: cursor.frontier,
             decisions,
