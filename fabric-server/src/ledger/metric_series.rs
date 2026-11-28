@@ -139,7 +139,8 @@ mod tests {
     fn canonical_new_series_retries_and_failed_batches_are_atomic() {
         let scratch = std::env::var_os("TMPDIR").expect("disk TMPDIR required");
         let root = tempfile::tempdir_in(scratch).unwrap();
-        let mut ledger = super::super::Ledger::open(root.path(), 64 * 1024 * 1024).unwrap();
+        let state = root.path().join("canonical");
+        let mut ledger = super::super::Ledger::open(&state, 64 * 1024 * 1024).unwrap();
         let records: Vec<_> = (1..=64).map(|id| record(id, id)).collect();
         assert_eq!(ledger.ingest("origin", &records).unwrap(), 64);
         let floor: i64 = ledger
@@ -203,7 +204,7 @@ mod tests {
         assert_eq!(original, records[0].raw.as_bytes());
         assert_eq!(ledger.ingest("other", &[record(1, 1)]).unwrap(), 1);
         drop(ledger);
-        let mut ledger = super::super::Ledger::open(root.path(), 64 * 1024 * 1024).unwrap();
+        let mut ledger = super::super::Ledger::open(&state, 64 * 1024 * 1024).unwrap();
         assert_eq!(ledger.ingest("origin", &records).unwrap(), 64);
         assert_eq!(
             ledger
