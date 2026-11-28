@@ -459,6 +459,144 @@ mod tests {
     }
 
     #[test]
+    fn independent_job_archives_replay_in_fresh_process() {
+        use std::{
+            io::Write,
+            process::{Command, Stdio},
+            time::{Duration, Instant},
+        };
+        let scope_a = scope();
+        let scope_b = WorkerSegmentScope {
+            job: [0x33; 16],
+            epoch: [0x44; 16],
+        };
+        let tmp = std::path::PathBuf::from(std::env::var_os("TMPDIR").expect("disk-backed TMPDIR"));
+        assert!(!tmp.starts_with("/tmp") && !tmp.starts_with("/dev/shm"));
+        if let Some(root) = std::env::var_os("FABRIC_WORKER_ARCHIVE_ROOT") {
+            let dir = crate::olap::open_standalone_dir_nofollow(Path::new(&root), "fixture dir")
+                .unwrap()
+                .unwrap();
+            let expected = |name| {
+                PhysicalFileDigest(DigestClaim {
+                    algorithm: DigestAlgorithm::Sha256,
+                    representation: DigestRepresentation::ExactBytes,
+                    hex: std::env::var(name).unwrap(),
+                })
+            };
+            let digest_a = expected("FABRIC_WORKER_ARCHIVE_A");
+            let digest_b = expected("FABRIC_WORKER_ARCHIVE_B");
+            let replay_a = replay_archive(&dir, "job-a.fwca", scope_a, &digest_a).unwrap();
+            assert_eq!(replay_a.scope, scope_a);
+            assert_eq!(replay_a.completeness, WorkerSegmentCompleteness::Complete);
+            assert_eq!(
+                (replay_a.accepted_attempts, replay_a.rejected_attempts),
+                (2, 0)
+            );
+            let replay_b = replay_archive(&dir, "job-b.fwca", scope_b, &digest_b).unwrap();
+            assert_eq!(replay_b.scope, scope_b);
+            assert_eq!(
+                replay_b.completeness,
+                WorkerSegmentCompleteness::MissingTerminal
+            );
+            assert_eq!(
+                (replay_b.accepted_attempts, replay_b.rejected_attempts),
+                (1, 0)
+            );
+            assert_eq!(
+                replay_archive(&dir, "job-a.fwca", scope_b, &digest_a),
+                Err(ArchiveError::ScopeMismatch)
+            );
+            assert_eq!(
+                replay_archive(&dir, "job-b.fwca", scope_b, &digest_a),
+                Err(ArchiveError::DigestMismatch)
+            );
+            assert_eq!(
+                replay_archive(&dir, "partial.fwca", scope_a, &digest_a),
+                Err(ArchiveError::DigestMismatch)
+            );
+            assert_eq!(
+                replay_archive(&dir, "partial.fwca", scope_a, &physical_digest(b"FWCA\0")),
+                Err(ArchiveError::Malformed)
+            );
+            let marker =
+                std::env::var_os("FABRIC_WORKER_ARCHIVE_MARKER").expect("completion marker");
+            fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(marker)
+                .unwrap()
+                .write_all(b"worker-replay-ok\n")
+                .unwrap();
+            return;
+        }
+        let (temp, dir) = fixture_dir();
+        let first_a = segment(scope_a, 1, [0; 32]);
+        let claim_a = claim(&first_a);
+        let mut verifier = WorkerSegmentVerifier::new(scope_a);
+        verifier.append(&first_a, &claim_a).unwrap();
+        let seal = terminal(scope_a, 1, verifier.digest());
+        let seal_claim = claim(&seal);
+        let receipt_a = write_archive(
+            &dir,
+            "job-a.fwca",
+            scope_a,
+            &[
+                event(AttemptKind::Segment, &first_a, &claim_a),
+                event(AttemptKind::Terminal, &seal, &seal_claim),
+            ],
+        )
+        .unwrap();
+        let first_b = segment(scope_b, 1, [0; 32]);
+        let claim_b = claim(&first_b);
+        let receipt_b = write_archive(
+            &dir,
+            "job-b.fwca",
+            scope_b,
+            &[event(AttemptKind::Segment, &first_b, &claim_b)],
+        )
+        .unwrap();
+        fs::write(path(&temp, "partial.fwca"), b"FWCA\0").unwrap();
+        drop(dir);
+        let run = |name: &str, marker: &str| {
+            let marker = temp.path().join(marker);
+            let mut child = Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", name])
+                .env("TMPDIR", &tmp)
+                .env("FABRIC_WORKER_ARCHIVE_ROOT", temp.path())
+                .env("FABRIC_WORKER_ARCHIVE_A", &receipt_a.digest.0.hex)
+                .env("FABRIC_WORKER_ARCHIVE_B", &receipt_b.digest.0.hex)
+                .env("FABRIC_WORKER_ARCHIVE_MARKER", &marker)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap();
+            let deadline = Instant::now() + Duration::from_secs(30);
+            loop {
+                if let Some(status) = child.try_wait().unwrap() {
+                    assert!(status.success(), "replay child failed: {status}");
+                    break;
+                }
+                if Instant::now() >= deadline {
+                    child.kill().unwrap();
+                    child.wait().unwrap();
+                    panic!("replay child timed out");
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            fs::read(marker).is_ok_and(|bytes| bytes == b"worker-replay-ok\n")
+        };
+        assert!(!run(
+            "worker_capture::tests::intentionally_missing_test",
+            "absent.marker"
+        ));
+        assert!(run(
+            "worker_capture::tests::independent_job_archives_replay_in_fresh_process",
+            "complete.marker"
+        ));
+    }
+
+    #[test]
     fn finite_attempt_archive_replays_actual_worker_state() {
         let (temp, dir_fd) = fixture_dir();
         let first = segment(scope(), 1, [0; 32]);
