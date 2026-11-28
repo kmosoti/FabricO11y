@@ -4,6 +4,7 @@ use fabric_core::{GpuDeviceStats, MemorySnapshot, MountUsage, PsiMetrics, PsiRes
 use rustix::fs::statvfs;
 use std::collections::BTreeSet;
 use std::fs;
+use std::io::Read;
 use std::path::Path;
 
 /// Reads host hostname cleanly from `/etc/hostname` or `/proc/sys/kernel/hostname`.
@@ -197,45 +198,107 @@ pub fn read_mount_usages() -> Vec<MountUsage> {
     out
 }
 
-/// Reads optional DRM/NVIDIA sysfs telemetry without spawning subprocesses.
+/// Reads optional DRM sysfs telemetry without spawning subprocesses.
 #[must_use]
 pub fn read_gpu_stats() -> Vec<GpuDeviceStats> {
-    let mut gpus = Vec::new();
-    let drm = Path::new("/sys/class/drm");
-    if let Ok(entries) = fs::read_dir(drm) {
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if !name.starts_with("card") || name.contains('-') {
-                continue;
-            }
-            let dev = entry.path().join("device");
-            if !dev.exists() {
-                continue;
-            }
-            let vendor = fs::read_to_string(dev.join("vendor"))
-                .map(|s| s.trim().to_owned())
-                .unwrap_or_else(|_| "unknown".into());
-            let vram_used_bytes = fs::read_to_string(dev.join("mem_info_vram_used"))
-                .ok()
-                .and_then(|s| s.trim().parse::<u64>().ok());
-            let vram_total_bytes = fs::read_to_string(dev.join("mem_info_vram_total"))
-                .ok()
-                .and_then(|s| s.trim().parse::<u64>().ok());
-            let busy_pct = fs::read_to_string(dev.join("gpu_busy_percent"))
-                .ok()
-                .and_then(|s| s.trim().parse::<f64>().ok());
+    read_gpu_stats_at(Path::new("/sys/class/drm"))
+}
 
-            gpus.push(GpuDeviceStats {
-                card: name,
-                vendor,
-                vram_used_bytes,
-                vram_total_bytes,
-                busy_pct,
-                temperature_c: None,
-            });
+const MAX_SYSFS_ENTRIES: usize = 128;
+const MAX_SYSFS_VALUE_BYTES: u64 = 128;
+
+// Fail closed when the enumeration itself exceeds the bound, so directory
+// iteration order cannot select a different subset of devices or sensors.
+fn bounded_entries(dir: &Path) -> Option<Vec<std::path::PathBuf>> {
+    let mut paths = Vec::new();
+    for entry in fs::read_dir(dir).ok()? {
+        let entry = entry.ok()?;
+        if paths.len() == MAX_SYSFS_ENTRIES {
+            return None;
         }
+        paths.push(entry.path());
     }
-    gpus.sort_by(|a, b| a.card.cmp(&b.card));
+    paths.sort();
+    Some(paths)
+}
+
+fn bounded_sysfs_text(path: &Path) -> Option<String> {
+    let file = fs::File::open(path).ok()?;
+    let mut bytes = Vec::new();
+    file.take(MAX_SYSFS_VALUE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    if bytes.len() > MAX_SYSFS_VALUE_BYTES as usize {
+        return None;
+    }
+    String::from_utf8(bytes)
+        .ok()
+        .map(|text| text.trim().to_owned())
+}
+
+fn indexed_name(path: &Path, prefix: &str) -> bool {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .and_then(|n| n.strip_prefix(prefix))
+        .is_some_and(|suffix| {
+            !suffix.is_empty() && suffix.len() <= 10 && suffix.bytes().all(|b| b.is_ascii_digit())
+        })
+}
+
+fn amdgpu_temperature(device: &Path) -> Option<f64> {
+    let entries = bounded_entries(&device.join("hwmon"))?;
+    let mut found = None;
+    for path in entries.into_iter().filter(|p| indexed_name(p, "hwmon")) {
+        if bounded_sysfs_text(&path.join("name")).as_deref() != Some("amdgpu") {
+            continue;
+        }
+        // Multiple matching sensors are ambiguous; do not choose by iteration order.
+        if found.is_some() {
+            return None;
+        }
+        found = Some(path);
+    }
+    let sensor = found?;
+    let fault = sensor.join("temp1_fault");
+    if fault.try_exists().ok()? && bounded_sysfs_text(&fault).as_deref() != Some("0") {
+        return None;
+    }
+    let millidegrees = bounded_sysfs_text(&sensor.join("temp1_input"))?
+        .parse::<i64>()
+        .ok()?;
+    Some(millidegrees as f64 / 1000.0)
+}
+
+fn read_gpu_stats_at(drm: &Path) -> Vec<GpuDeviceStats> {
+    let Some(entries) = bounded_entries(drm) else {
+        return Vec::new();
+    };
+    let mut gpus = Vec::new();
+    for path in entries.into_iter().filter(|p| indexed_name(p, "card")) {
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        let dev = path.join("device");
+        if !dev.exists() {
+            continue;
+        }
+        let vendor = bounded_sysfs_text(&dev.join("vendor")).unwrap_or_else(|| "unknown".into());
+        let vram_used_bytes =
+            bounded_sysfs_text(&dev.join("mem_info_vram_used")).and_then(|s| s.parse().ok());
+        let vram_total_bytes =
+            bounded_sysfs_text(&dev.join("mem_info_vram_total")).and_then(|s| s.parse().ok());
+        let busy_pct = bounded_sysfs_text(&dev.join("gpu_busy_percent"))
+            .and_then(|s| s.parse::<f64>().ok())
+            .filter(|v| v.is_finite());
+        gpus.push(GpuDeviceStats {
+            card: name.into(),
+            vendor,
+            vram_used_bytes,
+            vram_total_bytes,
+            busy_pct,
+            temperature_c: amdgpu_temperature(&dev),
+        });
+    }
     gpus
 }
 
@@ -255,4 +318,56 @@ pub fn resolve_mount_point(path: &Path, mounts: &[MountUsage]) -> String {
         }
     }
     best
+}
+
+#[cfg(test)]
+mod gpu_sensor_tests {
+    use super::*;
+
+    #[test]
+    fn bounded_amdgpu_temperature_reports_only_qualified_values() {
+        let root = tempfile::tempdir_in(std::env::var_os("TMPDIR").expect("disk TMPDIR")).unwrap();
+        let dev = root.path().join("card0/device");
+        let hw = dev.join("hwmon/hwmon7");
+        fs::create_dir_all(&hw).unwrap();
+        fs::write(dev.join("vendor"), "0x1002\n").unwrap();
+        fs::write(dev.join("mem_info_vram_used"), "123\n").unwrap();
+        fs::write(dev.join("gpu_busy_percent"), "42\n").unwrap();
+        fs::write(hw.join("name"), "amdgpu\n").unwrap();
+        let read = || read_gpu_stats_at(root.path()).pop().unwrap();
+        assert_eq!(read().temperature_c, None);
+        fs::write(hw.join("temp1_input"), "0\n").unwrap();
+        assert_eq!(read().temperature_c, Some(0.0));
+        assert_eq!(read().vram_used_bytes, Some(123));
+        assert_eq!(read().busy_pct, Some(42.0));
+        fs::write(hw.join("temp1_input"), "47500\n").unwrap();
+        assert_eq!(read().temperature_c, Some(47.5));
+        fs::write(hw.join("temp1_fault"), "1\n").unwrap();
+        assert_eq!(read().temperature_c, None);
+        fs::write(hw.join("temp1_fault"), "0\n").unwrap();
+        fs::write(hw.join("temp1_input"), "oops\n").unwrap();
+        assert_eq!(read().temperature_c, None);
+        fs::write(hw.join("temp1_input"), "1".repeat(129)).unwrap();
+        assert_eq!(read().temperature_c, None);
+        fs::write(hw.join("name"), "other\n").unwrap();
+        fs::write(hw.join("temp1_input"), "20000\n").unwrap();
+        assert_eq!(read().temperature_c, None);
+    }
+
+    #[test]
+    fn directory_overflow_and_ambiguous_sensors_fail_closed() {
+        let root = tempfile::tempdir_in(std::env::var_os("TMPDIR").expect("disk TMPDIR")).unwrap();
+        let hw = root.path().join("card0/device/hwmon");
+        for i in 0..2 {
+            let sensor = hw.join(format!("hwmon{i}"));
+            fs::create_dir_all(&sensor).unwrap();
+            fs::write(sensor.join("name"), "amdgpu").unwrap();
+            fs::write(sensor.join("temp1_input"), "1000").unwrap();
+        }
+        assert_eq!(read_gpu_stats_at(root.path())[0].temperature_c, None);
+        for i in 0..=MAX_SYSFS_ENTRIES {
+            fs::write(root.path().join(format!("extra{i}")), "").unwrap();
+        }
+        assert!(read_gpu_stats_at(root.path()).is_empty());
+    }
 }
