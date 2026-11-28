@@ -123,3 +123,23 @@ unselected parent digests and a 1024-byte object ID. These are limits on a
 selected snapshot, not evidence that every concurrent global head was selected.
 This pure operation does not perform an authoritative global head query or an
 atomic conditional write; callers must provide those boundaries where needed.
+
+## Selected dependency differential
+
+`fabric-corpus::differential` imports two portable views after checking each
+against its caller-supplied expected digest. The caller binds those digests to
+the intended snapshots; a matching digest alone establishes no authority.
+Explicit revision and relation digests and group selectors define the scope.
+Results retain both snapshot digests and distinguish an omitted selection from
+a selected missing record and a present record, including revision availability
+claims. Group selectors use conclusion digest and attribution and report the
+selected matching group claims and their frozen projections.
+
+A known change to a selected dependency is stale. If no known change exists
+but any selected dependency is omitted, missing or an unresolved group,
+applicability is unknown; otherwise it is unchanged. Availability labels are
+compared as recorded claims and do not prove present availability. Omission is not proof that an object was deleted.
+Unrelated snapshot changes do not change this applicability result. From and To
+are caller labels, not proof of chronology or an ordered event replay. Selection
+counts and imported bytes inherit the portable view limits; no retrieval or
+authorization decision is made.
