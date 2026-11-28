@@ -1,9 +1,9 @@
 //! Bounded structural investigation over a verified portable selection.
 //! No authority, independence, completeness, entailment or truth is inferred.
 use crate::{
-    RelationDigest, RevisionDigest,
+    RelationDigest, RevisionDigest, SourceClaim,
     as_of::{PremiseStatus, SupportGroup},
-    portable::{PortableError, PortableView},
+    portable::{AvailabilityClaim, PortableError, PortableView},
 };
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -12,6 +12,8 @@ pub const MAX_NODES: usize = 256;
 pub const MAX_GROUPS: usize = 128;
 pub const MAX_EDGES: usize = 1024;
 pub const MAX_WORK: usize = 131_072;
+/// Maximum source claims inspected for explicitly selected terminal revisions.
+pub const MAX_TERMINAL_SOURCE_CLAIMS: usize = 1024;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Limits {
     pub nodes: usize,
@@ -68,6 +70,47 @@ pub struct Frontier {
     /// Any cap reached means reported nodes, roots and cycles may be incomplete.
     pub truncated: bool,
 }
+
+/// A source claim is identified by its revision and index, not independently
+/// authenticated by this projection.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct SourceReference {
+    pub revision: RevisionDigest,
+    pub source_index: usize,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SourceKind {
+    Captured([u8; 32]),
+    ExternalOnly,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DeclaredSource {
+    pub reference: SourceReference,
+    pub kind: SourceKind,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TerminalState {
+    ObservedTerminal,
+    Missing,
+    Omitted,
+    /// Includes nonterminals and nodes not visited because traversal was capped.
+    NotObservedTerminal,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TerminalSources {
+    pub state: TerminalState,
+    pub availability: Option<AvailabilityClaim>,
+    pub claims: Vec<DeclaredSource>,
+}
+/// Grouping is equality of declared digests, not independent corroboration,
+/// verified source bytes, custody, or present availability.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourceFrontier {
+    pub frontier: Frontier,
+    pub terminals: BTreeMap<RevisionDigest, TerminalSources>,
+    pub captured: BTreeMap<[u8; 32], Vec<SourceReference>>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Error {
     Limits,
@@ -113,6 +156,101 @@ pub fn project(
         return Err(Error::Limits);
     }
     let portable = PortableView::import(bytes, digest).map_err(Error::Portable)?;
+    project_imported(&portable, digest, anchors, limits)
+}
+
+/// Verify one portable selection and group the claims of explicitly selected
+/// observed terminals. Missing and unvisited selections remain explicit.
+pub fn project_with_sources(
+    bytes: &[u8],
+    digest: [u8; 32],
+    anchors: BTreeSet<RevisionDigest>,
+    selected_terminals: BTreeSet<RevisionDigest>,
+    limits: Limits,
+) -> Result<SourceFrontier, Error> {
+    if anchors.len() > MAX_ANCHORS
+        || selected_terminals.len() > MAX_NODES
+        || limits.nodes > MAX_NODES
+        || limits.groups > MAX_GROUPS
+        || limits.edges > MAX_EDGES
+        || limits.work > MAX_WORK
+    {
+        return Err(Error::Limits);
+    }
+    let portable = PortableView::import(bytes, digest).map_err(Error::Portable)?;
+    let frontier = project_imported(&portable, digest, anchors, limits)?;
+    let view = portable.view();
+    let mut total = 0usize;
+    for id in &selected_terminals {
+        if frontier.terminal_anchors.contains_key(id)
+            && let Some(Some(revision)) = view.revision(id)
+        {
+            total = total
+                .checked_add(revision.sources.len())
+                .ok_or(Error::Limits)?;
+            if total > MAX_TERMINAL_SOURCE_CLAIMS {
+                return Err(Error::Limits);
+            }
+        }
+    }
+    let mut terminals = BTreeMap::new();
+    let mut captured: BTreeMap<[u8; 32], Vec<SourceReference>> = BTreeMap::new();
+    for id in selected_terminals {
+        let revision = view.revision(&id);
+        let state = match revision {
+            None => TerminalState::Omitted,
+            Some(None) => TerminalState::Missing,
+            Some(Some(_)) if frontier.terminal_anchors.contains_key(&id) => {
+                TerminalState::ObservedTerminal
+            }
+            Some(Some(_)) => TerminalState::NotObservedTerminal,
+        };
+        let mut claims = Vec::new();
+        if state == TerminalState::ObservedTerminal
+            && let Some(Some(revision)) = revision
+        {
+            for (source_index, source) in revision.sources.iter().enumerate() {
+                let reference = SourceReference {
+                    revision: id,
+                    source_index,
+                };
+                let kind = match source {
+                    SourceClaim::Captured {
+                        artifact_sha256, ..
+                    } => {
+                        captured
+                            .entry(*artifact_sha256)
+                            .or_default()
+                            .push(reference);
+                        SourceKind::Captured(*artifact_sha256)
+                    }
+                    SourceClaim::ExternalOnly { .. } => SourceKind::ExternalOnly,
+                };
+                claims.push(DeclaredSource { reference, kind });
+            }
+        }
+        terminals.insert(
+            id,
+            TerminalSources {
+                state,
+                availability: portable.availability().get(&id).copied(),
+                claims,
+            },
+        );
+    }
+    Ok(SourceFrontier {
+        frontier,
+        terminals,
+        captured,
+    })
+}
+
+fn project_imported(
+    portable: &PortableView,
+    digest: [u8; 32],
+    anchors: BTreeSet<RevisionDigest>,
+    limits: Limits,
+) -> Result<Frontier, Error> {
     let view = portable.view();
     let mut by_conclusion: BTreeMap<RevisionDigest, Vec<&SupportGroup>> = BTreeMap::new();
     for group in view.groups().keys() {
