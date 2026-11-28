@@ -1474,6 +1474,145 @@ mod tests {
             .collect())
     }
 
+    struct JanitorLateArrivalFixture {
+        data_dir: TempDir,
+        part_dir: PathBuf,
+        old_sidecar_name: String,
+        old_sidecar_bytes: Vec<u8>,
+        original_parquet_bytes: Vec<(PathBuf, Vec<u8>)>,
+        original_input_names: Vec<String>,
+    }
+
+    fn janitor_late_arrival_fixture() -> JanitorLateArrivalFixture {
+        let data_dir = non_tmp_dir();
+        let catalog = crate::CatalogStore::open(data_dir.path()).unwrap();
+        let olap = OlapParquetStore::new(catalog.layout().clone());
+        let old_day = (Utc::now() - Duration::days(10)).date_naive();
+        let old_bucket_ms = old_day
+            .and_hms_opt(12, 0, 0)
+            .unwrap()
+            .and_utc()
+            .timestamp_millis();
+        olap.write_metrics(&[
+            MetricPoint {
+                timestamp_ms: old_bucket_ms,
+                name: "recovery.rollup".into(),
+                value: 10.0,
+                host: "h".into(),
+                slice: "agent.slice".into(),
+                unit: "u".into(),
+                pid: None,
+                labels_json: "{}".into(),
+            },
+            MetricPoint {
+                timestamp_ms: old_bucket_ms + 1_000,
+                name: "recovery.rollup".into(),
+                value: 20.0,
+                host: "h".into(),
+                slice: "agent.slice".into(),
+                unit: "u".into(),
+                pid: None,
+                labels_json: "{}".into(),
+            },
+        ])
+        .unwrap();
+        let config = JanitorConfig {
+            max_disk_bytes: DEFAULT_MAX_DISK_BYTES,
+            downsample_after_days: 7,
+            compaction_file_threshold: 8,
+        };
+        let janitor = RetentionJanitor::new(olap.clone(), config);
+        assert_eq!(janitor.run_pass(None).unwrap().downsampled_partitions, 1);
+
+        let part_dir = catalog
+            .layout()
+            .olap_domain_dir("metrics")
+            .join(format!("dt={}", old_day.format("%Y-%m-%d")));
+        let first_rollup = olap.list_parquet_files("metrics", None).unwrap();
+        assert_eq!(first_rollup.len(), 1);
+        let first_rollup_name = first_rollup[0]
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
+        assert!(first_rollup_name.starts_with("downsampled-5m-"));
+        let old_sidecar_name = format!(".rollup-counts-{first_rollup_name}.json");
+        let old_sidecar_bytes = fs::read(part_dir.join(&old_sidecar_name)).unwrap();
+
+        olap.write_metrics(&[MetricPoint {
+            timestamp_ms: old_bucket_ms + 2_000,
+            name: "recovery.rollup".into(),
+            value: 40.0,
+            host: "h".into(),
+            slice: "agent.slice".into(),
+            unit: "u".into(),
+            pid: None,
+            labels_json: "{}".into(),
+        }])
+        .unwrap();
+        let original_files = list_partition_parquet_files(&part_dir).unwrap();
+        assert_eq!(original_files.len(), 2);
+        let mut original_parquet_bytes = original_files
+            .iter()
+            .map(|path| (path.clone(), fs::read(path).unwrap()))
+            .collect::<Vec<_>>();
+        original_parquet_bytes.sort_by(|a, b| a.0.cmp(&b.0));
+        let mut original_input_names = original_files
+            .iter()
+            .map(|path| path.file_name().unwrap().to_str().unwrap().to_owned())
+            .chain(std::iter::once(old_sidecar_name.clone()))
+            .collect::<Vec<_>>();
+        original_input_names.sort();
+
+        drop(janitor);
+        drop(olap);
+        drop(catalog);
+        JanitorLateArrivalFixture {
+            data_dir,
+            part_dir,
+            old_sidecar_name,
+            old_sidecar_bytes,
+            original_parquet_bytes,
+            original_input_names,
+        }
+    }
+
+    fn assert_original_inputs_unchanged(fixture: &JanitorLateArrivalFixture) {
+        for (path, bytes) in &fixture.original_parquet_bytes {
+            assert_eq!(fs::read(path).unwrap(), *bytes, "original input changed");
+        }
+        assert_eq!(
+            fs::read(fixture.part_dir.join(&fixture.old_sidecar_name)).unwrap(),
+            fixture.old_sidecar_bytes
+        );
+    }
+
+    fn read_metric_values(path: &Path) -> Vec<f64> {
+        let reader = ParquetRecordBatchReaderBuilder::try_new(File::open(path).unwrap())
+            .unwrap()
+            .build()
+            .unwrap();
+        let mut values = Vec::new();
+        for batch in reader {
+            let batch = batch.unwrap();
+            let array = batch
+                .column(2)
+                .as_any()
+                .downcast_ref::<Float64Array>()
+                .unwrap();
+            values.extend((0..batch.num_rows()).map(|row| array.value(row)));
+        }
+        values
+    }
+
+    fn rollup_counts(path: &Path) -> Vec<RollupCountEntry> {
+        let counts: Vec<RollupCountEntry> =
+            serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+        assert_eq!(counts.len(), 1, "expected exactly one rollup bucket");
+        counts
+    }
+
     fn has_rollup_sidecar(part_dir: &Path, path: &Path) -> bool {
         let Ok(Some(part_fd)) =
             crate::olap::open_standalone_dir_nofollow(part_dir, "partition dir")
@@ -1918,40 +2057,9 @@ mod tests {
 
     #[test]
     fn post_rename_partition_sync_error_keeps_intent_and_recovers_once_after_reopen() {
-        let dir = non_tmp_dir();
-        let catalog = crate::CatalogStore::open(dir.path()).unwrap();
+        let fixture = janitor_late_arrival_fixture();
+        let catalog = crate::CatalogStore::open(fixture.data_dir.path()).unwrap();
         let olap = OlapParquetStore::new(catalog.layout().clone());
-        let old_day = (Utc::now() - Duration::days(10)).date_naive();
-        let old_bucket_ms = old_day
-            .and_hms_opt(12, 0, 0)
-            .unwrap()
-            .and_utc()
-            .timestamp_millis();
-
-        olap.write_metrics(&[
-            MetricPoint {
-                timestamp_ms: old_bucket_ms,
-                name: "recovery.rollup".into(),
-                value: 10.0,
-                host: "h".into(),
-                slice: "agent.slice".into(),
-                unit: "u".into(),
-                pid: None,
-                labels_json: "{}".into(),
-            },
-            MetricPoint {
-                timestamp_ms: old_bucket_ms + 1_000,
-                name: "recovery.rollup".into(),
-                value: 20.0,
-                host: "h".into(),
-                slice: "agent.slice".into(),
-                unit: "u".into(),
-                pid: None,
-                labels_json: "{}".into(),
-            },
-        ])
-        .unwrap();
-
         let janitor = RetentionJanitor::new(
             olap.clone(),
             JanitorConfig {
@@ -1960,48 +2068,6 @@ mod tests {
                 compaction_file_threshold: 8,
             },
         );
-        assert_eq!(janitor.run_pass(None).unwrap().downsampled_partitions, 1);
-
-        let part_dir = catalog
-            .layout()
-            .olap_domain_dir("metrics")
-            .join(format!("dt={}", old_day.format("%Y-%m-%d")));
-        let first_rollup = olap.list_parquet_files("metrics", None).unwrap();
-        assert_eq!(first_rollup.len(), 1);
-        let first_rollup_name = first_rollup[0]
-            .file_name()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .to_owned();
-        assert!(first_rollup_name.starts_with("downsampled-5m-"));
-        let old_sidecar_name = format!(".rollup-counts-{first_rollup_name}.json");
-        let old_sidecar_bytes = fs::read(part_dir.join(&old_sidecar_name)).unwrap();
-
-        olap.write_metrics(&[MetricPoint {
-            timestamp_ms: old_bucket_ms + 2_000,
-            name: "recovery.rollup".into(),
-            value: 40.0,
-            host: "h".into(),
-            slice: "agent.slice".into(),
-            unit: "u".into(),
-            pid: None,
-            labels_json: "{}".into(),
-        }])
-        .unwrap();
-        let original_files = list_partition_parquet_files(&part_dir).unwrap();
-        assert_eq!(original_files.len(), 2);
-        let mut original_parquet_bytes = original_files
-            .iter()
-            .map(|path| (path.clone(), fs::read(path).unwrap()))
-            .collect::<Vec<_>>();
-        original_parquet_bytes.sort_by(|a, b| a.0.cmp(&b.0));
-        let original_input_names = original_files
-            .iter()
-            .map(|path| path.file_name().unwrap().to_str().unwrap().to_owned())
-            .chain(std::iter::once(old_sidecar_name.clone()));
-        let mut original_input_names = original_input_names.collect::<Vec<_>>();
-        original_input_names.sort();
 
         OlapParquetStore::arm_test_post_rename_partition_sync_failure();
         let err = janitor
@@ -2016,68 +2082,39 @@ mod tests {
             "one-shot fault was not consumed by the normal janitor publication path"
         );
 
-        let intent_path = part_dir.join(".replace-intent.json");
-        let intent_bytes = fs::read(&intent_path).expect("replace intent must survive the error");
-        let intent: serde_json::Value = serde_json::from_slice(&intent_bytes).unwrap();
+        let intent_path = fixture.part_dir.join(".replace-intent.json");
+        let intent: serde_json::Value =
+            serde_json::from_slice(&fs::read(&intent_path).expect("intent must survive")).unwrap();
         let replacement = intent["replacement"].as_str().unwrap();
         assert!(replacement.starts_with("downsampled-5m-"));
         let mut recorded_inputs: Vec<String> =
             serde_json::from_value(intent["inputs"].clone()).unwrap();
         recorded_inputs.sort();
-        assert_eq!(recorded_inputs, original_input_names);
+        assert_eq!(recorded_inputs, fixture.original_input_names);
         assert_eq!(
             intent["input_ids"].as_object().map(|ids| ids.len()),
-            Some(original_input_names.len()),
-            "the persisted intent must bind each original input identity"
+            Some(fixture.original_input_names.len())
         );
         assert!(intent["replacement_id"].is_object());
         assert_eq!(intent["poisoned"].as_bool(), Some(false));
-        assert!(intent["staged_source"].is_string());
-        assert!(
-            !part_dir
-                .join(intent["staged_source"].as_str().unwrap())
-                .exists(),
-            "the source must have been renamed into its final replacement name"
-        );
-        for (path, bytes) in &original_parquet_bytes {
-            assert_eq!(fs::read(path).unwrap(), *bytes, "original input changed");
-        }
-        assert_eq!(
-            fs::read(part_dir.join(&old_sidecar_name)).unwrap(),
-            old_sidecar_bytes
-        );
+        let staged_source = intent["staged_source"].as_str().unwrap();
+        assert!(!fixture.part_dir.join(staged_source).exists());
+        assert_original_inputs_unchanged(&fixture);
 
-        let replacement_path = part_dir.join(replacement);
-        let reader =
-            ParquetRecordBatchReaderBuilder::try_new(File::open(&replacement_path).unwrap())
-                .unwrap()
-                .build()
-                .unwrap();
-        let mut replacement_values = Vec::new();
-        for batch in reader {
-            let batch = batch.unwrap();
-            let values = batch
-                .column(2)
-                .as_any()
-                .downcast_ref::<Float64Array>()
-                .unwrap();
-            replacement_values.extend((0..batch.num_rows()).map(|row| values.value(row)));
-        }
+        let replacement_path = fixture.part_dir.join(replacement);
+        let replacement_values = read_metric_values(&replacement_path);
         assert_eq!(replacement_values.len(), 1);
         assert!((replacement_values[0] - (70.0 / 3.0)).abs() < 1e-9);
-        let replacement_sidecar =
-            fs::read(part_dir.join(format!(".rollup-counts-{replacement}.json")))
-                .expect("complete replacement must include its count sidecar");
-        let replacement_counts: Vec<RollupCountEntry> =
-            serde_json::from_slice(&replacement_sidecar).unwrap();
-        assert_eq!(replacement_counts.len(), 1);
-        assert_eq!(replacement_counts[0].count, 3);
+        let replacement_sidecar_path = fixture
+            .part_dir
+            .join(format!(".rollup-counts-{replacement}.json"));
+        let replacement_sidecar = fs::read(&replacement_sidecar_path).unwrap();
+        assert_eq!(rollup_counts(&replacement_sidecar_path)[0].count, 3);
 
         drop(janitor);
         drop(olap);
         drop(catalog);
-
-        let reopened_catalog = crate::CatalogStore::open(dir.path()).unwrap();
+        let reopened_catalog = crate::CatalogStore::open(fixture.data_dir.path()).unwrap();
         let reopened_olap = OlapParquetStore::new(reopened_catalog.layout().clone());
         let reopened_janitor = RetentionJanitor::new(
             reopened_olap.clone(),
@@ -2096,32 +2133,313 @@ mod tests {
             "reopen should reconcile the committed replacement without downsampling twice"
         );
         assert!(!intent_path.exists());
-        assert_eq!(list_partition_parquet_files(&part_dir).unwrap().len(), 1);
-        assert!(!part_dir.join(&old_sidecar_name).exists());
+        assert!(!fixture.part_dir.join(&fixture.old_sidecar_name).exists());
         let recovered_files = reopened_olap.list_parquet_files("metrics", None).unwrap();
         assert_eq!(recovered_files.len(), 1);
+        assert_eq!(read_metric_values(&recovered_files[0]), replacement_values);
         let recovered_name = recovered_files[0].file_name().unwrap().to_str().unwrap();
-        assert!(recovered_name.starts_with("downsampled-5m-"));
-        let reader =
-            ParquetRecordBatchReaderBuilder::try_new(File::open(&recovered_files[0]).unwrap())
-                .unwrap()
-                .build()
-                .unwrap();
-        let mut recovered_values = Vec::new();
-        for batch in reader {
-            let batch = batch.unwrap();
-            let values = batch
-                .column(2)
-                .as_any()
-                .downcast_ref::<Float64Array>()
-                .unwrap();
-            recovered_values.extend((0..batch.num_rows()).map(|row| values.value(row)));
-        }
-        assert_eq!(recovered_values, replacement_values);
-        let recovered_sidecar =
-            fs::read(part_dir.join(format!(".rollup-counts-{recovered_name}.json"))).unwrap();
-        assert_eq!(recovered_sidecar, replacement_sidecar);
+        let recovered_sidecar_path = fixture
+            .part_dir
+            .join(format!(".rollup-counts-{recovered_name}.json"));
+        assert_eq!(
+            fs::read(&recovered_sidecar_path).unwrap(),
+            replacement_sidecar
+        );
+        assert_eq!(rollup_counts(&recovered_sidecar_path)[0].count, 3);
 
+        let stable_parquet = fs::read(&recovered_files[0]).unwrap();
+        assert_eq!(
+            reopened_janitor
+                .run_pass(None)
+                .unwrap()
+                .downsampled_partitions,
+            0
+        );
+        assert_eq!(
+            reopened_olap.list_parquet_files("metrics", None).unwrap(),
+            recovered_files
+        );
+        assert_eq!(fs::read(&recovered_files[0]).unwrap(), stable_parquet);
+    }
+
+    #[test]
+    fn pre_rename_io_error_rolls_back_and_preserves_original_rollup_inputs() {
+        let fixture = janitor_late_arrival_fixture();
+        let catalog = crate::CatalogStore::open(fixture.data_dir.path()).unwrap();
+        let olap = OlapParquetStore::new(catalog.layout().clone());
+        let janitor = RetentionJanitor::new(
+            olap.clone(),
+            JanitorConfig {
+                max_disk_bytes: DEFAULT_MAX_DISK_BYTES,
+                downsample_after_days: 7,
+                compaction_file_threshold: 8,
+            },
+        );
+
+        OlapParquetStore::arm_test_pre_rename_partition_rename_eio();
+        let err = janitor
+            .run_pass(None)
+            .expect_err("the injected fs::rename I/O error must surface");
+        assert!(err.contains("parquet rename"), "unexpected error: {err}");
+        assert!(err.contains("os error 5"), "unexpected error: {err}");
+        assert!(
+            !OlapParquetStore::test_pre_rename_partition_rename_eio_pending(),
+            "one-shot rename fault was not consumed by the normal janitor path"
+        );
+
+        assert!(!fixture.part_dir.join(".replace-intent.json").exists());
+        assert_original_inputs_unchanged(&fixture);
+        let current_files = list_partition_parquet_files(&fixture.part_dir).unwrap();
+        let mut current_names = current_files
+            .iter()
+            .map(|path| path.file_name().unwrap().to_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        current_names.sort();
+        let mut original_parquet_names = fixture
+            .original_input_names
+            .iter()
+            .filter(|name| name.ends_with(".parquet"))
+            .cloned()
+            .collect::<Vec<_>>();
+        original_parquet_names.sort();
+        assert_eq!(current_names, original_parquet_names);
+        let mut sidecar_names = fs::read_dir(&fixture.part_dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|name| name.starts_with(".rollup-counts-"))
+            .collect::<Vec<_>>();
+        sidecar_names.sort();
+        assert_eq!(sidecar_names, vec![fixture.old_sidecar_name.clone()]);
+        assert!(
+            fs::read_dir(&fixture.part_dir)
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+                .all(|name| !name.starts_with(".replace-source-")),
+            "production rollback must remove the staged source"
+        );
+        assert_eq!(
+            fs::read_dir(catalog.layout().staging_dir())
+                .unwrap()
+                .count(),
+            0,
+            "production rollback must leave no staging parquet"
+        );
+
+        drop(janitor);
+        drop(olap);
+        drop(catalog);
+        let reopened_catalog = crate::CatalogStore::open(fixture.data_dir.path()).unwrap();
+        let reopened_olap = OlapParquetStore::new(reopened_catalog.layout().clone());
+        let reopened_janitor = RetentionJanitor::new(
+            reopened_olap.clone(),
+            JanitorConfig {
+                max_disk_bytes: DEFAULT_MAX_DISK_BYTES,
+                downsample_after_days: 7,
+                compaction_file_threshold: 8,
+            },
+        );
+        assert_eq!(
+            reopened_janitor
+                .run_pass(None)
+                .unwrap()
+                .downsampled_partitions,
+            1
+        );
+        let files = reopened_olap.list_parquet_files("metrics", None).unwrap();
+        assert_eq!(files.len(), 1);
+        let values = read_metric_values(&files[0]);
+        assert_eq!(values.len(), 1);
+        assert!((values[0] - (70.0 / 3.0)).abs() < 1e-9);
+        let recovered_name = files[0].file_name().unwrap().to_str().unwrap();
+        assert_eq!(
+            rollup_counts(
+                &fixture
+                    .part_dir
+                    .join(format!(".rollup-counts-{recovered_name}.json"))
+            )[0]
+            .count,
+            3
+        );
+        let stable_parquet = fs::read(&files[0]).unwrap();
+        assert_eq!(
+            reopened_janitor
+                .run_pass(None)
+                .unwrap()
+                .downsampled_partitions,
+            0
+        );
+        assert_eq!(
+            reopened_olap.list_parquet_files("metrics", None).unwrap(),
+            files
+        );
+        assert_eq!(fs::read(&files[0]).unwrap(), stable_parquet);
+    }
+
+    #[test]
+    fn janitor_killed_after_intent_before_rename_recovers_once() {
+        const DATA_DIR_ENV: &str = "FABRICO11Y_TEST_JANITOR_DATA_DIR";
+
+        if let (Some(data_dir), Some(_marker)) = (
+            std::env::var_os(DATA_DIR_ENV),
+            std::env::var_os(crate::olap::TEST_PARTITION_RENAME_MARKER_ENV),
+        ) {
+            let catalog = crate::CatalogStore::open(PathBuf::from(data_dir)).unwrap();
+            let olap = OlapParquetStore::new(catalog.layout().clone());
+            let janitor = RetentionJanitor::new(
+                olap,
+                JanitorConfig {
+                    max_disk_bytes: DEFAULT_MAX_DISK_BYTES,
+                    downsample_after_days: 7,
+                    compaction_file_threshold: 8,
+                },
+            );
+            let _ = janitor.run_pass(None);
+            panic!("child janitor returned instead of parking before rename");
+        }
+
+        let fixture = janitor_late_arrival_fixture();
+        let marker = fixture.data_dir.path().join("pre-rename-child.marker");
+        assert!(!marker.exists());
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("janitor::tests::janitor_killed_after_intent_before_rename_recovers_once")
+            .arg("--nocapture")
+            .env(DATA_DIR_ENV, fixture.data_dir.path().as_os_str())
+            .env(
+                crate::olap::TEST_PARTITION_RENAME_MARKER_ENV,
+                marker.as_os_str(),
+            )
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let child_pid = child.id();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        let mut marker_pid = None;
+        while std::time::Instant::now() < deadline {
+            if let Ok(contents) = fs::read_to_string(&marker)
+                && let Ok(pid) = contents.trim().parse::<u32>()
+            {
+                marker_pid = Some(pid);
+                break;
+            }
+            if child.try_wait().unwrap().is_some() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let was_running_at_marker = marker_pid.is_some() && child.try_wait().unwrap().is_none();
+        if child.try_wait().unwrap().is_none() {
+            let _ = child.kill();
+        }
+        let output = child.wait_with_output().unwrap();
+        let child_output = format!(
+            "stdout: {}\nstderr: {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            marker_pid.is_some(),
+            "child missed bounded rename marker; {child_output}"
+        );
+        assert!(
+            was_running_at_marker,
+            "child did not park at the marker; {child_output}"
+        );
+        assert_eq!(marker_pid, Some(child_pid));
+        assert!(
+            !output.status.success(),
+            "parent kill must terminate the parked child"
+        );
+
+        let intent_path = fixture.part_dir.join(".replace-intent.json");
+        let intent: serde_json::Value =
+            serde_json::from_slice(&fs::read(&intent_path).expect("child should leave intent"))
+                .unwrap();
+        let replacement = intent["replacement"].as_str().unwrap();
+        let source_name = intent["staged_source"].as_str().unwrap();
+        let mut recorded_inputs: Vec<String> =
+            serde_json::from_value(intent["inputs"].clone()).unwrap();
+        recorded_inputs.sort();
+        assert_eq!(recorded_inputs, fixture.original_input_names);
+        assert_eq!(
+            intent["input_ids"].as_object().map(|ids| ids.len()),
+            Some(fixture.original_input_names.len())
+        );
+        assert!(!fixture.part_dir.join(replacement).exists());
+        assert!(fixture.part_dir.join(source_name).is_file());
+        assert_original_inputs_unchanged(&fixture);
+        let staged_values = read_metric_values(&fixture.part_dir.join(source_name));
+        assert_eq!(staged_values.len(), 1);
+        assert!((staged_values[0] - (70.0 / 3.0)).abs() < 1e-9);
+        assert_eq!(
+            rollup_counts(
+                &fixture
+                    .part_dir
+                    .join(format!(".rollup-counts-{replacement}.json"))
+            )[0]
+            .count,
+            3
+        );
+
+        let reopened_catalog = crate::CatalogStore::open(fixture.data_dir.path()).unwrap();
+        let reopened_olap = OlapParquetStore::new(reopened_catalog.layout().clone());
+        assert_eq!(
+            fs::read_dir(reopened_catalog.layout().staging_dir())
+                .unwrap()
+                .count(),
+            0
+        );
+        crate::olap::reconcile_partition_intent(reopened_catalog.layout(), &fixture.part_dir)
+            .unwrap();
+        assert!(!intent_path.exists());
+        assert!(!fixture.part_dir.join(source_name).exists());
+        assert!(!fixture.part_dir.join(replacement).exists());
+        assert_eq!(
+            fs::read_dir(reopened_catalog.layout().staging_dir())
+                .unwrap()
+                .count(),
+            0
+        );
+        let abandoned_sidecar = fixture
+            .part_dir
+            .join(format!(".rollup-counts-{replacement}.json"));
+        assert!(abandoned_sidecar.is_file());
+        assert_original_inputs_unchanged(&fixture);
+        let restored_files = list_partition_parquet_files(&fixture.part_dir).unwrap();
+        assert_eq!(restored_files.len(), 2);
+
+        let reopened_janitor = RetentionJanitor::new(
+            reopened_olap.clone(),
+            JanitorConfig {
+                max_disk_bytes: DEFAULT_MAX_DISK_BYTES,
+                downsample_after_days: 7,
+                compaction_file_threshold: 8,
+            },
+        );
+        assert_eq!(
+            reopened_janitor
+                .run_pass(None)
+                .unwrap()
+                .downsampled_partitions,
+            1
+        );
+        assert!(!abandoned_sidecar.exists());
+        let recovered_files = reopened_olap.list_parquet_files("metrics", None).unwrap();
+        assert_eq!(recovered_files.len(), 1);
+        let recovered_values = read_metric_values(&recovered_files[0]);
+        assert_eq!(recovered_values.len(), 1);
+        assert!((recovered_values[0] - (70.0 / 3.0)).abs() < 1e-9);
+        let recovered_name = recovered_files[0].file_name().unwrap().to_str().unwrap();
+        assert_eq!(
+            rollup_counts(
+                &fixture
+                    .part_dir
+                    .join(format!(".rollup-counts-{recovered_name}.json"))
+            )[0]
+            .count,
+            3
+        );
         let stable_parquet = fs::read(&recovered_files[0]).unwrap();
         assert_eq!(
             reopened_janitor
