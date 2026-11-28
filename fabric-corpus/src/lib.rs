@@ -8,6 +8,7 @@
 pub mod as_of;
 pub mod context;
 pub mod differential;
+pub mod enrichment;
 pub mod failure_claim;
 pub mod handoff;
 pub mod investigation;
