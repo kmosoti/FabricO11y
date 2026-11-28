@@ -1,6 +1,6 @@
 //! Shared recorded scenario executed by the native and wasm harness.
 use fabric_app_core::{Change, Effect, Event, Phase, State};
-use fabric_query_contract::QueryRequest;
+use fabric_query_contract::{Operation, QueryRequest};
 use serde_json::json;
 
 pub fn run() -> String {
@@ -50,6 +50,32 @@ pub fn run() -> String {
         })
         .unwrap();
     let saved = json!({"phase":state.phase(),"rows":state.rows(),"selected":state.selected(),"coverages":state.coverages(),"next_cursor":state.next_cursor()});
+    let mut detail = request.clone();
+    detail.operation = Operation::RunSummary;
+    detail.filter.run = Some(state.rows()[0].run.clone());
+    detail.snapshot = state.coverages()[0].snapshot.clone();
+    let detail_start = state
+        .transition(Event::Start {
+            request: Box::new(detail),
+            expected_authority: "auth-1".into(),
+        })
+        .unwrap();
+    let before_stale = serde_json::to_value(&state).unwrap();
+    let stale_detail = state
+        .transition(Event::Response {
+            generation: 2,
+            bytes: second.clone(),
+        })
+        .unwrap();
+    assert_eq!(stale_detail.change, Change::Unchanged);
+    assert_eq!(serde_json::to_value(&state).unwrap(), before_stale);
+    state
+        .transition(Event::Response {
+            generation: 3,
+            bytes: include_bytes!("detail.json").to_vec(),
+        })
+        .unwrap();
+    let detail_result = json!({"rows": state.rows(), "coverages": state.coverages()});
     state
         .transition(Event::Start {
             request: Box::new(request.clone()),
@@ -59,12 +85,12 @@ pub fn run() -> String {
     let cancelled = state.transition(Event::Cancel).unwrap();
     assert!(matches!(
         cancelled.effect,
-        Some(Effect::Cancel { generation: 3 })
+        Some(Effect::Cancel { generation: 4 })
     ));
     assert_eq!(
         state
             .transition(Event::Response {
-                generation: 3,
+                generation: 4,
                 bytes: first.clone()
             })
             .unwrap()
@@ -82,7 +108,7 @@ pub fn run() -> String {
     assert_eq!(
         state
             .transition(Event::Response {
-                generation: 4,
+                generation: 5,
                 bytes: second
             })
             .unwrap()
@@ -98,13 +124,13 @@ pub fn run() -> String {
         .unwrap();
     assert!(matches!(
         reconnect.effect,
-        Some(Effect::Request { generation: 5, .. })
+        Some(Effect::Request { generation: 6, .. })
     ));
     state
         .transition(Event::Response {
-            generation: 5,
+            generation: 6,
             bytes: first,
         })
         .unwrap();
-    json!({"completed":saved,"after_cancel":cancelled.change,"after_disconnect":after_disconnect,"after_reconnect":state.phase(),"generation":state.generation(),"stale":stale.change}).to_string()
+    json!({"completed":saved,"detail":detail_result,"detail_start":detail_start,"stale_detail":stale_detail.change,"after_cancel":cancelled.change,"after_disconnect":after_disconnect,"after_reconnect":state.phase(),"generation":state.generation(),"stale":stale.change}).to_string()
 }

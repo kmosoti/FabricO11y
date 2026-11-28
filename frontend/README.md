@@ -1,7 +1,8 @@
 # Portable application state
 
 This separate Cargo workspace contains `fabric-app-core`, a Sans-I/O reducer
-for the existing `ListRuns` query contract. It has no renderer or transport.
+for the existing `ListRuns` and `RunSummary` query contracts. The same reducer
+can open a typed run detail at the list snapshot. It has no renderer or transport.
 The adapter authenticates the backend, supplies the expected authority, and
 bounds incoming bytes before constructing a response event. An expected
 identity or returned coverage field is not an authorization grant.
