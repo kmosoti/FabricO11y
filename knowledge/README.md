@@ -57,6 +57,7 @@ TOML-native records without changing that cohort or its count.
 | [D-0202 · Portable corpus views](decisions/D-0202-portable-corpus.md) | `agent` | `false` | Bounded deterministic view transfer and availability claims |
 | [D-0201 · Explicit corpus as-of views](decisions/D-0201-corpus-as-of.md) | `agent` | `false` | Bounded frozen membership and conjunctive support claims |
 | [D-0348 · Receipt-bound reported attempts](decisions/D-0348-receipt-bound-attempts.md) | `agent` | `false` | Strict authenticated attempt readback and its limits |
+| [D-0239 · Protected application capture](decisions/D-0239-protected-capture.md) | `agent` | `false` | Policy-bound protected outboxes and sanitized application artifacts |
 | [D-0200 · Frozen experiment snapshots](decisions/D-0200-frozen-snapshots.md) | `agent` | `false` | Fixed roster, explicit boundaries and missingness-aware comparisons |
 | [D-0270 · Conditional canonical plan acceptance](decisions/D-0270-conditional-plan-acceptance.md) | `agent` | `false` | Authenticated single-owner scope and atomic decision retry |
 | [D-0223 · Live cursor cadence](decisions/D-0223-live-cursor-cadence.md) | `agent` | `false` | Bounded opt-in Spindle polling |
@@ -95,5 +96,3 @@ TOML-native records without changing that cohort or its count.
 | [O-0300 · Existing proof inventory and trust boundaries](observations/O-0300-proof-inventory-and-trust-boundaries.md) | `agent` | `false` | Current proof obligations and pins, extraction/model boundaries, false-checker controls, hosted baseline result, and runtime trigger evidence still needed by #235 |
 | [R-0001 · Converged Rust Storage and Five Observability Pillars](research/R-0001-converged-rust-storage-and-five-pillars.md) | `agent` | `false` | Pure-Rust `redb` + 32 MiB Gorilla ring + ZSTD Parquet/DataFusion layout, `DDSketch`/`EwmaMadDetector`, and Freshness/Volume/Schema/Distribution/Lineage evaluators |
 | [R-0002 · Formal Proofs and Fuzz Verification for Converged Telemetry Predicates](research/R-0002-converged-telemetry-formal-proofs-and-fuzzing.md) | `agent` | `false` | Verus + Charon/Aeneas Lean 4 contracts, Z3 QF_BV SMT checks, standalone Lean 4 Gorilla/rollup/watermark proofs, and 3 converged telemetry fuzz targets |
-
-| [D-0203 · Protected application capture](decisions/D-0203-protected-capture.md) | `agent` | `false` | Policy-bound protected outboxes and sanitized application artifacts |
