@@ -305,6 +305,7 @@ fn App() -> impl IntoView {
             state.set(current);
             message.set("Stopped waiting. Backend work may still continue.".into());
             dispatch(state, message, active, retry, t.effect);
+            focus_results();
         }
     };
     let retry_read = move |_| {
@@ -323,6 +324,7 @@ fn App() -> impl IntoView {
                 state.set(current);
                 message.set(String::new());
                 dispatch(state, message, active, retry, t.effect);
+                focus_results();
             }
             Err(_) => message.set("Could not retry the query.".into()),
         }

@@ -115,23 +115,30 @@ async function wait(fn, ms=10000) { const end=Date.now()+ms; let last; while(Dat
     submit = await find('button[type=submit]');
     await keys(submit, '\uE007');
     await wait(() => heldResponse && status());
-    const stopButton = await js("return [...document.querySelectorAll('button')].find(x => x.textContent === 'Stop waiting')");
-    assert.ok(stopButton);
-    await js('arguments[0].focus()', stopButton);
+    const authorityInput = await find('form label:nth-of-type(1) input');
+    await js('arguments[0].focus()', ref(authorityInput));
+    await keys(authorityInput, '\uE004'); // Tab to source scope.
+    const sourceInput = await find('form label:nth-of-type(2) input');
+    assert.equal(await js('return document.activeElement === arguments[0]', ref(sourceInput)), true);
+    await keys(sourceInput, '\uE004'); // Disabled submit is skipped while loading.
+    assert.equal(await js('return document.activeElement.textContent'), 'Stop waiting');
+    const stopButton = await js('return document.activeElement');
     await keys(stopButton['element-6066-11e4-a52e-4f735466cecf'], '\uE007');
     await wait(async () => (await status()).includes('Backend work may still continue'));
     await wait(() => heldClosed);
+    await wait(() => js("return document.activeElement.id === 'results-heading'"));
     mode = 'normal';
-    const retryButton = await js("return [...document.querySelectorAll('button')].find(x => x.textContent === 'Retry read')");
-    assert.ok(retryButton);
+    const heading = await find('#results-heading');
+    await keys(heading, '\uE008\uE004\uE000'); // Shift+Tab to retry.
+    assert.equal(await js('return document.activeElement.textContent'), 'Retry read');
+    const retryButton = await js('return document.activeElement');
     await keys(retryButton['element-6066-11e4-a52e-4f735466cecf'], '\uE007');
+    await wait(() => js("return document.activeElement.id === 'results-heading'"));
     await wait(async () => (await status()) === 'Results ready');
     assert.equal(requests.at(-1).operation.operation, 'list_runs');
     assert.equal(requests.at(-1).cursor, null);
-    // Attempt late completion after cancellation; the new view must remain ready.
-    heldResponse.end(fs.readFileSync(path.join(fixtures, 'first.json')));
-    await delay(200);
-    assert.equal(await status(), 'Results ready');
+    // The server observed the aborted connection. Stale reducer responses are
+    // exercised by the shared native/Wasm scenario, not this closed socket.
     assert.ok(await find(`button[aria-label="Inspect summary for ${run}"]`));
     mode = 'denied';
     submit = await find('button[type=submit]');
