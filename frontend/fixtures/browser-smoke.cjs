@@ -54,8 +54,8 @@ async function listen(srv) {
   ]);
   return srv.address().port;
 }
-async function call(base, method, route, data) {
-  const r = await fetch(base+route, {method, headers:{'Content-Type':'application/json'}, body:data === undefined ? undefined : JSON.stringify(data), signal:AbortSignal.timeout(8000)});
+async function call(base, method, route, data, timeoutMs=8000) {
+  const r = await fetch(base+route, {method, headers:{'Content-Type':'application/json'}, body:data === undefined ? undefined : JSON.stringify(data), signal:AbortSignal.timeout(timeoutMs)});
   const obj = await r.json(); if (!r.ok) throw Error(`webdriver ${method} ${route}: ${JSON.stringify(obj.value)}`); return obj.value;
 }
 async function wait(fn, ms=10000) { const end=Date.now()+ms; let last; while(Date.now()<end) { try { last=await fn(); if(last) return last; } catch(e) { last=e.message; } await delay(100); } throw Error(`timeout: ${last}`); }
@@ -75,7 +75,14 @@ async function wait(fn, ms=10000) { const end=Date.now()+ms; let last; while(Dat
       if (proc.exitCode !== null) throw Error(`chromedriver exited ${proc.exitCode}`);
       return (await call(wd, 'GET', '/status')).ready;
     });
-    session=(await call(wd,'POST','/session',{capabilities:{alwaysMatch:{browserName:'chrome','goog:chromeOptions':{binary:chrome,args:['--headless=new','--disable-dev-shm-usage','--no-first-run','--disable-background-networking','--disable-component-update','--disable-sync','--no-proxy-server','--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1',`--user-data-dir=${profile}`]}}}})).sessionId;
+    // A cold hosted runner can take longer to start Chrome than ordinary commands.
+    const sessionStarted = Date.now();
+    try {
+      session=(await call(wd,'POST','/session',{capabilities:{alwaysMatch:{browserName:'chrome','goog:chromeOptions':{binary:chrome,args:['--headless=new','--disable-dev-shm-usage','--no-first-run','--disable-background-networking','--disable-component-update','--disable-sync','--no-proxy-server','--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1',`--user-data-dir=${profile}`]}}}},30000)).sessionId;
+      console.log(`webdriver POST /session completed in ${Date.now() - sessionStarted} ms`);
+    } catch (error) {
+      throw new Error(`webdriver POST /session failed after ${Date.now() - sessionStarted} ms: ${error.message}`, {cause:error});
+    }
     const base=`/session/${session}`;
     const cmd=(method, route, data)=>call(wd,method,base+route,data);
     const js=(script,...args)=>cmd('POST','/execute/sync',{script,args});
