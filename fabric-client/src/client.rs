@@ -180,11 +180,12 @@ impl FabricClient {
         request: &fabric_query_contract::LiveCursorRequest,
     ) -> Result<fabric_query_contract::LivePage, String> {
         match &self.transport {
-            FabricTransport::DirectSocket { daemon_socket, .. } => {
-                self.pool
-                    .live_cursor(daemon_socket, request, QUERY_TIMEOUT)
-                    .await
-            }
+            FabricTransport::DirectSocket { daemon_socket, .. } => tokio::time::timeout(
+                QUERY_TIMEOUT,
+                self.pool.live_cursor(daemon_socket, request, QUERY_TIMEOUT),
+            )
+            .await
+            .map_err(|_| "daemon live cursor timed out".to_owned())?,
             FabricTransport::Cli => Err("live cursor requires direct daemon socket".into()),
         }
     }

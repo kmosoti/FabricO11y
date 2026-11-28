@@ -126,6 +126,11 @@ impl DaemonSocketPool {
             || page.entries.len() > request.count
             || page.next_after < request.after
             || page.next_after > page.observed_through
+            || page.next_after
+                != page
+                    .entries
+                    .last()
+                    .map_or(page.observed_through, |entry| entry.record_id)
             || page
                 .entries
                 .iter()
@@ -170,15 +175,17 @@ impl DaemonSocketPool {
         let mut guard = self.conn.lock().await;
         let mut last_err = String::new();
         for attempt in 0..2 {
-            if guard.is_none() {
-                match connect_with_backoff(socket_path, timeout).await {
-                    Ok(stream) => *guard = Some(BufReader::with_capacity(8192, stream)),
-                    Err(e) => return Err(e),
-                }
-            }
-            let reader = guard.as_mut().expect("connected reader");
+            // Own the connection while awaiting I/O: cancellation drops it rather than
+            // returning a partially written request or unread reply to the pool.
+            let mut reader = match guard.take() {
+                Some(reader) => reader,
+                None => BufReader::with_capacity(
+                    8192,
+                    connect_with_backoff(socket_path, timeout).await?,
+                ),
+            };
             match round_trip_line(
-                reader,
+                &mut reader,
                 request_json,
                 timeout,
                 max_reply_bytes,
@@ -187,6 +194,7 @@ impl DaemonSocketPool {
             .await
             {
                 Ok(line) => {
+                    *guard = Some(reader);
                     let val: serde_json::Value = serde_json::from_str(line.trim())
                         .map_err(|e| format!("daemon rpc json parse: {e}"))?;
                     match val.get("kind").and_then(|k| k.as_str()) {
