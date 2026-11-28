@@ -49,7 +49,7 @@ or qualify either.
 
 The optional workspace contains the Leptos 0.8.23 browser source and shared
 reducer; a separate native workspace contains a private Unix query gateway.
-A develop preflight can archive the static browser build without wasm-opt. It
+A develop preflight can archive the static browser build with pinned wasm-opt. It
 is not a release package, desktop profile, authenticated proxy or runtime
 qualification. The browser smoke pins Trunk 0.22.1 and wasm-bindgen 0.2.130;
 other framework and platform profiles remain proposals until qualified.

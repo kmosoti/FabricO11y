@@ -267,31 +267,53 @@ jobs:
           cp "$tools/bindgen/wasm-bindgen-0.2.130-x86_64-unknown-linux-musl/wasm-bindgen" "$tools/bin/wasm-bindgen"
           test "$("$tools/bin/trunk" --version)" = 'trunk 0.22.1'
           test "$("$tools/bin/wasm-bindgen" --version)" = 'wasm-bindgen 0.2.130'
+          curl --fail --location --retry 3 --max-time 120 -o "$tools/binaryen.tar.gz" https://github.com/WebAssembly/binaryen/releases/download/version_131/binaryen-version_131-x86_64-linux.tar.gz
+          printf '%s  %s\n' b5bf1f0eaf17c63ee588ff7a5954dc8f6ce2c26989051c66f24dfe9ece3e46db "$tools/binaryen.tar.gz" | sha256sum -c -
+          mkdir -p "$tools/binaryen"
+          tar -xzf "$tools/binaryen.tar.gz" -C "$tools/binaryen"
+          cp "$tools/binaryen/binaryen-version_131/bin/wasm-opt" "$tools/bin/wasm-opt"
+          printf '%s  %s\n' bad4b6524b2c8e4b27b9aa69bde1a4b9a05ec8887c77ef0d34300f5825acd97c "$tools/bin/wasm-opt" | sha256sum -c -
+          "$tools/bin/wasm-opt" --version | grep -F 'version 131'
           export PATH="$tools/bin:$PATH"
           cargo +1.100.0 fetch --locked --manifest-path frontend/Cargo.toml
-          # Debug build intentionally skips wasm-opt. This is not release optimization.
-          (cd frontend/fabric-ui-dom && trunk build --locked --offline --dist "$RUNNER_TEMP/web-dist")
+          # An explicit Rust asset selects wasm-opt z; implicit Trunk discovery disables it.
+          html=frontend/fabric-ui-dom/preflight-build.html
+          trap 'rm -f "$html"' EXIT
+          sed 's#</head>#<link data-trunk rel="rust" data-wasm-opt="z"></head>#' frontend/fabric-ui-dom/index.html > "$html"
+          (cd frontend/fabric-ui-dom && trunk build preflight-build.html --release --locked --offline --html-output index.html --dist "$RUNNER_TEMP/web-dist")
+          rm -f "$html"
+          trap - EXIT
           dist="$RUNNER_TEMP/web-dist"
-          test "$(find "$dist" -mindepth 1 -maxdepth 1 -type f | wc -l)" -eq 4
-          test "$(find "$dist" -mindepth 1 -maxdepth 1 | wc -l)" -eq 4
-          test -f "$dist/index.html"
-          test "$(find "$dist" -maxdepth 1 -type f -name '*.css' | wc -l)" -eq 1
-          test "$(find "$dist" -maxdepth 1 -type f -name '*.js' | wc -l)" -eq 1
-          test "$(find "$dist" -maxdepth 1 -type f -name '*.wasm' | wc -l)" -eq 1
+          shopt -s nullglob dotglob
+          assets=()
+          css=0 js=0 wasm=0 index=0
+          for f in "$dist"/*; do
+            test -f "$f" && test ! -L "$f"
+            case "${f##*/}" in
+              index.html) ((index+=1)); assets+=("$f") ;;
+              *.css) ((css+=1)); assets+=("$f") ;;
+              *.js) ((js+=1)); assets+=("$f") ;;
+              *.wasm) ((wasm+=1)); assets+=("$f") ;;
+              .trunk-lock) test ! -s "$f" ;;
+              *) printf 'Unexpected build output: %s\n' "${f##*/}" >&2; exit 1 ;;
+            esac
+          done
+          test "$index" -eq 1 && test "$css" -eq 1 && test "$js" -eq 1 && test "$wasm" -eq 1
+          test "${#assets[@]}" -eq 4
           prefix="fabrico11y-web-$RELEASE_TAG"
           stage="$RUNNER_TEMP/web-stage/$prefix"
           mkdir -p "$stage/assets"
-          cp "$dist"/* "$stage/assets/"
+          cp "${assets[@]}" "$stage/assets/"
           (cd "$stage" && sha256sum assets/* > SHA256SUMS)
           frontend_lock=$(sha256sum frontend/Cargo.lock | cut -d' ' -f1)
           gateway_lock=$(sha256sum frontend/gateway/Cargo.lock | cut -d' ' -f1)
           jq -n --arg commit "$GITHUB_SHA" --arg tree "$SOURCE_TREE" --arg tag "$RELEASE_TAG" \
             --arg frontend_lock_sha256 "$frontend_lock" --arg gateway_lock_sha256 "$gateway_lock" \
-            '{schema:"fabrico11y.web.preflight.v1",commit:$commit,tree:$tree,tag:$tag,frontend_lock_sha256:$frontend_lock_sha256,gateway_lock_sha256:$gateway_lock_sha256,rust:"1.100.0",trunk:"0.22.1",wasm_bindgen:"0.2.130",build:"debug; wasm-opt skipped",profile:"static preflight only"}' > "$stage/MANIFEST.json"
+            '{schema:"fabrico11y.web.preflight.v1",commit:$commit,tree:$tree,tag:$tag,frontend_lock_sha256:$frontend_lock_sha256,gateway_lock_sha256:$gateway_lock_sha256,rust:"1.100.0",trunk:"0.22.1",wasm_bindgen:"0.2.130",wasm_opt:"version_131",build:"release; wasm-opt z",profile:"static preflight only"}' > "$stage/MANIFEST.json"
           printf '%s\n' 'Static web preflight only. No service, gateway or authentication is included.' > "$stage/README.txt"
           archive="web-preflight/$prefix.tar.gz"
           tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -C "$RUNNER_TEMP/web-stage" -cf - "$prefix" | gzip -n > "$archive"
-          sha256sum "$archive" > web-preflight/SHA256SUMS
+          (cd web-preflight && sha256sum "$prefix.tar.gz" > SHA256SUMS && sha256sum --check --strict SHA256SUMS)
           tar -tzf "$archive" > "$RUNNER_TEMP/web-members"
           test "$(wc -l < "$RUNNER_TEMP/web-members")" -eq 9
           tar -xzf "$archive" -C "$RUNNER_TEMP/web-inspect" --no-same-owner --no-same-permissions
@@ -301,7 +323,7 @@ jobs:
           test -z "$(find "$RUNNER_TEMP/web-inspect/$prefix" ! -type d ! -type f -print -quit)"
           rm -r "$RUNNER_TEMP/web-inspect/$prefix"
           test ! -e "$RUNNER_TEMP/web-inspect/$prefix"
-          printf '### Optional web preflight\n\nStatic debug build only; no gateway or release qualification.\n\n' >> "$GITHUB_STEP_SUMMARY"
+          printf '### Optional web preflight\n\nStatic optimized build only; no gateway or release qualification.\n\n' >> "$GITHUB_STEP_SUMMARY"
           cat web-preflight/SHA256SUMS >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

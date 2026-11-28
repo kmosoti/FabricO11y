@@ -34,7 +34,7 @@ necessary. Keep the main review, required checks and deployment gate active.
    `develop` or a feature branch, select `preflight`. Preflight builds and
    uploads the Fedora RPM, Debian package and glibc-baseline tarball with read
    access. A `develop` preflight also uploads a separate static browser archive
-   built without release optimization. It includes no gateway, service, or
+   built with the pinned release optimizer. It includes no gateway, service, or
    holder authentication and does not qualify a frontend release profile.
    The qualification run also uploads the
    combined bundle, records its source tree and hashes, and attests the bytes.
