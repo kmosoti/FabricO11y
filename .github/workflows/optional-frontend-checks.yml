@@ -1,0 +1,83 @@
+name: Optional frontend smoke
+on:
+  pull_request:
+    branches: [develop]
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+    paths: ['frontend/**', 'fabric-query-contract/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.github/workflows/optional-frontend-checks.yml']
+  push:
+    branches: [develop]
+    paths: ['frontend/**', 'fabric-query-contract/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.github/workflows/optional-frontend-checks.yml']
+permissions:
+  contents: read
+concurrency:
+  group: optional-frontend-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  browser-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      CARGO_INCREMENTAL: '0'
+      CARGO_BUILD_JOBS: '4'
+      RUSTUP_AUTO_INSTALL: '0'
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Verify exact checkout and merge parents
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            parents=$(git cat-file commit HEAD | sed -n '1,/^$/s/^parent //p')
+            test "$parents" = "$(printf '%s\n%s' "$PR_BASE_SHA" "$PR_HEAD_SHA")"
+          fi
+          git show -s --format='tested=%H tree=%T parents=%P' HEAD
+      - name: Install verified frontend tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          tools="$RUNNER_TEMP/frontend-tools"
+          mkdir -p "$tools/bin" "$tools/downloads" "$tools/bindgen"
+          if ! rustup run 1.100.0 rustc --version >/dev/null 2>&1; then
+            rustup toolchain install 1.100.0 --profile minimal --no-self-update
+          fi
+          rustup run 1.100.0 rustc --version | grep -F 'rustc 1.100.0 '
+          rustup target add --toolchain 1.100.0 wasm32-unknown-unknown
+          curl --fail --location --retry 3 --max-time 120 -o "$tools/downloads/trunk.tar.gz" https://github.com/trunk-rs/trunk/releases/download/v0.22.1/trunk-x86_64-unknown-linux-musl.tar.gz
+          printf '%s  %s\n' a1fe5cd6b053f5a76f66b598d296022a7f06f56def6013cc16cd6897d53f5363 "$tools/downloads/trunk.tar.gz" | sha256sum -c -
+          tar -xzf "$tools/downloads/trunk.tar.gz" -C "$tools/bin" trunk
+          curl --fail --location --retry 3 --max-time 120 -o "$tools/downloads/bindgen.tar.gz" https://github.com/wasm-bindgen/wasm-bindgen/releases/download/0.2.130/wasm-bindgen-0.2.130-x86_64-unknown-linux-musl.tar.gz
+          printf '%s  %s\n' 9687f3bb551b9f66f37ed32a40d7913a00f7962db653054e56857bc306c3227f "$tools/downloads/bindgen.tar.gz" | sha256sum -c -
+          tar -xzf "$tools/downloads/bindgen.tar.gz" -C "$tools/bindgen"
+          cp "$tools/bindgen/wasm-bindgen-0.2.130-x86_64-unknown-linux-musl/wasm-bindgen" "$tools/bin/wasm-bindgen"
+          "$tools/bin/trunk" --version
+          test "$("$tools/bin/wasm-bindgen" --version)" = 'wasm-bindgen 0.2.130'
+          printf '%s\n' "$tools/bin" >> "$GITHUB_PATH"
+      - name: Build unoptimized locked browser bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          export TMPDIR="$RUNNER_TEMP"
+          cargo +1.100.0 fetch --locked --manifest-path frontend/Cargo.toml
+          cd frontend/fabric-ui-dom
+          # Debug Trunk build skips wasm-opt; no size or release performance claim.
+          trunk build --locked --offline --dist "$RUNNER_TEMP/ui-dist"
+          sha256sum "$RUNNER_TEMP"/ui-dist/*
+          sha256sum ../fixtures/first.json ../fixtures/detail.json ../fixtures/browser-smoke.cjs
+      - name: Run synthetic desktop browser smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          export TMPDIR="$RUNNER_TEMP" UI_PROFILE="$RUNNER_TEMP/ui-profile"
+          export CHROME="$(command -v google-chrome)" CHROMEDRIVER="$(command -v chromedriver)"
+          chrome_version=$($CHROME --version | grep -oE '[0-9]+(\.[0-9]+){3}' | head -1)
+          driver_version=$($CHROMEDRIVER --version | grep -oE '[0-9]+(\.[0-9]+){3}' | head -1)
+          test -n "$chrome_version" && test "$chrome_version" = "$driver_version"
+          printf 'runner=%s chrome=%s driver=%s node=%s\n' "$ImageVersion" "$chrome_version" "$driver_version" "$(node --version)"
+          node frontend/fixtures/browser-smoke.cjs "$RUNNER_TEMP/ui-dist"
