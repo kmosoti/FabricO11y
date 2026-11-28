@@ -25,3 +25,9 @@ Publish an upstream, zero-UI Rust client crate (`fabric-client`) inside the `Fab
 
 - *aligned-with*: [D-0002](D-0002-cli-pivot-and-converged-telemetry-engine.md)
 - *aligned-with*: [D-0010](D-0010-canonical-receipt-projection.md)
+
+Scoped plan pages and advisory hints reuse the canonical operations via
+direct loopback or bounded CLI stdin. Select the transport before sending
+and surface uncertain outcomes to the caller. A second send could create
+another cursor or consume a pending hint. Durable readback still comes
+from a new scoped page.

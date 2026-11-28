@@ -20,7 +20,7 @@ const USAGE: &str =
 Options: -h, --help
 Environment:
   FABRIC_ENDPOINT         Canonical fabric-server host:port
-  FABRIC_CREDENTIAL_FILE  Private, owned reader credential file
+  FABRIC_CREDENTIAL_FILE  Private, owned credential file for the requested role
   FABRIC_CREDENTIAL       Inline alternative to FABRIC_CREDENTIAL_FILE";
 
 fn main() {
