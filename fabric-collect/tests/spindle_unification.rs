@@ -752,3 +752,225 @@ fn spindle_forwards_to_server_and_unifies_into_collector_olap() {
 
     stack.shutdown_and_assert();
 }
+
+#[test]
+#[ignore = "requires collected fabrico11y.slice and FABRIC_LIVE_CURSOR_BYTES=32768"]
+fn local_live_metric_cursor_socket_profile() {
+    assert!(
+        in_fabrico11y_slice(),
+        "run inside the collected fabrico11y.slice"
+    );
+    assert_eq!(
+        std::env::var("FABRIC_LIVE_CURSOR_BYTES").as_deref(),
+        Ok("32768")
+    );
+    let root_guard = non_tmp_test_root();
+    let root = root_guard.path();
+    let socket_dir = root.join("sock");
+    let runtime_dir = root.join("rt");
+    let collector_tmp = root.join("ct");
+    for path in [&socket_dir, &runtime_dir, &collector_tmp] {
+        create_private_dir(path);
+    }
+    let spindle_sock = socket_dir.join("spindle.sock");
+    let daemon_sock = runtime_dir.join("daemon.sock");
+    let spindle_dir = root.join("sp");
+    let origin = spindle::custody::Store::open(&spindle_dir, 64 * 1024 * 1024)
+        .unwrap()
+        .origin()
+        .to_owned();
+    let mut spindle_daemon = spindle::Daemon::open(spindle::Config {
+        socket: spindle_sock.clone(),
+        storage: spindle_dir,
+        quota_bytes: 64 * 1024 * 1024,
+        forwarding: None,
+        max_connections: 16,
+        client_timeout_ms: 1000,
+        files: Vec::new(),
+        journal: None,
+        host: None,
+    })
+    .unwrap();
+    let spindle_thread = thread::spawn(move || spindle_daemon.run());
+    let ready = Instant::now() + Duration::from_secs(10);
+    while transport::request(
+        &spindle_sock,
+        &Request::Status,
+        Instant::now() + Duration::from_millis(250),
+    )
+    .is_err()
+    {
+        assert!(Instant::now() < ready, "Spindle startup deadline");
+        thread::sleep(Duration::from_millis(20));
+    }
+    let mut sdk_cfg = SdkConfig::local(spindle_sock.clone(), "live-fixture".into()).unwrap();
+    sdk_cfg.delivery_timeout = Duration::from_secs(2);
+    let client = Client::new(sdk_cfg).unwrap();
+    let config = DaemonConfig {
+        data_dir: root.join("collector"),
+        tmp_dir: collector_tmp,
+        interval_ms: 250,
+        max_ticks: Some(80),
+        ring_budget_bytes: 2 * 1024 * 1024,
+        max_disk_bytes: 64 * 1024 * 1024,
+        spindle_socket: Some(spindle_sock.clone()),
+        runtime_dir: Some(runtime_dir),
+    };
+    let collector = thread::spawn(move || {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(run_spindle_only_daemon(config))
+    });
+    let ready = Instant::now() + Duration::from_secs(10);
+    while !matches!(
+        query_daemon_socket(&daemon_sock, &DaemonRequest::Ping),
+        Some(DaemonResponse::Pong { .. })
+    ) {
+        assert!(Instant::now() < ready, "collector startup deadline");
+        thread::sleep(Duration::from_millis(20));
+    }
+    let submit = |id: usize| {
+        let admission = client.try_record(
+            Data::Metric {
+                name: format!("live.sample.{id}"),
+                unit: "units".into(),
+                value: id as f64,
+                metric_type: MetricType::Gauge,
+                reset: false,
+            },
+            1_700_000_000_000_000_000,
+        );
+        assert!(
+            matches!(admission, Admission::Accepted { .. }),
+            "{admission:?}"
+        );
+        client
+            .flush(Instant::now() + Duration::from_secs(5))
+            .unwrap()
+            .unwrap()
+            .id
+    };
+    let first_id = submit(0);
+    let ready = Instant::now() + Duration::from_secs(10);
+    let initial = loop {
+        if let Some(DaemonResponse::LiveMetricsV1(page)) = query_daemon_socket(
+            &daemon_sock,
+            &DaemonRequest::LiveMetricsV1 {
+                origin: None,
+                epoch: None,
+                after: 0,
+                count: 64,
+                max_bytes: 32768,
+            },
+        ) {
+            if page.entries.iter().any(|entry| entry.record_id == first_id) {
+                break page;
+            }
+        }
+        assert!(Instant::now() < ready, "live cursor readiness deadline");
+        thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(initial.origin, origin);
+    assert!(!initial.gap);
+    let epoch = initial.epoch.clone();
+    let mut after = initial.next_after;
+    let mut delays_ms = Vec::new();
+    for sample in 1..=5 {
+        thread::sleep(Duration::from_millis(100));
+        // Measurement starts immediately before SDK submission and includes the durable flush.
+        let start = Instant::now();
+        let id = submit(sample);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            if let Some(DaemonResponse::LiveMetricsV1(page)) = query_daemon_socket(
+                &daemon_sock,
+                &DaemonRequest::LiveMetricsV1 {
+                    origin: Some(origin.clone()),
+                    epoch: Some(epoch.clone()),
+                    after,
+                    count: 64,
+                    max_bytes: 32768,
+                },
+            ) {
+                assert!(!page.gap);
+                if !page.entries.is_empty() {
+                    assert_eq!(page.entries.len(), 1);
+                    assert_eq!(page.entries[0].record_id, id);
+                    assert_eq!(page.entries[0].point.name, format!("live.sample.{sample}"));
+                    assert_eq!(page.next_after, id);
+                    after = id;
+                    delays_ms.push(start.elapsed().as_millis());
+                    break;
+                }
+            }
+            assert!(Instant::now() < deadline, "cursor visibility deadline");
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
+    for (bad_origin, bad_epoch) in [
+        ("other".to_string(), epoch.clone()),
+        (origin.clone(), "bad".to_string()),
+    ] {
+        assert!(matches!(
+            query_daemon_socket(
+                &daemon_sock,
+                &DaemonRequest::LiveMetricsV1 {
+                    origin: Some(bad_origin),
+                    epoch: Some(bad_epoch),
+                    after,
+                    count: 1,
+                    max_bytes: 32768
+                }
+            ),
+            Some(DaemonResponse::Error { .. })
+        ));
+    }
+    // Force a bounded-wrap gap using real accepted records without timing this burst.
+    for i in 0..132 {
+        let _ = submit(1000 + i);
+    }
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        if let Some(DaemonResponse::LiveMetricsV1(page)) = query_daemon_socket(
+            &daemon_sock,
+            &DaemonRequest::LiveMetricsV1 {
+                origin: Some(origin.clone()),
+                epoch: Some(epoch.clone()),
+                after,
+                count: 64,
+                max_bytes: 32768,
+            },
+        ) {
+            if page.gap {
+                assert!(page.highest_lost > after);
+                assert!(page.oldest_retained.is_some());
+                break;
+            }
+        }
+        assert!(Instant::now() < deadline, "cursor wrap deadline");
+        thread::sleep(Duration::from_millis(20));
+    }
+    let status = fs::read_to_string("/proc/self/status").unwrap();
+    let vmhwm = status
+        .lines()
+        .find(|line| line.starts_with("VmHWM:"))
+        .unwrap_or("unavailable");
+    let fds = fs::read_dir("/proc/self/fd").unwrap().count();
+    println!(
+        "fixture submit-through-visibility ms={delays_ms:?}; combined test-process {vmhwm}; combined open-fds sample={fds}; interval_ms=250"
+    );
+    drop(client);
+    assert!(collector.join().unwrap().is_ok());
+    assert!(matches!(
+        transport::request(
+            &spindle_sock,
+            &Request::Stop,
+            Instant::now() + Duration::from_secs(5)
+        ),
+        Ok(Reply::Stopped)
+    ));
+    assert!(spindle_thread.join().unwrap().is_ok());
+}
