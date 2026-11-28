@@ -946,6 +946,10 @@ fn local_live_metric_cursor_socket_profile() {
         ) {
             if page.gap {
                 assert!(page.highest_lost > after);
+                assert_eq!(
+                    page.highest_lost_reason,
+                    Some(fabric_collect::live_cursor::LossReason::Evicted)
+                );
                 assert!(page.oldest_retained.is_some());
                 break;
             }
