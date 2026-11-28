@@ -61,6 +61,7 @@ TOML-native records without changing that cohort or its count.
 | [D-0348 · Receipt-bound reported attempts](decisions/D-0348-receipt-bound-attempts.md) | `agent` | `false` | Strict authenticated attempt readback and its limits |
 | [D-0239 · Protected application capture](decisions/D-0239-protected-capture.md) | `agent` | `false` | Policy-bound protected outboxes and sanitized application artifacts |
 | [D-0354 · Pure alert lifecycle](decisions/D-0354-alert-lifecycle.md) | `agent` | `false` | Covered holds, explicit missingness and source-bound monotone replay |
+| [D-0355 · Local alert journal](decisions/D-0355-local-alert-journal.md) | `agent` | `false` | Bounded single-owner persistence with replay-safe evaluation and transition receipts |
 | [D-0200 · Frozen experiment snapshots](decisions/D-0200-frozen-snapshots.md) | `agent` | `false` | Fixed roster, explicit boundaries and missingness-aware comparisons |
 | [D-0270 · Conditional canonical plan acceptance](decisions/D-0270-conditional-plan-acceptance.md) | `agent` | `false` | Authenticated single-owner scope and atomic decision retry |
 | [D-0223 · Live cursor cadence](decisions/D-0223-live-cursor-cadence.md) | `agent` | `false` | Bounded opt-in Spindle polling |

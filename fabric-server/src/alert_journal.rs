@@ -61,6 +61,20 @@ fn decode<T: for<'a> Deserialize<'a>>(bytes: &[u8]) -> Result<T, JournalError> {
     serde_json::from_slice(bytes).map_err(|_| JournalError::Corrupt)
 }
 
+fn forbidden_state_path(path: &Path) -> bool {
+    ["/tmp", "/dev/shm", "/run/shm"]
+        .into_iter()
+        .any(|prefix| path.starts_with(prefix))
+}
+
+fn require_disk(directory: &File) -> Result<(), JournalError> {
+    let stat = rustix::fs::fstatfs(directory).map_err(|_| JournalError::Storage)?;
+    if matches!(stat.f_type as u64, 0x0102_1994 | 0x8584_58f6) {
+        return Err(JournalError::Invalid);
+    }
+    Ok(())
+}
+
 pub struct AlertJournal {
     db: Connection,
     _owner: File,
@@ -80,10 +94,24 @@ impl AlertJournal {
         let initial = Reducer::new(provision.rule)
             .map_err(|_| JournalError::Invalid)?
             .checkpoint();
-        crate::ledger::private_dir(dir).map_err(|_| JournalError::Storage)?;
+        if !dir.is_absolute() || forbidden_state_path(dir) {
+            return Err(JournalError::Invalid);
+        }
+        let name = dir.file_name().ok_or(JournalError::Invalid)?;
+        let parent = dir
+            .parent()
+            .ok_or(JournalError::Invalid)?
+            .canonicalize()
+            .map_err(|_| JournalError::Storage)?;
+        let dir = parent.join(name);
+        if forbidden_state_path(&dir) {
+            return Err(JournalError::Invalid);
+        }
+        require_disk(&File::open(parent).map_err(|_| JournalError::Storage)?)?;
+        crate::ledger::private_dir(&dir).map_err(|_| JournalError::Storage)?;
         let directory = File::from(
             rustix::fs::open(
-                dir,
+                &dir,
                 rustix::fs::OFlags::RDONLY
                     | rustix::fs::OFlags::DIRECTORY
                     | rustix::fs::OFlags::NOFOLLOW
@@ -92,6 +120,7 @@ impl AlertJournal {
             )
             .map_err(|_| JournalError::Storage)?,
         );
+        require_disk(&directory)?;
         let metadata = directory.metadata().map_err(|_| JournalError::Storage)?;
         if !metadata.is_dir()
             || metadata.uid() != rustix::process::getuid().as_raw()
@@ -316,6 +345,20 @@ mod tests {
             },
         }
     }
+    #[test]
+    fn refuses_non_disk_state_before_creating_journal_files() {
+        for invalid in [
+            "relative",
+            "/tmp/fabric-alert-journal",
+            "/dev/shm/fabric-alert-journal",
+        ] {
+            assert!(matches!(
+                AlertJournal::open(Path::new(invalid), provision(4)),
+                Err(JournalError::Invalid)
+            ));
+        }
+    }
+
     #[test]
     fn disk_replay_fencing_and_bounded_intents() {
         let root = tempfile::tempdir_in(std::env::var_os("TMPDIR").expect("disk TMPDIR")).unwrap();
