@@ -328,6 +328,22 @@ jobs:
           test ! -e "$RUNNER_TEMP/web-inspect/$prefix"
           printf '### Optional web preflight\n\nStatic optimized build only; no gateway or release qualification.\n\n' >> "$GITHUB_STEP_SUMMARY"
           cat web-preflight/SHA256SUMS >> "$GITHUB_STEP_SUMMARY"
+      - name: Exercise packaged static assets in a synthetic browser
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          export TMPDIR="$RUNNER_TEMP" UI_PROFILE="$RUNNER_TEMP/ui-profile"
+          export CHROME="$(command -v google-chrome)" CHROMEDRIVER="$(command -v chromedriver)"
+          chrome_version=$($CHROME --version | grep -oE '[0-9]+(\.[0-9]+){3}' | head -1)
+          driver_version=$($CHROMEDRIVER --version | grep -oE '[0-9]+(\.[0-9]+){3}' | head -1)
+          test -n "$chrome_version" && test "$chrome_version" = "$driver_version"
+          printf 'runner=%s chrome=%s driver=%s node=%s\n' "$ImageVersion" "$chrome_version" "$driver_version" "$(node --version)"
+          stage="$RUNNER_TEMP/web-stage/fabrico11y-web-$RELEASE_TAG"
+          (cd "$stage" && sha256sum --check --strict SHA256SUMS)
+          node frontend/fixtures/browser-smoke.cjs "$stage/assets"
+          (cd "$stage" && sha256sum --check --strict SHA256SUMS)
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: optional-web-preflight
