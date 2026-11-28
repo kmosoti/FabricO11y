@@ -9,6 +9,7 @@ pub mod as_of;
 pub mod context;
 pub mod lexical;
 pub mod portable;
+pub mod reconcile;
 pub mod source;
 
 use sha2::{Digest, Sha256};

@@ -447,3 +447,12 @@ type = "decision"
 date = 2026-11-27
 added_by = "agent"
 human_ratified = false
+
+[[records]]
+id = "D-0205"
+source_path = "knowledge/decisions/D-0205-selected-head-reconciliation.md"
+title = "Selected-head reconciliation"
+type = "decision"
+date = 2026-11-27
+added_by = "agent"
+human_ratified = false
