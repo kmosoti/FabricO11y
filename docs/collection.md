@@ -506,6 +506,11 @@ budget; records too large to retain are reported as loss.
 This is a volatile local view, not a durable custody or projection frontier.
 Restart creates a new epoch. It does not cover host-only metrics or remote
 readers, and the collector's polling cadence does not promise a latency bound.
+When the cursor and a Spindle socket are configured and the regular collector
+interval exceeds one second, the daemon also polls Spindle once per second.
+These polls do not collect host metrics or run the periodic flush; backpressure
+defers fast polls until a regular tick can service the existing flush and
+retention work. The normal tick interval and `max_ticks` remain unchanged.
 The CLI exposes the same view as `fabric --json live-metrics`. Resume with
 `--origin ORIGIN --epoch EPOCH --after NEXT_AFTER`; `--count` and `--max-bytes`
 set the bounded page size. The command returns the versioned CLI JSON envelope

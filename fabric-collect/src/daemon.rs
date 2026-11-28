@@ -1163,6 +1163,74 @@ pub async fn run_spindle_only_daemon(config: DaemonConfig) -> Result<(), String>
     run_daemon_mode(config, true).await
 }
 
+fn fast_spindle_cadence(
+    cursor_enabled: bool,
+    socket_configured: bool,
+    interval: Duration,
+) -> Option<Duration> {
+    (cursor_enabled && socket_configured && interval > Duration::from_secs(1))
+        .then_some(Duration::from_secs(1))
+}
+
+// Both cadence paths await this operation in the same event loop, so at most one
+// blocking Spindle scan is in flight and only accepted records advance the cursor.
+async fn poll_spindle_once(
+    runtime: &Arc<DaemonRuntime>,
+    socket: Option<&Path>,
+    host: &str,
+    export_node: Option<&str>,
+    cgroup_pressure: bool,
+) -> bool {
+    let Some(socket) = socket.filter(|path| path.exists()) else {
+        return false;
+    };
+    let after_id = runtime.polled_spindle_cursor.load(Ordering::Acquire);
+    let sock = socket.to_path_buf();
+    let host = host.to_owned();
+    let catalog = runtime.catalog.clone();
+    match tokio::task::spawn_blocking(move || {
+        poll_spindle_projection_records(&sock, &catalog, after_id, 64, &host)
+    })
+    .await
+    {
+        Ok(Ok(poll)) => {
+            *runtime.last_spindle_error.write() = poll.tail_error;
+            let mut accepted_cursor = after_id;
+            let mut backpressure = false;
+            for (key, env) in poll.records {
+                let id = key.record_id;
+                match enqueue_polled_record(key, env, runtime, !cgroup_pressure, export_node) {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        backpressure = true;
+                        break;
+                    }
+                    Err(error) => {
+                        *runtime.last_spindle_error.write() = Some(error);
+                        backpressure = true;
+                        break;
+                    }
+                }
+                accepted_cursor = id;
+            }
+            if accepted_cursor > after_id {
+                runtime
+                    .polled_spindle_cursor
+                    .store(accepted_cursor, Ordering::Release);
+            }
+            backpressure
+        }
+        Ok(Err(err)) => {
+            *runtime.last_spindle_error.write() = Some(err);
+            false
+        }
+        Err(err) => {
+            *runtime.last_spindle_error.write() = Some(err.to_string());
+            false
+        }
+    }
+}
+
 async fn run_daemon_mode(mut config: DaemonConfig, spindle_only: bool) -> Result<(), String> {
     config.data_dir = validate_non_tmp_path_on_disk(&config.data_dir).map_err(|e| e.to_string())?;
     config.tmp_dir = validate_non_tmp_path_on_disk(&config.tmp_dir).map_err(|e| e.to_string())?;
@@ -1396,6 +1464,17 @@ async fn run_daemon_mode(mut config: DaemonConfig, spindle_only: bool) -> Result
     let mut tick_count = 0u64;
     let interval = Duration::from_millis(config.interval_ms.max(250));
     let mut ticker = tokio::time::interval(interval);
+    let mut fast_ticker = fast_spindle_cadence(
+        runtime.live_cursor.is_some(),
+        config.spindle_socket.is_some(),
+        interval,
+    )
+    .map(|cadence| {
+        let mut ticker = tokio::time::interval_at(tokio::time::Instant::now() + cadence, cadence);
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        ticker
+    });
+    let mut fast_blocked = false;
 
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
         .map_err(|e| e.to_string())?;
@@ -1425,45 +1504,12 @@ async fn run_daemon_mode(mut config: DaemonConfig, spindle_only: bool) -> Result
                     &total_dropped,
                 );
 
-                let mut spindle_backpressure = false;
-                if let Some(ref spindle_sock) = config.spindle_socket
-                    && spindle_sock.exists()
-                {
-                    let after_id = runtime.polled_spindle_cursor.load(Ordering::Acquire);
-                    let sock = spindle_sock.clone();
-                    let host = ingest_host.clone();
-                    let catalog = runtime.catalog.clone();
-                    match tokio::task::spawn_blocking(move || {
-                        poll_spindle_projection_records(&sock, &catalog, after_id, 64, &host)
-                    })
-                    .await
-                    {
-                        Ok(Ok(poll)) => {
-                            *runtime.last_spindle_error.write() = poll.tail_error;
-                            let mut accepted_cursor = after_id;
-                            for (key, env) in poll.records {
-                                let id = key.record_id;
-                                match enqueue_polled_record(key, env, &runtime, !cgroup_pressure, export_node.as_deref()) {
-                                    Ok(true) => {},
-                                    Ok(false) => { spindle_backpressure = true; break; },
-                                    Err(error) => { *runtime.last_spindle_error.write() = Some(error); spindle_backpressure = true; break; },
-                                }
-                                accepted_cursor = id;
-                            }
-                            if accepted_cursor > after_id {
-                                runtime
-                                    .polled_spindle_cursor
-                                    .store(accepted_cursor, Ordering::Release);
-                            }
-                        }
-                        Ok(Err(err)) => {
-                            *runtime.last_spindle_error.write() = Some(err);
-                        }
-                        Err(err) => {
-                            *runtime.last_spindle_error.write() = Some(err.to_string());
-                        }
-                    }
-                }
+                // A blocked fast poll must first receive the regular flush/janitor pass.
+                let spindle_backpressure = if fast_blocked {
+                    true
+                } else {
+                    poll_spindle_once(&runtime, config.spindle_socket.as_deref(), &ingest_host, export_node.as_deref(), cgroup_pressure).await
+                };
 
                 if !spindle_only && !cgroup_pressure {
                     let mut state = run_collect_cycle(&runtime.guard, &mut fs_tracker, &mut vol_detector, &mut sketch);
@@ -1496,10 +1542,14 @@ async fn run_daemon_mode(mut config: DaemonConfig, spindle_only: bool) -> Result
                     || force_shed
                     || spindle_backpressure
                     || last_flush.elapsed() >= Duration::from_secs(60);
-                if (scheduled || cgroup_pressure)
-                    && let Err(err) = runtime.flush_to_olap()
-                {
-                    *runtime.last_spindle_error.write() = Some(format!("olap flush failed: {err}"));
+                if scheduled || cgroup_pressure {
+                    match runtime.flush_to_olap() {
+                        Ok(_) => fast_blocked = false,
+                        Err(err) => {
+                            if spindle_backpressure && fast_ticker.is_some() { fast_blocked = true; }
+                            *runtime.last_spindle_error.write() = Some(format!("olap flush failed: {err}"));
+                        }
+                    }
                 }
                 if scheduled {
                     let _ = runtime.run_janitor_pass();
@@ -1509,6 +1559,16 @@ async fn run_daemon_mode(mut config: DaemonConfig, spindle_only: bool) -> Result
                 if let Some(limit) = config.max_ticks && tick_count >= limit {
                     break;
                 }
+            }
+            _ = async {
+                match fast_ticker.as_mut() {
+                    Some(ticker) => { ticker.tick().await; }
+                    None => std::future::pending::<()>().await,
+                }
+            }, if !fast_blocked => {
+                let pressure = crate::resource_budget::cgroup_memory_pressure();
+                if pressure && let Some(cursor) = &runtime.live_cursor { cursor.lock().clear_pressure(); }
+                fast_blocked = poll_spindle_once(&runtime, config.spindle_socket.as_deref(), &ingest_host, export_node.as_deref(), pressure).await;
             }
         }
     }
@@ -1599,6 +1659,28 @@ fn drain_telemetry_queues(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fast_spindle_cadence_requires_opt_in_socket_and_long_regular_interval() {
+        let second = Duration::from_secs(1);
+        assert_eq!(
+            fast_spindle_cadence(true, true, Duration::from_secs(2)),
+            Some(second)
+        );
+        assert_eq!(
+            fast_spindle_cadence(false, true, Duration::from_secs(2)),
+            None
+        );
+        assert_eq!(
+            fast_spindle_cadence(true, false, Duration::from_secs(2)),
+            None
+        );
+        assert_eq!(fast_spindle_cadence(true, true, second), None);
+        assert_eq!(
+            fast_spindle_cadence(true, true, Duration::from_millis(250)),
+            None
+        );
+    }
 
     #[test]
     fn live_cursor_reports_filtered_metric_but_not_nonmetric_as_loss() {
