@@ -1,5 +1,4 @@
 use super::{OutputFormat, emit_json};
-use clap::Args;
 use fabric::query::{LiveCursorRequest, LivePage};
 use fabric_collect::{DaemonRequest, DaemonResponse, default_daemon_socket};
 use fabric_core::StorageLayout;
@@ -10,7 +9,7 @@ use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 
-#[derive(Debug, Args)]
+#[derive(Debug, clap::Args)]
 pub(super) struct Args {
     /// Existing daemon socket; defaults to the regular daemon socket path.
     #[arg(long)]
