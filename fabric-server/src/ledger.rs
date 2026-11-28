@@ -498,7 +498,11 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
     }
 
     /// Authenticate outside this method; policy, replay, CAS and result commit together.
-    pub(crate) fn accept_plan(&mut self, writer: &str, body: &str) -> Result<String, String> {
+    pub(crate) fn accept_plan(
+        &mut self,
+        binding: &crate::handshake::WriterBinding,
+        body: &str,
+    ) -> Result<String, String> {
         use fabric::{
             canonical::{self, AcceptPlan, PlanDecision, PlanProposal},
             observation::{Data, StoredObservation},
@@ -560,7 +564,12 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
             .optional()
             .map_err(err)?;
         let (owner, origin, producer) = policy.ok_or("unauthorized plan scope")?;
-        if owner != writer {
+        let writer = binding.writer.as_str();
+        if command.scope.0 != binding.scope
+            || owner != writer
+            || origin != binding.origin
+            || producer != binding.producer
+        {
             return Err("unauthorized plan scope".into());
         }
         let saved: Option<(String,String)> = tx.query_row("SELECT request_hash,result FROM plan_decision WHERE scope=?1 AND writer=?2 AND command_id=?3", params![command.scope.0,writer,command.command_id], |r| Ok((r.get(0)?,r.get(1)?))).optional().map_err(err)?;
