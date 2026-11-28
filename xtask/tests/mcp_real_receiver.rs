@@ -522,13 +522,13 @@ fn stdio_reader_writer_match_live_receiver_and_verified_segment() {
     let receipt = result["decision"].as_str().unwrap();
     let body = serde_json::to_string(&AcceptPlan {
         version: 1,
-        authority,
+        authority: authority.clone(),
         command_id: "stable-id".into(),
         scope: PlanScope("plan".into()),
         expected_head: None,
         origin: "origin".into(),
         source_id: 1,
-        proposal_raw: raw,
+        proposal_raw: raw.clone(),
     })
     .unwrap();
     assert!(
@@ -562,7 +562,7 @@ fn stdio_reader_writer_match_live_receiver_and_verified_segment() {
     stop.store(true, Ordering::SeqCst);
     task.join().unwrap();
     if let Some((query_bin, digest, poll, expected)) = after_commit {
-        let server = Server::open(config).unwrap();
+        let server = Server::open(config.clone()).unwrap();
         let address = server.address();
         let stop = server.stop_handle();
         let task = thread::spawn(move || server.serve().unwrap());
@@ -579,5 +579,128 @@ fn stdio_reader_writer_match_live_receiver_and_verified_segment() {
         assert_eq!(hash(&query_bin), digest);
         println!("verified scoped CLI plan page and advisory hint restart readback");
     }
+    // Exercise a separate MCP subscription after the CLI parity checks, so no
+    // client consumes another client's advisory notification.
+    let server = Server::open(config.clone()).unwrap();
+    let address = server.address();
+    let stop = server.stop_handle();
+    let task = thread::spawn(move || server.serve().unwrap());
+    let mut writer = Mcp::start(&binary, &address, "writer", &writer_path);
+    let mut reader = Mcp::start(&binary, &address, "reader", &reader_path);
+    reader.send(json!({"jsonrpc":"2.0","id":90,"method":"tools/call","params":{"name":"plan_page","arguments":{"authority":authority,"scope":"plan","cursor":null,"limit":1,"ttl_secs":30}}}));
+    let denied = reader.receive();
+    assert!(denied.get("error").is_some() || denied["result"]["isError"] == true);
+    drop(reader);
+    assert!(matches!(
+        direct(
+            &address,
+            READER,
+            &Request::PlanPage {
+                request: canonical::PlanPageRequest {
+                    scope: PlanScope("plan".into()),
+                    cursor: None,
+                    limit: 1,
+                    ttl_secs: 30,
+                }
+            }
+        ),
+        Response::Error { .. }
+    ));
+    writer.send(json!({"jsonrpc":"2.0","id":91,"method":"tools/call","params":{"name":"subscribe_plan","arguments":{"scope":"other"}}}));
+    let denied = writer.receive();
+    assert!(denied.get("error").is_some() || denied["result"]["isError"] == true);
+    let subscribed = writer.call(92, "subscribe_plan", json!({"scope":"plan"}));
+    let subscription = subscribed["subscription"].as_str().unwrap().to_owned();
+    assert_eq!(subscribed["frontier"], 1);
+    let next = |command: &str, head: i64| json!({"authority":authority,"command_id":command,"scope":"plan","expected_head":head,"origin":"origin","source_id":"1","proposal_raw":raw});
+    let second = writer.call(93, "accept_plan", next("cursor-second", 1));
+    let second_receipt: canonical::PlanDecision =
+        serde_json::from_str(second["decision"].as_str().unwrap()).unwrap();
+    assert_eq!(second_receipt.head, 2);
+    let hint = writer.call(
+        94,
+        "poll_plan_hint",
+        json!({"scope":"plan","subscription":subscription}),
+    );
+    assert_eq!(hint["pending"], true);
+    let hint = writer.call(
+        95,
+        "poll_plan_hint",
+        json!({"scope":"plan","subscription":subscription}),
+    );
+    assert_eq!(hint["pending"], false);
+    let args = json!({"authority":authority,"scope":"plan","cursor":null,"limit":1,"ttl_secs":900});
+    let invalid = writer.call(
+        101,
+        "plan_page",
+        json!({"authority":authority,"scope":"plan","cursor":"invalid","limit":1,"ttl_secs":900}),
+    );
+    assert_eq!(invalid["result"], "plan_cursor_failure");
+    assert_eq!(invalid["reason"], "invalid");
+    let first = writer.call(96, "plan_page", args.clone());
+    assert_eq!(first["page"]["frontier"], 2);
+    assert_eq!(first["page"]["decisions"][0]["command_id"], "stable-id");
+    let direct_page = direct(
+        &address,
+        WRITER,
+        &Request::PlanPage {
+            request: canonical::PlanPageRequest {
+                scope: PlanScope("plan".into()),
+                cursor: None,
+                limit: 1,
+                ttl_secs: 900,
+            },
+        },
+    );
+    let Response::PlanPage { page: direct_page } = direct_page else {
+        panic!("direct page failed")
+    };
+    assert_eq!(
+        serde_json::to_value(&direct_page.decisions).unwrap(),
+        first["page"]["decisions"]
+    );
+    assert_eq!(direct_page.authority, authority);
+    assert_eq!(direct_page.frontier, 2);
+    let cursor = first["page"]["next_cursor"].as_str().unwrap().to_owned();
+    let third = writer.call(97, "accept_plan", next("cursor-third", 2));
+    let third_receipt: canonical::PlanDecision =
+        serde_json::from_str(third["decision"].as_str().unwrap()).unwrap();
+    assert_eq!(third_receipt.head, 3);
+    drop(writer);
+    stop.store(true, Ordering::SeqCst);
+    task.join().unwrap();
+    let server = Server::open(config).unwrap();
+    let address = server.address();
+    let stop = server.stop_handle();
+    let task = thread::spawn(move || server.serve().unwrap());
+    let mut writer = Mcp::start(&binary, &address, "writer", &writer_path);
+    let revoked = writer.call(
+        98,
+        "poll_plan_hint",
+        json!({"scope":"plan","subscription":subscription}),
+    );
+    assert_eq!(revoked["result"], "plan_cursor_failure");
+    assert_eq!(revoked["reason"], "revoked");
+    let continued = writer.call(
+        99,
+        "plan_page",
+        json!({"authority":authority,"scope":"plan","cursor":cursor,"limit":1,"ttl_secs":900}),
+    );
+    assert_eq!(continued["page"]["frontier"], 2);
+    assert_eq!(
+        continued["page"]["decisions"][0]["command_id"],
+        "cursor-second"
+    );
+    assert!(continued["page"]["next_cursor"].is_null());
+    let fresh = writer.call(
+        100,
+        "plan_page",
+        json!({"authority":authority,"scope":"plan","cursor":null,"limit":64,"ttl_secs":900}),
+    );
+    assert_eq!(fresh["page"]["frontier"], 3);
+    assert_eq!(fresh["page"]["decisions"].as_array().unwrap().len(), 3);
+    drop(writer);
+    stop.store(true, Ordering::SeqCst);
+    task.join().unwrap();
     assert_eq!(hash(&binary), expected_hash);
 }
