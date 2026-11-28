@@ -767,13 +767,16 @@ fn local_live_metric_cursor_socket_profile() {
     let root_guard = non_tmp_test_root();
     let root = root_guard.path();
     let socket_dir = root.join("sock");
-    let runtime_dir = root.join("rt");
     let collector_tmp = root.join("ct");
-    for path in [&socket_dir, &runtime_dir, &collector_tmp] {
+    for path in [&socket_dir, &collector_tmp] {
         create_private_dir(path);
     }
     let spindle_sock = socket_dir.join("spindle.sock");
-    let daemon_sock = runtime_dir.join("daemon.sock");
+    let collector_data = root.join("collector");
+    let daemon_sock = validated_storage_layout(&collector_data)
+        .unwrap()
+        .state_dir()
+        .join("daemon.sock");
     let spindle_dir = root.join("sp");
     let origin = spindle::custody::Store::open(&spindle_dir, 64 * 1024 * 1024)
         .unwrap()
@@ -807,14 +810,14 @@ fn local_live_metric_cursor_socket_profile() {
     sdk_cfg.delivery_timeout = Duration::from_secs(2);
     let client = Client::new(sdk_cfg).unwrap();
     let config = DaemonConfig {
-        data_dir: root.join("collector"),
+        data_dir: collector_data,
         tmp_dir: collector_tmp,
         interval_ms: 250,
         max_ticks: Some(80),
         ring_budget_bytes: 2 * 1024 * 1024,
         max_disk_bytes: 64 * 1024 * 1024,
         spindle_socket: Some(spindle_sock.clone()),
-        runtime_dir: Some(runtime_dir),
+        runtime_dir: None,
     };
     let collector = thread::spawn(move || {
         tokio::runtime::Builder::new_multi_thread()
