@@ -152,3 +152,88 @@ changed from baseline SHA-256
 `89b530a8db566e76784c4607091e364abc17fe9af6da5a022eb1622a05cfdaa1`. On
 `794e1f92`, the evidence consists of the local checks listed above; no hosted
 result for `794e1f92` is asserted.
+
+## Hosted same-tree requalification (2026-11-28)
+
+GitHub Actions run `46120254223` for PR #363 tested merge preview
+`9f678eef07da3f41faa1218bbb5c4e2544832d17`, whose tree is
+`57c28e7932c1da5278493b3f95959494baa6d4c0`, matching reviewed head
+`ee493b0ebe04467dd2159dec145c89f7f2d8e525` and landed commit
+`90f403e7a02385049d5d9ca8883a3e3e53abbd28`. Both `verify` (job
+`140902989197`) and `native-acceptance` (`140902989464`) succeeded on that
+preview. The pinned product compiler was `rustc 1.100.0`
+(`0ef1bc386059596dada8fb65b50425aab2ea637a`); the source still pins that
+patch in `rust-toolchain.toml` (SHA-256
+`2005a6440b4cf56de43085410f26315d73dece6d34a6d32920669f65f33062c4`).
+The native job used the CI image
+`ghcr.io/kmosoti/fabrico11y-ci@sha256:2a609c7c15f4ad58498abd29c0bcb4671fad8d805fb3f8cc0200875c01a1229f`.
+The workflow and checked-in tool-selection inputs in that exact tree were
+`development-checks.yml` (`a4f7470b1544d2bf6acf58e3b002f5136d2a2d7a48b794a52bb1ded1d379cd4e`),
+`install-toolchain.sh` (`0cc0d85f16bc9929f6776357b85547d497ad22fd0bff73f0f5e1532f462b0e11`),
+`install-verification-tools.sh` (`e20ba9a0ec8e97cee490d08aac633d5d0ea3d5170671413744ad37f74a6260b6`),
+and `verification/aeneas.opam.lock`
+(`07f44704489399e345b3aff6411850f0a1e1b1c2e9cce795bdc967432207a828`).
+
+The native acceptance run executed the checked-in proof runner
+`xtask/src/proof.rs` (SHA-256
+`35185a19060baf424adb57567d64368e458f4809aaff775b656b91a7a92f1473`).
+Verus `0.2026.10.26.d17fbd0` reported 2,102 verified obligations and then 31
+admission obligations, with zero errors in both passes. The run rejected the
+skipped-receipt, conflict-overwrite, conflicting-reservation, missing-readback,
+partial-projection-publication, failed-flush, live-lease-return, and
+budget-rounding mutants. Z3 4.16.0 reported all four `TelemetrySmt.smt2`
+QF_BV properties unsatisfiable and rejected a saturating-delta mutant by
+finding it satisfiable. The checked-in proof inputs were
+`proofs/admission.rs` (`c523b56a4750a792107d2012abb56d924945db054b5e64ed322dabff35d38eba`),
+`proofs/Admission.lean`
+(`a00ece09237ee14bf56dffc844b0106c542ee05eb5baa3c1a854196009e7d59b`),
+`proofs/Collection.lean`
+(`cd443629bee0ab97035dc2a13de93c00f68dc03bc82029e93190c2a7ed074e37`),
+`proofs/Custody.lean`
+(`8ff6f089ce317903fa5d68f04ac822436ea1e33881e5dc5dc269584e8ab87ca4`),
+`proofs/Distributed.lean`
+(`513bffe12f61c76460708ab108c28a9ffb9867252f3aca4542d732f256a34f4f`),
+`proofs/ExtractedAdmission.lean`
+(`cef2550614599ccad27d73ba09bb3dc4650f0ca311889691086e3a9b5c81a9a1`),
+`proofs/Telemetry.lean`
+(`a6b7309fd454779ce88d6d1ae96fc4294fdf0722c1639b9e4bd2561c29bcda32`),
+`proofs/TelemetrySmt.smt2`
+(`092f3c06d4561b712774915716026e68b4730e5d06bcf621fa1c3518b9b6c08e`),
+and mutation target `admission-kernel/src/telemetry.rs`
+(`d52a4ffb7343d24241d338067d5de924c44ba38fa1a38abdd77d6bb4e7b1cc8c`).
+The runner's generated control bytes (without a trailing newline) had these
+SHA-256s: Verus false fixture
+`6810ae60aa3402c898513070551576a97da721cf2ce6af904dd92aec1548cb03`, Verus
+positive fixture
+`301a22a666e82fc151814768225365fe216fcbded923d29c91fced3e7bd4ec12`, Lean
+false fixture
+`1901ee281e2ce7466c4d7aaf8ade664f0eaf683dd999e1d2e1d55bd576d93a70`, and
+Lean positive fixture
+`c12b4508228c6c6c23a614c28241134daa0e65263542143fd9b60e204a300147`.
+
+This hosted run also executed Charon/Aeneas extraction and Lean checks. Charon
+binary SHA-256 was
+`efcc09450169ef7ccbfc106a5bd5e96bb899d722c648a27d6535f9333a39c1bd`, Aeneas
+`2e88ee302aa416bc578e6502d6a73ca7a557fe1db2cda78ee13beb22da055727`, Lean
+4.35.0 `bf8d54e4714cc4b03d3f6bb34c83b7202b87e49c8bfcbff6895c085bb90ceb38`,
+and Lake `8ba83c98f76562d03b8dbc33f1057151ba6cbb121679dde76b2260ccc90495e1`.
+The false Rust and Lean witnesses were rejected; the collection admission
+false witness and an attempted witness under an impossible precondition were
+rejected. The false claim under that impossible precondition was accepted only
+as a vacuity control after the precondition was proved universally false.
+Missing-checker setup was refused. These are the recorded cases, not a claim
+that every contract, verifier combination, or supported target is qualified.
+
+A separate local locked-metadata check on exact head `ee493b0` with the same
+tree resolved 354 root packages / 18 workspace members and 151 standalone
+fuzz packages. Its metadata output SHA-256s were
+`65d722e94ed569966fdfc7d111209d932f69d3074739bbb6022f7b9b36414028` and
+`a34532e7351be844d2c21afcf0a91cb38efb67895ee6ed7cddaf6ba33a16b91b`; the
+corresponding checked-in lockfiles hash to
+`678ff7a7f119c2fd6376895ff61fce1a43ea6b9f0d5233ba30d8fb983b924d94` and
+`a7fdd55490f53cff1fd10e3ac2d06b7ffa21f0bc0535a5463bd0f5067cd506a2`. This
+establishes offline locked dependency resolution only. It does not add or
+qualify advisory, license, unused-dependency, or package-age policy. Other
+Rust patches/MSRVs, Kani, Loom, and untested verifier or target combinations
+remain unqualified; #248 retains ownership of adopting dependency-policy
+gates.
