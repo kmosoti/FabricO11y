@@ -1,0 +1,26 @@
+[package]
+name = "fabric-ui-gateway-core"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+[workspace]
+
+[[bin]]
+name = "fabric-ui-gateway"
+path = "src/main.rs"
+
+[dependencies]
+fabric = { path = "../../fabric" }
+fabric-client = { path = "../../fabric-client" }
+fabric-query-contract = { path = "../../fabric-query-contract" }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+tokio = { version = "1", features = ["time", "macros", "rt-multi-thread", "net", "sync", "signal", "io-util"] }
+hyper = { version = "1.12.0", features = ["server", "http1"] }
+hyper-util = { version = "0.1.21", features = ["tokio"] }
+http-body-util = "0.1"
+
+[dev-dependencies]
+tempfile = "3"
+fabric-server = { path = "../../fabric-server" }
