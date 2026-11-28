@@ -6,6 +6,7 @@
 //! or numeric coercion is performed. See `docs/corpus-contract.md`.
 
 pub mod as_of;
+pub mod lexical;
 pub mod portable;
 pub mod source;
 

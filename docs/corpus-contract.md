@@ -77,3 +77,20 @@ premise maps. No timestamps or order of arrival are implied. Import bounds the
 whole envelope to 5 MiB, retains the existing view limits, and rejects trailing
 bytes. It does not import attestations, perform storage reads or enforce
 retention; a partial view need not include all revision parents.
+
+## Bounded lexical rebuild
+
+`fabric-corpus::lexical` derives directed adjacent-token occurrence counts from
+the text of present revisions in an explicit as-of view. A token is a maximal
+run of ASCII letters and digits, converted to ASCII lowercase; every other byte
+is a delimiter. Adjacent pairs never span revisions. Results are sorted by pair
+and retain sorted contributing revision digests, selected digests and missing
+selections. The projection is rebuildable and makes no authorization, custody,
+search relevance or incremental-index claim.
+
+The caller can lower each fixed hard cap: 4 MiB scanned text, 262144 tokens,
+128 bytes per token, 32768 distinct pairs, 65536 pair-to-revision entries and
+4 MiB logical output. Logical output counts pair token bytes and an eight-byte
+count, plus 32 bytes per selected digest, missing digest and provenance entry;
+it is not a wire format or an allocator measurement. Costs also report scanned
+bytes, tokens and pair occurrences. Limit failure returns no partial result.
