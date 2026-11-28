@@ -345,6 +345,43 @@ fn transaction_fixture() {
     server.join().unwrap();
     let (address, stop, server) = start(&config);
     assert_eq!(result(accept(&address, WRITER, &lost_cmd)), saved);
+    // A different SQLite connection commits substitutions after the server
+    // opened. Exact retry must recheck the durable fence and full policy.
+    let policy_db = rusqlite::Connection::open(config.storage.join("canonical.sqlite")).unwrap();
+    policy_db
+        .execute(
+            "UPDATE meta SET value='substituted' WHERE key='authority'",
+            [],
+        )
+        .unwrap();
+    assert!(
+        matches!(accept(&address, WRITER, &lost_cmd), Response::Error { error } if error == "canonical authority mismatch")
+    );
+    policy_db
+        .execute(
+            "UPDATE meta SET value=?1 WHERE key='authority'",
+            [&authority],
+        )
+        .unwrap();
+    for (field, bad, original) in [
+        ("owner", "other", "owner"),
+        ("origin", "other-origin", "origin"),
+        ("producer", "other-producer", "worker"),
+    ] {
+        let sql = format!("UPDATE plan_scope SET {field}=?1 WHERE scope='plan'");
+        policy_db.execute(&sql, [bad]).unwrap();
+        assert!(
+            matches!(accept(&address, WRITER, &lost_cmd), Response::Error { .. }),
+            "{field}"
+        );
+        policy_db.execute(&sql, [original]).unwrap();
+        assert_eq!(
+            result(accept(&address, WRITER, &lost_cmd)),
+            saved,
+            "{field}"
+        );
+    }
+    drop(policy_db);
     let mut altered: AcceptPlan = serde_json::from_str(&lost_cmd).unwrap();
     altered.proposal_raw = b.clone();
     altered.source_id = 2;

@@ -538,6 +538,19 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
             .conn
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
             .map_err(err)?;
+        // The in-memory value was loaded at open; fence it against the durable
+        // authority within the same write transaction as policy and replay.
+        let durable_authority: Option<String> = tx
+            .query_row("SELECT value FROM meta WHERE key='authority'", [], |r| {
+                r.get(0)
+            })
+            .optional()
+            .map_err(err)?;
+        if durable_authority.as_deref() != Some(authority.as_str())
+            || durable_authority.as_deref() != Some(command.authority.as_str())
+        {
+            return Err("canonical authority mismatch".into());
+        }
         let policy: Option<(String, String, String)> = tx
             .query_row(
                 "SELECT owner,origin,producer FROM plan_scope WHERE scope=?1",
@@ -551,12 +564,27 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
             return Err("unauthorized plan scope".into());
         }
         let saved: Option<(String,String)> = tx.query_row("SELECT request_hash,result FROM plan_decision WHERE scope=?1 AND writer=?2 AND command_id=?3", params![command.scope.0,writer,command.command_id], |r| Ok((r.get(0)?,r.get(1)?))).optional().map_err(err)?;
-        if let Some((saved_hash, result)) = saved {
-            return if saved_hash == request_hash {
-                Ok(result)
-            } else {
-                Err("plan command conflict".into())
-            };
+        if saved
+            .as_ref()
+            .is_some_and(|(saved_hash, _)| saved_hash != &request_hash)
+        {
+            return Err("plan command conflict".into());
+        }
+        if command.origin != origin {
+            return Err("unauthorized proposal origin".into());
+        }
+        let StoredObservation::V3(observation) =
+            observation::decode_versioned(command.proposal_raw.as_bytes())?
+        else {
+            return Err("proposal is not v3".into());
+        };
+        if observation.identity.producer != producer
+            || serde_json::to_vec(&observation).map_err(err)? != command.proposal_raw.as_bytes()
+        {
+            return Err("invalid canonical proposal frame".into());
+        }
+        if let Some((_, result)) = saved {
+            return Ok(result);
         }
         let head: Option<i64> = tx
             .query_row(
@@ -574,19 +602,6 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
             .map_err(err)?;
         if count >= 4096 {
             return Err("plan decision capacity exhausted".into());
-        }
-        if command.origin != origin {
-            return Err("unauthorized proposal origin".into());
-        }
-        let StoredObservation::V3(observation) =
-            observation::decode_versioned(command.proposal_raw.as_bytes())?
-        else {
-            return Err("proposal is not v3".into());
-        };
-        if observation.identity.producer != producer
-            || serde_json::to_vec(&observation).map_err(err)? != command.proposal_raw.as_bytes()
-        {
-            return Err("invalid canonical proposal frame".into());
         }
         let Data::JsonLog { fields } = &observation.data else {
             return Err("invalid proposal carrier".into());

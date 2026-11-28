@@ -237,7 +237,8 @@ authority.
 
 After authentication, the receiver checks the persisted owner and then an
 existing command result before testing the current head. Identical request-body
-bytes recover the original serialized decision; changing any byte under the
+bytes recover the original serialized decision only while the durable authority
+and current scope owner, origin and producer still match; changing any byte under the
 same scope, writer and command ID conflicts. A new request checks its expected
 head and commits the decision, new head and saved result in one SQLite
 transaction. Only a committed decision is acceptance; a lost response is
