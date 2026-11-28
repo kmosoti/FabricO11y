@@ -454,14 +454,21 @@ fn compiler_seed_publication_and_qualification_keep_the_trusted_boundaries() {
 fn release_workflow_and_deb_packaging_enforce_glibc_slsa_and_pins() {
     let release = fs::read_to_string(repo_root().join(".github/workflows/release.yml"))
         .expect("read .github/workflows/release.yml");
-    for job in ["fedora-rpm:", "debian-deb-and-tarball:", "release:"] {
-        assert!(release.contains(job), "release workflow missing {job}");
-    }
-    let deb_job = release
+    let (_, package_jobs) = release
+        .split_once("\n  fedora-rpm:\n")
+        .expect("Fedora package job section");
+    let (rpm_job, package_jobs) = package_jobs
         .split_once("\n  debian-deb-and-tarball:\n")
-        .and_then(|(_, rest)| rest.split_once("\n  qualify-bundle:\n"))
-        .map(|(deb, _)| deb)
-        .expect("debian-deb-and-tarball job section");
+        .expect("Debian package job section");
+    let (deb_job, package_jobs) = package_jobs
+        .split_once("\n  optional-web-preflight:\n")
+        .expect("optional web preflight job section");
+    let (web_job, package_jobs) = package_jobs
+        .split_once("\n  qualify-bundle:\n")
+        .expect("qualification bundle job section");
+    let (bundle_job, _) = package_jobs
+        .split_once("\n  verify-tag:\n")
+        .expect("tag verification job section");
     let apt_pos = deb_job
         .find("Install Debian 12 toolchain prerequisites")
         .expect("debian-deb-and-tarball missing apt prerequisites step");
@@ -505,7 +512,28 @@ fn release_workflow_and_deb_packaging_enforce_glibc_slsa_and_pins() {
     assert!(preflight.contains("if: github.event_name == 'workflow_dispatch'"));
     assert!(preflight.contains("qualify:refs/heads/main|preflight:refs/heads/*"));
     assert!(preflight.contains("test \"$live\" = \"$GITHUB_SHA\""));
-    assert_eq!(qualification.matches("needs: [package-source]").count(), 2);
+    let requires_source = "    needs: [package-source]";
+    for job in [rpm_job, deb_job, web_job] {
+        assert!(job.lines().any(|line| line == requires_source));
+    }
+    assert_eq!(
+        qualification
+            .lines()
+            .filter(|line| *line == requires_source)
+            .count(),
+        3
+    );
+    assert!(web_job.lines().any(|line| {
+        line == "    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'preflight' && github.ref == 'refs/heads/develop'"
+    }));
+    assert!(web_job.lines().all(|line| {
+        !line.starts_with("    environment:") && !line.starts_with("    permissions:")
+    }));
+    assert!(
+        bundle_job.lines().any(|line| {
+            line == "    needs: [package-source, fedora-rpm, debian-deb-and-tarball]"
+        })
+    );
     assert!(publication.contains("git/ref/tags/$GITHUB_REF_NAME"));
     assert!(publication.contains("EXPECTED_TAG_OID"));
     assert!(qualification.contains("verify-tag:"));
