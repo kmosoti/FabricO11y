@@ -81,6 +81,26 @@ or incompatible state. Interrupted files absent from the manifest are removed
 on reopen. An uncertain publication requires reopening before further work.
 Canonical history supplies replay for rebuilding the projection.
 
+For an optional local HTTP/1 transport, build `fabric-mcp` with the
+`local-http` feature and set `FABRIC_MCP_HTTP_SOCKET` to an absolute, unoccupied
+socket path in a real, owned directory with mode 0700. The socket is mode 0600;
+each connection must have the server's UID. This launch selects HTTP instead of
+stdio and requires the Reader or Writer credential file appropriate to its
+launch role. Reader mode supports `POST /v1/query` and
+`POST /v1/segment-ticket`; Writer mode supports `POST /v1/accept-plan`. Each
+body is `{"version":1,"request":...}` with the same typed arguments as the
+corresponding stdio operation. Requests with an Origin header are rejected;
+local UID checks do not authenticate a browser or a forwarded connection.
+Each connection handles at most one request. Incomplete or oversized requests,
+transfer encoding and unknown fields are rejected. HTTP output preserves the
+same untrusted telemetry framing and never returns segment bytes.
+
+A disconnect or request deadline cancels query work and the receiver retains its
+charge until its underlying exchange ends. An interrupted Writer response has
+an unknown outcome: retry the exact same command ID and arguments to recover the
+stored receipt. This transport does not offer streaming or an external execution
+interface.
+
 The MCP server defaults to its read-only Reader tools. To run a separate
 writer-only server, set `FABRIC_MCP_MODE=writer`, `FABRIC_ENDPOINT`, and
 `FABRIC_WRITER_CREDENTIAL_FILE` to a private owned decision-writer credential

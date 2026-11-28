@@ -12,7 +12,7 @@ use std::{
     collections::BTreeMap,
     fs,
     io::{BufRead, BufReader, Read, Write},
-    os::unix::fs::PermissionsExt,
+    os::unix::{fs::PermissionsExt, net::UnixStream},
     path::{Path, PathBuf},
     process::{Child, ChildStdin, Command, Stdio},
     sync::{atomic::Ordering, mpsc},
@@ -52,6 +52,7 @@ impl Mcp {
             .env_remove("FABRIC_CREDENTIAL")
             .env_remove("FABRIC_CREDENTIAL_FILE")
             .env_remove("FABRIC_WRITER_CREDENTIAL_FILE")
+            .env_remove("FABRIC_MCP_HTTP_SOCKET")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
@@ -119,6 +120,103 @@ impl Drop for Mcp {
         }
     }
 }
+struct LocalHttp {
+    child: Child,
+    socket: PathBuf,
+}
+impl LocalHttp {
+    fn start(binary: &Path, address: &str, mode: &str, credential: &Path, socket: PathBuf) -> Self {
+        let mut command = Command::new(binary);
+        command
+            .env("FABRIC_ENDPOINT", address)
+            .env("FABRIC_MCP_MODE", mode)
+            .env("FABRIC_MCP_HTTP_SOCKET", &socket)
+            .env_remove("FABRIC_CREDENTIAL")
+            .env_remove("FABRIC_CREDENTIAL_FILE")
+            .env_remove("FABRIC_WRITER_CREDENTIAL_FILE")
+            .env_remove("FABRIC_MCP_LIVE_SOCKET")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        if mode == "writer" {
+            command.env("FABRIC_WRITER_CREDENTIAL_FILE", credential);
+        } else {
+            command.env("FABRIC_CREDENTIAL_FILE", credential);
+        }
+        let mut child = command.spawn().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while !socket.exists() {
+            assert!(
+                child.try_wait().unwrap().is_none() && Instant::now() < deadline,
+                "HTTP process did not start"
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(
+            fs::metadata(&socket).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        Self { child, socket }
+    }
+    fn request(&self, path: &str, body: &Value, origin: bool) -> (String, Vec<u8>) {
+        let body = serde_json::to_vec(body).unwrap();
+        let mut stream = UnixStream::connect(&self.socket).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(20)))
+            .unwrap();
+        stream
+            .set_write_timeout(Some(Duration::from_secs(20)))
+            .unwrap();
+        let extra = if origin { "Origin: null\r\n" } else { "" };
+        write!(
+            stream,
+            "POST {path} HTTP/1.1\r\nHost: local\r\n{extra}Content-Length: {}\r\n\r\n",
+            body.len()
+        )
+        .unwrap();
+        stream.write_all(&body).unwrap();
+        let mut bytes = Vec::new();
+        stream
+            .take(1024 * 1024 + 4097)
+            .read_to_end(&mut bytes)
+            .unwrap();
+        assert!(bytes.len() <= 1024 * 1024 + 4096);
+        let split = bytes.windows(4).position(|w| w == b"\r\n\r\n").unwrap();
+        let status = String::from_utf8(bytes[..split].to_vec()).unwrap();
+        (status, bytes[split + 4..].to_vec())
+    }
+    fn call(&self, path: &str, request: Value) -> Value {
+        let (status, bytes) = self.request(path, &json!({"version":1,"request":request}), false);
+        assert!(status.starts_with("HTTP/1.1 200"), "HTTP request rejected");
+        let result: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_ne!(result["isError"], true, "HTTP tool failed");
+        let frame: Value =
+            serde_json::from_str(result["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(frame["untrusted_telemetry"], true);
+        frame["telemetry_payload"].clone()
+    }
+}
+impl Drop for LocalHttp {
+    fn drop(&mut self) {
+        let _ = Command::new("kill")
+            .arg("-TERM")
+            .arg(self.child.id().to_string())
+            .status();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            match self.child.try_wait() {
+                Ok(Some(_)) => break,
+                _ if Instant::now() < deadline => thread::sleep(Duration::from_millis(10)),
+                _ => {
+                    let _ = self.child.kill();
+                    let _ = self.child.wait();
+                    break;
+                }
+            }
+        }
+    }
+}
+
 fn hash(path: &Path) -> String {
     let output = Command::new("sha256sum").arg(path).output().unwrap();
     assert!(output.status.success());
@@ -139,6 +237,9 @@ fn stdio_reader_writer_match_live_receiver_and_verified_segment() {
     assert!(binary.is_absolute());
     assert_eq!(hash(&binary), expected_hash);
     let root = xtask::evidence::non_tmp_tempdir().unwrap();
+    if std::env::var_os("FABRIC_MCP_HTTP_TEST").is_some() {
+        fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
+    }
     let reader_path = credential(root.path(), "reader", READER);
     let node_path = credential(root.path(), "node", NODE);
     let writer_path = credential(root.path(), "writer", WRITER);
@@ -271,9 +372,58 @@ fn stdio_reader_writer_match_live_receiver_and_verified_segment() {
     assert!(
         matches!(result, Response::SegmentChunk { offset: 0, bytes } if bytes == expected[..len])
     );
+    let http_enabled = std::env::var_os("FABRIC_MCP_HTTP_TEST").is_some();
+    if http_enabled {
+        let http_reader = LocalHttp::start(
+            &binary,
+            &address,
+            "reader",
+            &reader_path,
+            root.path().join("http-reader.sock"),
+        );
+        let observed = http_reader.call("/v1/query", serde_json::to_value(&query).unwrap());
+        assert_eq!(
+            observed["response"]["rows"],
+            serde_json::to_value(&oracle.rows).unwrap()
+        );
+        assert_eq!(
+            observed["response"]["coverage"]["snapshot"],
+            serde_json::to_value(&oracle.coverage).unwrap()["snapshot"]
+        );
+        assert_eq!(
+            observed["response"]["coverage"]["canonical_frontier"],
+            serde_json::to_value(&oracle.coverage).unwrap()["canonical_frontier"]
+        );
+        let access = http_reader.call("/v1/segment-ticket", json!({"authority":authority,"origin":"origin","digest":digest,"start":"0","end":len.to_string()}));
+        let ticket: SegmentTicket = serde_json::from_value(access["ticket"].clone()).unwrap();
+        assert_eq!(ticket.digest, digest);
+        assert!(
+            matches!(direct(&address, READER, &Request::ReadSegmentChunk { ticket, offset: 0, length: len as u32 }), Response::SegmentChunk { offset: 0, bytes } if bytes == expected[..len])
+        );
+        let (status, _) =
+            http_reader.request("/v1/accept-plan", &json!({"version":1,"request":{}}), false);
+        assert!(status.starts_with("HTTP/1.1 403"));
+        let (status, _) =
+            http_reader.request("/v1/query", &json!({"version":1,"request":query}), true);
+        assert!(status.starts_with("HTTP/1.1 403"));
+    }
     let mut writer = Mcp::start(&binary, &address, "writer", &writer_path);
     let arguments = json!({"authority":authority,"command_id":"stable-id","scope":"plan","expected_head":null,"origin":"origin","source_id":"1","proposal_raw":raw});
-    let result = writer.call(2, "accept_plan", arguments);
+    let result = if http_enabled {
+        let http_writer = LocalHttp::start(
+            &binary,
+            &address,
+            "writer",
+            &writer_path,
+            root.path().join("http-writer.sock"),
+        );
+        let (status, _) =
+            http_writer.request("/v1/query", &json!({"version":1,"request":{}}), false);
+        assert!(status.starts_with("HTTP/1.1 403"));
+        http_writer.call("/v1/accept-plan", arguments.clone())
+    } else {
+        writer.call(2, "accept_plan", arguments.clone())
+    };
     let receipt = result["decision"].as_str().unwrap();
     let body = serde_json::to_string(&AcceptPlan {
         version: 1,
@@ -289,6 +439,10 @@ fn stdio_reader_writer_match_live_receiver_and_verified_segment() {
     assert!(
         matches!(direct(&address, WRITER, &Request::AcceptPlan { body }), Response::PlanAccepted { decision } if decision == receipt)
     );
+    if http_enabled {
+        let repeated = writer.call(2, "accept_plan", arguments);
+        assert_eq!(repeated["decision"].as_str().unwrap(), receipt);
+    }
     drop(writer);
     drop(reader);
     stop.store(true, Ordering::SeqCst);

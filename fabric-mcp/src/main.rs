@@ -1,4 +1,6 @@
-//! Read-only stdio MCP adapter. Credentials and transport are configured at launch.
+//! Credential-bound MCP and optional local HTTP adapters.
+#[cfg(feature = "local-http")]
+mod local_http;
 use fabric::{
     canonical::{Request, Response},
     query::{Client, QueryRequest},
@@ -297,25 +299,7 @@ impl Investigation {
         Parameters(request): Parameters<QueryRequest>,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
-        request
-            .validate()
-            .map_err(|e| ErrorData::invalid_params(e, None))?;
-        let query_id = request.query_id.clone();
-        let mut work = self.start_exchange(Request::Query { request })?;
-        let owner = self.clone();
-        // The watchdog survives handler cancellation. Its permit lives inside the
-        // actual blocking exchange, and it joins that exchange after cancellation.
-        tokio::spawn(async move{
-            let response=tokio::select!{
-                result=&mut work=>result,
-                _=context.ct.cancelled()=>{
-                    let cancellation=async{loop{let _=owner.exchange(Request::Cancel{query_id:query_id.clone()}).await;tokio::time::sleep(Duration::from_millis(20)).await;}};
-                    tokio::pin!(cancellation);
-                    tokio::select!{result=&mut work=>result,_=&mut cancellation=>unreachable!("cancellation retry loop")}
-                },
-            }.map_err(|e|ErrorData::internal_error(e.to_string(),None))?;
-            Self::render(response)
-        }).await.map_err(|e|ErrorData::internal_error(e.to_string(),None))?
+        self.run_query(request, context.ct).await
     }
     #[tool(
         description = "Inspect selected projection segments and conservative scan estimate for the same typed query.",
@@ -481,6 +465,34 @@ impl Investigation {
         .await
     }
 }
+impl Investigation {
+    async fn run_query(
+        &self,
+        request: QueryRequest,
+        cancellation: tokio_util::sync::CancellationToken,
+    ) -> Result<CallToolResult, ErrorData> {
+        request
+            .validate()
+            .map_err(|e| ErrorData::invalid_params(e, None))?;
+        let query_id = request.query_id.clone();
+        let mut work = self.start_exchange(Request::Query { request })?;
+        let owner = self.clone();
+        // The watchdog survives handler cancellation. Its permit lives inside the
+        // actual blocking exchange, and it joins that exchange after cancellation.
+        tokio::spawn(async move{
+            let response=tokio::select!{
+                result=&mut work=>result,
+                _=cancellation.cancelled()=>{
+                    let cancellation=async{loop{let _=owner.exchange(Request::Cancel{query_id:query_id.clone()}).await;tokio::time::sleep(Duration::from_millis(20)).await;}};
+                    tokio::pin!(cancellation);
+                    tokio::select!{result=&mut work=>result,_=&mut cancellation=>unreachable!("cancellation retry loop")}
+                },
+            }.map_err(|e|ErrorData::internal_error(e.to_string(),None))?;
+            Self::render(response)
+        }).await.map_err(|e|ErrorData::internal_error(e.to_string(),None))?
+    }
+}
+
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct AcceptPlanInput {
@@ -700,6 +712,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         None
     };
+    if std::env::var_os("FABRIC_MCP_HTTP_SOCKET").is_some()
+        && std::env::var_os("FABRIC_CREDENTIAL").is_some()
+    {
+        return Err("HTTP mode requires a credential file".into());
+    }
     let (endpoint, credential) = if writer_mode {
         if std::env::var_os("FABRIC_CREDENTIAL").is_some()
             || std::env::var_os("FABRIC_CREDENTIAL_FILE").is_some()
@@ -716,6 +733,26 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         fabric::query::connection_from_env()?
     };
+    if let Some(path) = std::env::var_os("FABRIC_MCP_HTTP_SOCKET") {
+        #[cfg(feature = "local-http")]
+        {
+            if live_client.is_some() {
+                return Err("HTTP mode cannot configure a live cursor".into());
+            }
+            return local_http::serve(
+                std::path::PathBuf::from(path),
+                writer_mode,
+                endpoint,
+                credential,
+            )
+            .await;
+        }
+        #[cfg(not(feature = "local-http"))]
+        {
+            let _ = path;
+            return Err("local HTTP support is not enabled".into());
+        }
+    }
     let reader = FramedRead::new(
         tokio::io::stdin(),
         JsonRpcMessageCodec::<RxJsonRpcMessage<RoleServer>>::new_with_max_length(1024 * 1024),
