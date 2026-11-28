@@ -343,12 +343,7 @@ async fn round_trip_line(
                 break;
             }
             let len = chunk.len();
-            if buf
-                .len()
-                .saturating_add(len)
-                .saturating_add(usize::from(require_newline))
-                > max_reply_bytes
-            {
+            if buf.len().saturating_add(len).saturating_add(1) > max_reply_bytes {
                 return Err("daemon socket reply exceeded size limit".into());
             }
             buf.extend_from_slice(chunk);
