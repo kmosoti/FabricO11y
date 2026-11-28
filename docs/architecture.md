@@ -366,6 +366,8 @@ flowchart LR
     PURE --> RESULT["Ordered outcomes + completeness, or typed refusal"]
 ```
 
+- **Incremental worker-event capture:** A caller can create a fresh job-and-epoch directory under an exclusively controlled parent and submit bounded events one at a time. The byte budget counts encoded file contents, not allocated filesystem blocks, inode overhead, or a shared quota. Each accepted event is an immutable one-attempt `FWCA` v1 file, published without replacement after file sync and followed by directory sync. An accepted terminal is final; replay rejects any later file even if it duplicates an earlier event. The writer permanently refuses further events after a budget, validation or storage failure; it cannot resume an existing directory. Replay uses independently retained ordered receipts and scope, reopens the pinned directory, rejects missing, extra, reordered, foreign or altered entries, and feeds the same pure verifier. A missing terminal stays incomplete. Exclusive directory control is a caller assumption; the local capture does not authenticate a sender, establish custody, or acknowledge transport delivery.
+
 - **Bounded staged Parquet compaction:** `fabric-store` writes a replacement to a new
   staging inode before changing validated inputs. The compaction output cap is
   `64 MiB`; it applies to the serialized replacement file, including its footer.
