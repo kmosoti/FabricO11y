@@ -1,6 +1,6 @@
 # FabricO11y
 
-The backend runs headless by default. Optional frontends are separately packaged.
+The backend runs headless by default. Optional browser and gateway source is available for separate builds; frontend release packages are not yet qualified.
 
 FabricO11y is a Linux observability toolkit you use from the command line.
 See where CPU, memory, or disk pressure comes from, and investigate host and

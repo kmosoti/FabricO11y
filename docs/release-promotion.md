@@ -33,7 +33,10 @@ necessary. Keep the main review, required checks and deployment gate active.
    as its version input and select `qualify`. To verify packaging on
    `develop` or a feature branch, select `preflight`. Preflight builds and
    uploads the Fedora RPM, Debian package and glibc-baseline tarball with read
-   access. The qualification run also uploads the
+   access. A `develop` preflight also uploads a separate static browser archive
+   built without release optimization. It includes no gateway, service, or
+   holder authentication and does not qualify a frontend release profile.
+   The qualification run also uploads the
    combined bundle, records its source tree and hashes, and attests the bytes.
 3. After qualification succeeds, download and inspect `release-bundle`. Record
    the numeric qualification run ID and SHA-256 of `RELEASE-EVIDENCE.json`.

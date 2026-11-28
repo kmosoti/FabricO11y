@@ -7,8 +7,8 @@ supersedes the product-wide UI prohibition in [D-0002](D-0002-cli-pivot-and-conv
 The frontend architecture keeps a target-independent `fabric-app-core` for
 shared state, reducers, and transformations. It cannot depend on DOM, GPU,
 OS, transport, or async runtime APIs. `fabric-ui-dom` owns Leptos components and
-accessible DOM interactions. `fabric-ui-gpu` owns wgpu rendering. Thin web and
-Tauri desktop roots wire platform, rendering and typed transport. Frontends
+accessible DOM interactions. A GPU renderer and a thin Tauri desktop root are
+proposed, not qualified implementations. Frontends
 reuse backend authorization and data contracts. Package installation is
 explicit and starts no collectors or listeners by default.
 
@@ -27,8 +27,8 @@ documents the static asset and WebView integration boundary.
 ## Build and authority boundary
 
 The proposed frontend uses a separate Cargo workspace and lockfile, excluded
-from the root workspace. Its web, desktop and GPU profiles are explicitly
-selected and packaged; the backend, CLI, MCP and typed client remain headless
+from the root workspace. Its web, desktop and GPU profiles must be explicitly
+selected and packaged when qualified; the backend, CLI, MCP and typed client remain headless
 by default. Root `--workspace` builds, checks and packages must continue to
 operate without frontend renderers. `default-members` alone does not provide
 that isolation. Bind both lockfiles, source revisions, enabled features and
@@ -44,6 +44,15 @@ native `cli` feature is not a browser transport. The shared frontend core and
 its real reducer belong to the frontend implementation; artifact profiles and
 release qualification are separate work. This decision itself does not create
 or qualify either.
+
+## Implementation status
+
+The optional workspace contains the Leptos 0.8.23 browser source and shared
+reducer; a separate native workspace contains a private Unix query gateway.
+A develop preflight can archive the static browser build without wasm-opt. It
+is not a release package, desktop profile, authenticated proxy or runtime
+qualification. The browser smoke pins Trunk 0.22.1 and wasm-bindgen 0.2.130;
+other framework and platform profiles remain proposals until qualified.
 
 ## Qualification before adoption
 
