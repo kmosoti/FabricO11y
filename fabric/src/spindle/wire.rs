@@ -143,6 +143,70 @@ fn find_matching_bracket(bytes: &[u8], start: usize) -> Result<usize, String> {
 mod tests {
     use super::*;
     #[test]
+    fn tagged_records_and_legacy_value_roundtrip_with_v5_validation() {
+        use crate::observation::{StoredObservation, decode_versioned};
+        let base = serde_json::json!({"version":2, "registry":"fabrico11y/2", "identity":{"producer":"p","generation":"g","sequence":1}, "timestamp_ns":1, "resource":"r", "data":{"kind":"metric","name":"m","unit":"s","value":1.0,"metric_type":"gauge","reset":false}});
+        let mut values = vec![base.clone()];
+        let mut v3 = base.clone();
+        v3["version"] = 3.into();
+        v3["registry"] = "fabrico11y/3".into();
+        v3["context"] = serde_json::json!({"run_id":"f404b128-2c19-412f-bcd0-823f9c1f1b31"});
+        values.push(v3.clone());
+        let mut v4 = v3.clone();
+        v4["version"] = 4.into();
+        v4["registry"] = "fabrico11y/4".into();
+        v4["data"] = serde_json::json!({"kind":"service_request","service":"s","operation":"o","duration_ns":1,"status":"ok","trace_id":null});
+        v4["span"] = serde_json::json!({"trace_id":"11111111111111111111111111111111","span_id":"2222222222222222"});
+        values.push(v4);
+        let mut v5 = v3;
+        v5["version"] = 5.into();
+        v5["registry"] = "fabrico11y/5".into();
+        v5["data"]["labels"] = serde_json::json!({"region":"x"});
+        values.push(v5);
+        for (index, value) in values.iter().enumerate() {
+            let raw = serde_json::to_vec(value).unwrap();
+            let expected = decode_versioned(&raw).unwrap();
+            let reply = super::super::Reply::Records {
+                records: vec![(1, expected.clone())],
+            };
+            let bytes = serde_json::to_vec(&reply).unwrap();
+            let decoded: super::super::Reply = serde_json::from_slice(&bytes).unwrap();
+            assert!(
+                matches!(decoded, super::super::Reply::Records { records } if records == vec![(1, expected.clone())])
+            );
+            if index < 3 {
+                assert_eq!(
+                    serde_json::from_value::<StoredObservation>(value.clone()).unwrap(),
+                    expected
+                );
+            }
+        }
+        for mut invalid in [values[0].clone(), values[1].clone(), values[2].clone()] {
+            invalid["registry"] = "wrong".into();
+            let bytes = serde_json::to_vec(
+                &serde_json::json!({"result":"records","records":[[1,invalid]]}),
+            )
+            .unwrap();
+            assert!(serde_json::from_slice::<super::super::Reply>(&bytes).is_err());
+        }
+        let mut unsupported = values[1].clone();
+        unsupported["version"] = 6.into();
+        let bytes = serde_json::to_vec(
+            &serde_json::json!({"result":"records","records":[[1,unsupported]]}),
+        )
+        .unwrap();
+        assert!(serde_json::from_slice::<super::super::Reply>(&bytes).is_err());
+        let mut invalid = values[1].clone();
+        invalid["version"] = 5.into();
+        invalid["registry"] = "wrong".into();
+        assert!(serde_json::from_value::<StoredObservation>(invalid).is_err());
+        let raw = serde_json::to_string(&values[3])
+            .unwrap()
+            .replace(r#""region":"x""#, r#""region":"x","region":"y""#);
+        let reply = format!(r#"{{"result":"records","records":[[1,{raw}]]}}"#);
+        assert!(serde_json::from_str::<super::super::Reply>(&reply).is_err());
+    }
+    #[test]
     fn envelope_bounds_preserve_maximum_payload_and_identifier() {
         let seed = br#"{"version":2,"registry":"fabrico11y/2","identity":{"producer":"raw","generation":"boundary","sequence":1},"timestamp_ns":1,"resource":"test","data":{"kind":"log","level":"info","message":"seed"}}"#;
         let mut raw = vec![b' '; observation::MAX_FRAME - seed.len()];

@@ -241,12 +241,12 @@ frontier and waits for custody through that frontier. A timeout has an unknown
 outcome: retry the same identity and bytes. Drop closes admission immediately;
 pending memory data requires a successful flush before dropping the client.
 
-Wire submissions are a big-endian u32 length followed by original v2 or v3 JSON. Input is
-limited to 64 KiB and 16 nesting levels before owned deserialization. Control
-frames use `command` (`status`, `read`, `stop`, `lease`, `fabric_progress`). Responses are bounded to input
-size plus 8 KiB; only one read record is returned per request. Every connection has
-an absolute deadline. V2 generations use the kernel UUID source; v3 generations
-are authenticated leases issued by Spindle.
+Wire submissions are a big-endian u32 length followed by the original JSON.
+Input is limited to 64 KiB and 16 nesting levels before owned deserialization.
+Control frames use `command` (`status`, `read`, `stop`, `lease`, `fabric_progress`).
+Responses are bounded to input size plus 8 KiB; only one read record is returned
+per request. Every connection has an absolute deadline. V2 generations use the
+kernel UUID source. V3, V4 and V5 use authenticated leases issued by Spindle.
 
 SQLite commits the record, retry identity and source checkpoint in one
 transaction. DELETE journaling, synchronous EXTRA, a bounded page count and an
@@ -265,6 +265,33 @@ exact same submitted bytes; changed serialization or payload is a conflict. A
 new SDK process creates a new generation; applications requiring retry across
 process death must persist the complete original envelope themselves. Registry
 descriptors are retained and compared exactly under their registry ID.
+
+### Structured metric labels
+
+The opt-in metric envelope uses `version: 5` and `registry: "fabrico11y/5"`.
+It keeps the leased identity and run context used by v3. A metric may omit
+`data.labels` or provide an object of up to eight string pairs. Keys are 1–64
+ASCII bytes, start with a letter or underscore, and continue with letters,
+digits, underscores, dots or hyphens. Values are at most 128 UTF-8 bytes.
+Control characters, duplicate keys and reserved collector metadata keys are
+refused. The collector nests the dimensions under `labels` in `labels_json`
+and retains the producer, generation, sequence and run metadata. Send V5
+through Spindle custody. The separate `ingest.sock` path refuses V5 observations
+and direct envelopes that claim to be V5 Spindle projections.
+
+Spindle allows 64 active series per producer and 1,024 across the local store,
+with at most 2,048 series-to-generation memberships. The canonical receiver
+allows 64 per authenticated origin and 1,024 across the receiver. Producer,
+resource, metric name, unit, type and label pairs form the logical key. A
+series refused at capacity does not move the record frontier. An exact retry of
+an accepted observation retains its original receipt and reservation behavior.
+
+Local memberships retire when an expired generation can be pruned after
+confirmed handoff. The receiver retires its accounting entries after one hour
+of inactivity. It measures that window with its own admitted clock and
+persists the latest accepted time floor, so a backward clock adjustment cannot
+rewind the window. Retirement releases accounting space and retains accepted
+record bytes under the existing custody policy.
 
 ## Check receipt projection
 

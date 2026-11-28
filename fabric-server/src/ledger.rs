@@ -201,6 +201,7 @@ CREATE TABLE IF NOT EXISTS records(id INTEGER PRIMARY KEY AUTOINCREMENT,origin T
 CREATE TABLE IF NOT EXISTS origins(origin TEXT PRIMARY KEY,through INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS registries(name TEXT PRIMARY KEY,descriptor TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").map_err(err)?;
+        metric_series::install(&conn).map_err(err)?;
         enforce_private_state_files(dir, &["canonical.sqlite", "canonical.sqlite-journal"])?;
         let page: u64 = conn
             .pragma_query_value(None, "page_size", |r| r.get(0))
@@ -264,6 +265,10 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
             (observation::REGISTRY, observation::DESCRIPTOR),
             (observation::REGISTRY_V3, observation::DESCRIPTOR_V3),
             (observation::REGISTRY_V4, observation::DESCRIPTOR_V4),
+            (
+                observation::REGISTRY_V5,
+                include_str!("../../registry/v5/descriptor.json"),
+            ),
         ] {
             let old: Option<String> = conn
                 .query_row(
@@ -981,6 +986,27 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
         if additions.is_empty() {
             return Ok(through);
         }
+        // Classify exact confirmed retries first; only new V5 records reserve.
+        let series_keys: Vec<_> = additions
+            .iter()
+            .map(|r| {
+                let parsed = observation::decode_versioned(r.raw.as_bytes())?;
+                parsed
+                    .metric_v5()
+                    .map(|metric| metric.series_key())
+                    .transpose()
+            })
+            .collect::<Result<_, String>>()?;
+        let admitted_at = if series_keys.iter().any(Option::is_some) {
+            Some(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_err(|_| "server clock unavailable")?
+                    .as_secs(),
+            )
+        } else {
+            None
+        };
         let bytes: usize = additions.iter().map(|r| r.raw.len()).sum();
         let explicit_quota = self.node_quota_bytes.get(origin).copied();
         let quota = explicit_quota.or(self.default_origin_quota);
@@ -1014,7 +1040,22 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
         }
         tx.execute("INSERT OR IGNORE INTO origins VALUES(?1,0)", [origin])
             .map_err(err)?;
-        for r in additions {
+        for (r, key) in additions.into_iter().zip(series_keys) {
+            if let Some(key) = key {
+                let now = admitted_at.ok_or("server clock unavailable")?;
+                metric_series::reserve(
+                    &tx,
+                    origin,
+                    &key,
+                    now,
+                    metric_series::Limits {
+                        per_origin: 64,
+                        global: 1024,
+                        window: 3600,
+                    },
+                )
+                .map_err(|reason| format!("metric series admission refused: {reason:?}"))?;
+            }
             let parsed = observation::decode_versioned(r.raw.as_bytes())?;
             let i = parsed.identity();
             tx.execute("INSERT INTO records(origin,source_id,producer,generation,sequence,raw,raw_len,raw_hash,published) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",params![origin,r.source_id,i.producer,i.generation,i.sequence.to_string(),r.raw.as_bytes(),r.raw.len(),digest(r.raw.as_bytes()),!engine_mode]).map_err(err)?;
@@ -1419,3 +1460,5 @@ impl Access<'_> {
             .pop())
     }
 }
+
+mod metric_series;

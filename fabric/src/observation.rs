@@ -13,6 +13,7 @@ pub mod vocabulary;
 pub const VERSION: u32 = 2;
 pub const VERSION_V3: u32 = 3;
 pub const VERSION_V4: u32 = 4;
+pub const DESCRIPTOR_V5: &str = include_str!("../../registry/v5/descriptor.json");
 pub const REGISTRY_V4: &str = "fabrico11y/4";
 pub const DESCRIPTOR_V4: &str = include_str!("../../registry/v4/descriptor.json");
 pub const REGISTRY_V3: &str = "fabrico11y/3";
@@ -420,12 +421,40 @@ pub(crate) fn validate_v4_raw(bytes: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+/// Sealed v5 record with a derived legacy metric view. Raw custody bytes are stored separately.
+#[derive(Clone, Debug, PartialEq)]
+pub struct StoredMetricV5 {
+    observation: ObservationV5,
+    legacy: Data,
+}
+impl StoredMetricV5 {
+    fn new(observation: ObservationV5) -> Self {
+        let metric = &observation.data;
+        let legacy = Data::Metric {
+            name: metric.name.clone(),
+            unit: metric.unit.clone(),
+            value: metric.value,
+            metric_type: metric.metric_type,
+            reset: metric.reset,
+        };
+        Self {
+            observation,
+            legacy,
+        }
+    }
+}
+impl Serialize for StoredMetricV5 {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.observation.serialize(serializer)
+    }
+}
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum StoredObservation {
     V2(Observation),
     V3(ObservationV3),
     V4(ObservationV4),
+    V5(StoredMetricV5),
 }
 impl StoredObservation {
     pub fn registry(&self) -> &str {
@@ -433,6 +462,7 @@ impl StoredObservation {
             Self::V2(o) => &o.registry,
             Self::V3(o) => &o.registry,
             Self::V4(o) => &o.registry,
+            Self::V5(o) => &o.observation.registry,
         }
     }
     pub fn identity(&self) -> &Identity {
@@ -440,6 +470,7 @@ impl StoredObservation {
             Self::V2(o) => &o.identity,
             Self::V3(o) => &o.identity,
             Self::V4(o) => &o.identity,
+            Self::V5(o) => &o.observation.identity,
         }
     }
     pub fn context(&self) -> Option<&crate::run::RunContext> {
@@ -447,6 +478,7 @@ impl StoredObservation {
             Self::V2(_) => None,
             Self::V3(o) => Some(&o.context),
             Self::V4(o) => Some(&o.context),
+            Self::V5(o) => Some(&o.observation.context),
         }
     }
     pub fn timestamp_ns(&self) -> u64 {
@@ -454,6 +486,7 @@ impl StoredObservation {
             Self::V2(o) => o.timestamp_ns,
             Self::V3(o) => o.timestamp_ns,
             Self::V4(o) => o.timestamp_ns,
+            Self::V5(o) => o.observation.timestamp_ns,
         }
     }
     pub fn data(&self) -> &Data {
@@ -461,6 +494,7 @@ impl StoredObservation {
             Self::V2(o) => &o.data,
             Self::V3(o) => &o.data,
             Self::V4(o) => &o.data,
+            Self::V5(o) => &o.legacy,
         }
     }
     pub fn resource(&self) -> &str {
@@ -468,6 +502,13 @@ impl StoredObservation {
             Self::V2(o) => &o.resource,
             Self::V3(o) => &o.resource,
             Self::V4(o) => &o.resource,
+            Self::V5(o) => &o.observation.resource,
+        }
+    }
+    pub fn metric_v5(&self) -> Option<&ObservationV5> {
+        match self {
+            Self::V5(o) => Some(&o.observation),
+            _ => None,
         }
     }
     pub fn span(&self) -> Option<&SpanContext> {
@@ -481,7 +522,69 @@ impl StoredObservation {
             Self::V2(o) => o.version,
             Self::V3(o) => o.version,
             Self::V4(o) => o.version,
+            Self::V5(o) => o.observation.version,
         }
+    }
+}
+impl<'de> Deserialize<'de> for StoredObservation {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Compatible {
+            V2(Observation),
+            V3(ObservationV3),
+            V4(ObservationV4),
+            V5(ObservationV5),
+        }
+        let v5 = match Compatible::deserialize(deserializer)? {
+            Compatible::V2(o) => {
+                o.validate().map_err(serde::de::Error::custom)?;
+                return Ok(Self::V2(o));
+            }
+            Compatible::V3(o) if o.version == VERSION_V3 => {
+                o.validate().map_err(serde::de::Error::custom)?;
+                return Ok(Self::V3(o));
+            }
+            Compatible::V3(o) if o.version == VERSION_V5 => {
+                let Data::Metric {
+                    name,
+                    unit,
+                    value,
+                    metric_type,
+                    reset,
+                } = o.data
+                else {
+                    return Err(serde::de::Error::custom("v5 requires metric data"));
+                };
+                ObservationV5 {
+                    version: o.version,
+                    registry: o.registry,
+                    context: o.context,
+                    identity: o.identity,
+                    timestamp_ns: o.timestamp_ns,
+                    resource: o.resource,
+                    data: MetricV5 {
+                        kind: MetricKind::Metric,
+                        name,
+                        unit,
+                        value,
+                        metric_type,
+                        reset,
+                        labels: Default::default(),
+                    },
+                }
+            }
+            Compatible::V3(_) => {
+                return Err(serde::de::Error::custom("unsupported observation version"));
+            }
+            Compatible::V4(o) => {
+                o.validate().map_err(serde::de::Error::custom)?;
+                return Ok(Self::V4(o));
+            }
+            Compatible::V5(o) => o,
+        };
+        v5.validate().map_err(serde::de::Error::custom)?;
+        Ok(Self::V5(StoredMetricV5::new(v5)))
     }
 }
 pub fn decode_versioned(bytes: &[u8]) -> Result<StoredObservation, String> {
@@ -507,6 +610,9 @@ pub fn decode_versioned(bytes: &[u8]) -> Result<StoredObservation, String> {
                 serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
             observation.validate()?;
             Ok(StoredObservation::V4(observation))
+        }
+        VERSION_V5 => {
+            decode_metric_v5(bytes).map(|o| StoredObservation::V5(StoredMetricV5::new(o)))
         }
         _ => Err("unsupported observation version".into()),
     }
@@ -620,3 +726,9 @@ mod v4_tests {
         assert!(decode_versioned(&vec![b' '; MAX_FRAME + 1]).is_err());
     }
 }
+
+#[path = "observation_metric_v5.rs"]
+mod metric_v5;
+pub use metric_v5::{
+    MetricKind, MetricV5, ObservationV5, REGISTRY_V5, VERSION_V5, decode_metric_v5,
+};

@@ -178,6 +178,8 @@ INSERT OR IGNORE INTO custody_state VALUES('clock_floor','0');").map_err(err)?;
         if lease_key.len() != 32 {
             return Err("invalid persisted lease key".into());
         }
+        metric_series::install(&conn).map_err(err)?;
+        retain_descriptor(&conn, observation::REGISTRY_V5, observation::DESCRIPTOR_V5)?;
         retain_descriptor(&conn, observation::REGISTRY_V3, observation::DESCRIPTOR_V3)?;
         retain_descriptor(&conn, observation::REGISTRY_V4, observation::DESCRIPTOR_V4)?;
         File::open(dir).and_then(|f| f.sync_all()).map_err(err)?;
@@ -346,7 +348,21 @@ CREATE TRIGGER fail_batch_commit AFTER INSERT ON records BEGIN INSERT INTO commi
             return Err("storage full".into());
         }
         self.ensure_connection_batch()?;
+        let series_key = observation
+            .metric_v5()
+            .map(|metric| metric.series_key())
+            .transpose()?;
         let tx = self.conn.savepoint().map_err(err)?;
+        if let Some(key) = series_key {
+            metric_series::reserve(
+                &tx,
+                &i.producer,
+                &i.generation,
+                &key,
+                metric_series::V5_LIMITS,
+            )
+            .map_err(|e| format!("metric series admission: {e:?}"))?;
+        }
         let previous: String = tx
             .query_row(
                 "SELECT value FROM custody_state WHERE key='highest'",
@@ -1015,7 +1031,8 @@ impl Store {
                     }
                     Ok(
                         observation::StoredObservation::V3(_)
-                        | observation::StoredObservation::V4(_),
+                        | observation::StoredObservation::V4(_)
+                        | observation::StoredObservation::V5(_),
                     ) => None,
                     Err(error) => Some(Err(error)),
                 }
@@ -1135,6 +1152,52 @@ mod handoff_tests {
             authority: "test-authority".into(),
             reclaim_confirmed: true,
         }
+    }
+    #[test]
+    fn v5_series_reservation_replays_and_rolls_back_with_custody() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("store");
+        let mut store = Store::open(&path, MIN_QUOTA).unwrap();
+        let (generation, _) = store.issue_lease("lease-test").unwrap();
+        let metric = |seq: u64, name: &str| {
+            serde_json::to_vec(&serde_json::json!({
+            "version":5, "registry":"fabrico11y/5", "context":{"run_id":"f404b128-2c19-412f-bcd0-823f9c1f1b31"},
+            "identity":{"producer":"lease-test","generation":generation,"sequence":seq}, "timestamp_ns":1, "resource":"r",
+            "data":{"kind":"metric","name":name,"unit":"s","value":1.0,"metric_type":"gauge","reset":false,"labels":{"region":"x"}}
+        })).unwrap()
+        };
+        let first = metric(1, "m");
+        let decoded = observation::decode_versioned(&first).unwrap();
+        assert_eq!(decoded.metric_v5().unwrap().data.labels["region"], "x");
+        assert!(matches!(decoded.data(), observation::Data::Metric { .. }));
+        assert_eq!(
+            serde_json::from_slice::<observation::StoredObservation>(
+                &serde_json::to_vec(&decoded).unwrap()
+            )
+            .unwrap(),
+            decoded
+        );
+        assert!(!store.submit(&first, None).unwrap().duplicate);
+        assert!(store.submit(&first, None).unwrap().duplicate);
+        let count = |s: &Store| -> u64 {
+            s.conn
+                .query_row("SELECT COUNT(*) FROM metric_series_membership", [], |r| {
+                    r.get(0)
+                })
+                .unwrap()
+        };
+        assert_eq!(count(&store), 1);
+        let second = metric(2, "new-series");
+        store.begin_connection_batch().unwrap();
+        assert!(!store.submit(&second, None).unwrap().duplicate);
+        assert_eq!(count(&store), 2);
+        store.rollback_connection_batch().unwrap();
+        assert_eq!(count(&store), 1);
+        drop(store);
+        let mut store = Store::open(&path, MIN_QUOTA).unwrap();
+        assert_eq!(count(&store), 1);
+        assert!(!store.submit(&second, None).unwrap().duplicate);
+        assert_eq!(count(&store), 2);
     }
     #[test]
     fn lease_authentication_order_expiry_and_pending_retention() {
@@ -2079,3 +2142,5 @@ CREATE TRIGGER fail_ack_gc AFTER DELETE ON records BEGIN INSERT INTO ack_child V
         assert_eq!(store.reclaimed().unwrap(), 40);
     }
 }
+
+mod metric_series;

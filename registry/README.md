@@ -20,17 +20,43 @@ plain lowercase nonzero 32-hex trace ID, a 16-hex span ID, and at most one
 optional or null 16-hex parent span ID. A parent is scoped to the same trace and
 must differ from its child span. If a service request supplies `data.trace_id`,
 it must equal `span.trace_id`. Existing v2 and v3 descriptors, fixtures, SDK
-defaults, and wire behavior remain unchanged; applications must opt in to v4.
+defaults, and wire behavior remain unchanged; applications must opt in to v4 or
+the separate v5 metric-only descriptor.
 
-`registry/v3/fixtures.json` and `registry/v4/fixtures.json` are independent
-wire-contract cases. The v4 fixture bytes are pinned by the registry checker.
-`cargo xtask registry generate` updates generated version 3 and 4 descriptors;
-it refuses any version 2 drift and checks the v4 fixture digest before writing.
+`v5/model/` defines a separate opt-in, metric-only envelope extending the exact
+v3 descriptor by digest; it does not extend or alter trace-only v4. V5 retains
+the v3 context, authenticated generation, envelope and wire bounds, and accepts
+only metric data. Its optional `data.labels` field is a nested string-to-string
+object. Omission and `{}` are accepted; the object has at most eight entries.
+After JSON string decoding, each key is 1–64 ASCII bytes. Its first character
+must be an ASCII letter or underscore; subsequent characters may be ASCII
+letters, digits, underscore, dot, or hyphen. Each value is 0–128 UTF-8 bytes,
+including empty.
+Unicode control characters and NUL are rejected. Duplicate decoded keys,
+including escape aliases, are rejected. The reserved label keys are
+`producer`, `generation`, `sequence`, `metric_unit`, `metric_type`, `reset`,
+`context_run_id`, `version`, and `labels`. Labels remain nested under
+`data.labels`; this schema does not flatten them into sibling metric fields.
 
-The generated descriptors accompany the checked-in Rust vocabulary. Rust types enforce the wire shape; runtime validation
-also checks bounds, finite values, nesting, and identity. The descriptor is
-retained with custody records, and changing it under an existing registry identity
-is rejected on store open. Incompatible evolution requires a new schema identity.
+These V5 registry artifacts specify a wire contract only. They do not mean that
+native ingest accepts V5, that writers/readers negotiate it, or that the runtime
+enforces a bound on active metric-series cardinality. The per-observation limit
+of eight labels is not a cardinality guarantee across observations.
+
+`registry/v3/fixtures.json`, `registry/v4/fixtures.json`, and
+`registry/v5/fixtures.json` are independent wire-contract cases. The v4 and v5
+fixture bytes are pinned by the registry checker. Duplicate-key V5 cases retain
+raw JSON text so literal duplicates and escape aliases are not erased by parsing
+the fixture file itself. `cargo xtask registry generate` updates generated
+version 3, 4 and 5 descriptors; it refuses any version 2 drift and checks the v4
+and v5 fixture digests before writing.
+
+The v2 descriptor accompanies the checked-in Rust vocabulary. Existing Rust types
+and runtime validation enforce only wire schemas already implemented by the
+application; the V5 artifacts above remain spec-only until runtime acceptance and
+writer/reader negotiation are implemented. Descriptors are retained with custody
+records, and changing one under an existing registry identity is rejected on
+store open. Incompatible evolution requires a new schema identity.
 
 ```sh
 sh .github/scripts/install-schema-tools.sh

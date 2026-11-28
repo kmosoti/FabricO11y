@@ -3,6 +3,7 @@
 //! Euclidean 5-minute rollup bucket alignment.
 
 use crate::MetricPoint;
+use serde_json::Value;
 use std::collections::{BTreeMap, VecDeque};
 
 /// Default memory budget for the in-RAM hot time-series ring (`32 MiB`).
@@ -26,16 +27,30 @@ struct SeriesKey {
     slice: String,
     unit: String,
     labels_json: String,
+    // Distinguishes a compacted key from the same JSON supplied without a sequence.
+    has_spindle_sequence: bool,
 }
 
 impl SeriesKey {
-    fn from_point(pt: &MetricPoint) -> Self {
+    fn from_point(pt: &MetricPoint) -> (Self, Option<u64>) {
+        match compact_spindle_labels(pt) {
+            Some((labels, sequence)) => (Self::new(pt, labels, true), Some(sequence)),
+            None => (Self::exact(pt), None),
+        }
+    }
+
+    fn exact(pt: &MetricPoint) -> Self {
+        Self::new(pt, pt.labels_json.clone(), false)
+    }
+
+    fn new(pt: &MetricPoint, labels_json: String, has_spindle_sequence: bool) -> Self {
         Self {
             name: pt.name.clone(),
             host: pt.host.clone(),
             slice: pt.slice.clone(),
             unit: pt.unit.clone(),
-            labels_json: pt.labels_json.clone(),
+            labels_json,
+            has_spindle_sequence,
         }
     }
 
@@ -47,6 +62,23 @@ impl SeriesKey {
             + self.labels_json.len()
             + 64
     }
+}
+
+// Only the collector's canonical V5 JSON shape can be reconstructed byte-for-byte.
+fn compact_spindle_labels(pt: &MetricPoint) -> Option<(String, u64)> {
+    let labels = &pt.labels_json;
+    if pt.slice != "spindle" || labels.len() > 8192 || !labels.contains(r#""version":5"#) {
+        return None;
+    }
+    let mut metadata = serde_json::from_str::<BTreeMap<String, Value>>(labels).ok()?;
+    if metadata.get("version")?.as_u64() != Some(5)
+        || !metadata.get("labels")?.is_object()
+        || serde_json::to_string(&metadata).ok()? != *labels
+    {
+        return None;
+    }
+    let sequence = metadata.remove("sequence")?.as_u64()?;
+    Some((serde_json::to_string(&metadata).ok()?, sequence))
 }
 
 fn metric_point_bytes(pt: &MetricPoint) -> usize {
@@ -75,10 +107,12 @@ struct CompressedSeriesBlock {
     val_payload: Vec<u8>,
     /// Run-length encoded PID sequence: `(pid, run_len)`.
     pid_runs: Vec<(Option<u32>, u16)>,
+    /// Per-sample provenance excluded from canonical V5 compression keys.
+    spindle_sequences: Vec<u64>,
 }
 
 impl CompressedSeriesBlock {
-    fn new(key: SeriesKey, pt: &MetricPoint) -> Self {
+    fn new(key: SeriesKey, pt: &MetricPoint, sequence: Option<u64>) -> Self {
         Self {
             key,
             max_ts: pt.timestamp_ms,
@@ -91,6 +125,7 @@ impl CompressedSeriesBlock {
             ts_payload: Vec::new(),
             val_payload: Vec::new(),
             pid_runs: vec![(pt.pid, 1)],
+            spindle_sequences: sequence.into_iter().collect(),
         }
     }
 
@@ -99,11 +134,13 @@ impl CompressedSeriesBlock {
             + self.ts_payload.len()
             + self.val_payload.len()
             + self.pid_runs.len() * std::mem::size_of::<(Option<u32>, u16)>()
+            + self.spindle_sequences.capacity() * std::mem::size_of::<u64>()
             + std::mem::size_of::<Self>()
     }
 
-    fn push(&mut self, pt: &MetricPoint) -> usize {
+    fn push(&mut self, pt: &MetricPoint, sequence: Option<u64>) -> usize {
         let before = self.approx_bytes();
+        self.spindle_sequences.extend(sequence);
         // Modular two's-complement arithmetic makes delta-of-delta encoding exact
         // across arbitrary (including out-of-order and boundary) i64 timestamps.
         let delta = pt.timestamp_ms.wrapping_sub(self.prev_ts);
@@ -138,6 +175,18 @@ impl CompressedSeriesBlock {
 
     fn decode(&self) -> Vec<MetricPoint> {
         let mut out = Vec::with_capacity(self.count);
+        let mut spindle_metadata = self.key.has_spindle_sequence.then(|| {
+            serde_json::from_str::<BTreeMap<String, Value>>(&self.key.labels_json)
+                .expect("compacted Spindle labels originate from a JSON object")
+        });
+        let mut labels_at = |index: usize| {
+            if let Some(metadata) = &mut spindle_metadata {
+                metadata.insert("sequence".into(), self.spindle_sequences[index].into());
+                serde_json::to_string(metadata).expect("JSON metadata is serializable")
+            } else {
+                self.key.labels_json.clone()
+            }
+        };
         let mut run_idx = 0usize;
         let mut run_rem = self.pid_runs.first().map_or(0, |r| r.1);
         let mut next_pid = || -> Option<u32> {
@@ -160,7 +209,7 @@ impl CompressedSeriesBlock {
             slice: self.key.slice.clone(),
             unit: self.key.unit.clone(),
             pid: next_pid(),
-            labels_json: self.key.labels_json.clone(),
+            labels_json: labels_at(0),
         });
 
         let mut ts_cursor = 0usize;
@@ -169,7 +218,7 @@ impl CompressedSeriesBlock {
         let mut prev_delta = 0i64;
         let mut prev_bits = self.first_val_bits;
 
-        for _ in 1..self.count {
+        for index in 1..self.count {
             let dod = decode_zigzag_i64(&self.ts_payload, &mut ts_cursor);
             let delta = prev_delta.wrapping_add(dod);
             let ts = prev_ts.wrapping_add(delta);
@@ -200,7 +249,7 @@ impl CompressedSeriesBlock {
                 slice: self.key.slice.clone(),
                 unit: self.key.unit.clone(),
                 pid: next_pid(),
-                labels_json: self.key.labels_json.clone(),
+                labels_json: labels_at(index),
             });
         }
 
@@ -268,15 +317,15 @@ impl HotMetricRing {
     }
 
     fn insert_into_series(&mut self, pt: &MetricPoint) {
-        let key = SeriesKey::from_point(pt);
+        let (key, sequence) = SeriesKey::from_point(pt);
         let blocks = self.series.entry(key.clone()).or_default();
         if let Some(last) = blocks.back_mut()
             && last.count < 256
         {
-            let added = last.push(pt);
+            let added = last.push(pt, sequence);
             self.used_bytes = self.used_bytes.saturating_add(added);
         } else {
-            let block = CompressedSeriesBlock::new(key.clone(), pt);
+            let block = CompressedSeriesBlock::new(key.clone(), pt, sequence);
             let added = block.approx_bytes();
             blocks.push_back(block);
             self.used_bytes = self.used_bytes.saturating_add(added);
@@ -423,9 +472,9 @@ pub fn roundtrip_series_block(points: &[MetricPoint]) -> Vec<MetricPoint> {
     let Some(first) = points.first() else {
         return Vec::new();
     };
-    let mut block = CompressedSeriesBlock::new(SeriesKey::from_point(first), first);
+    let mut block = CompressedSeriesBlock::new(SeriesKey::exact(first), first, None);
     for pt in &points[1..] {
-        let _ = block.push(pt);
+        let _ = block.push(pt, None);
     }
     block.decode()
 }
@@ -546,6 +595,48 @@ mod tests {
             assert!(bucket + ROLLUP_BUCKET_MS > ts);
             assert_eq!(align_rollup_bucket_ms(bucket), bucket);
         }
+    }
+
+    #[test]
+    fn v5_spindle_series_compresses_timestamp_and_value_while_retaining_each_sequence() {
+        let mut points: Vec<_> = (0_u32..257)
+            .map(|index| MetricPoint {
+                timestamp_ms: i64::from(index) + 1,
+                name: "stage.latency".into(),
+                value: f64::from(index % 4),
+                host: "host".into(),
+                slice: "spindle".into(),
+                unit: "unit".into(),
+                pid: Some(42),
+                labels_json: serde_json::json!({
+                    "labels": {"stage": "read"},
+                    "sequence": u64::MAX - u64::from(index),
+                    "version": 5,
+                })
+                .to_string(),
+            })
+            .collect();
+        let mut no_sequence = points[0].clone();
+        no_sequence.timestamp_ms = 258;
+        no_sequence.labels_json = r#"{"labels":{"stage":"read"},"version":5}"#.into();
+        points.push(no_sequence);
+        let mut other_stage = points[0].clone();
+        other_stage.timestamp_ms = 259;
+        other_stage.labels_json = r#"{"labels":{"stage":"write"},"sequence":1,"version":5}"#.into();
+        points.push(other_stage);
+        let mut noncanonical = points[0].clone();
+        noncanonical.timestamp_ms = 260;
+        noncanonical.labels_json =
+            r#"{ "labels":{"stage":"read"},"sequence":1,"version":5}"#.into();
+        points.push(noncanonical);
+
+        let mut ring = HotMetricRing::default();
+        ring.push_hot_only(&points);
+        let stats = ring.stats();
+        assert_eq!(stats.sample_count, points.len());
+        assert_eq!(stats.block_count, 5);
+        assert_eq!(stats.evicted_blocks, 0);
+        assert_eq!(ring.query_since(1), points);
     }
 
     #[test]
@@ -674,9 +765,10 @@ mod tests {
                 labels_json: "{}".into(),
             })
             .collect();
-        let mut block = CompressedSeriesBlock::new(SeriesKey::from_point(&input[0]), &input[0]);
+        let (key, sequence) = SeriesKey::from_point(&input[0]);
+        let mut block = CompressedSeriesBlock::new(key, &input[0], sequence);
         for pt in &input[1..] {
-            let _ = block.push(pt);
+            let _ = block.push(pt, None);
         }
         assert_eq!(block.pid_runs.len(), 4);
         let decoded = block.decode();

@@ -4,7 +4,9 @@
 
 use crate::channel::BoundedTelemetryQueue;
 use chrono::Utc;
-use fabric::observation::{Data, Level, MetricType, Outcome, StoredObservation, decode_versioned};
+use fabric::observation::{
+    Data, Level, MetricType, Outcome, StoredObservation, VERSION_V5, decode_versioned,
+};
 use fabric::spindle::transport::{read_origin, read_raw_batch, read_raw_for_origin_batch};
 use fabric::spindle::wire::MAX_READ_PAGE;
 use fabric_core::{LogRecord, MetricPoint, SpindleProvenance, TraceSpanRecord};
@@ -243,15 +245,8 @@ pub fn observation_to_telemetry(obs: &StoredObservation, default_host: &str) -> 
             value,
             metric_type,
             reset,
-        } => IngestEnvelope::Metric(MetricPoint {
-            timestamp_ms,
-            name: name.clone(),
-            value: *value,
-            host: default_host.to_owned(),
-            slice: "spindle".to_owned(),
-            unit: obs.resource().to_owned(),
-            pid: None,
-            labels_json: with_run_context(serde_json::json!({
+        } => {
+            let mut metadata = serde_json::json!({
                 "producer": id.producer,
                 "generation": id.generation,
                 "sequence": id.sequence,
@@ -259,8 +254,21 @@ pub fn observation_to_telemetry(obs: &StoredObservation, default_host: &str) -> 
                 "metric_type": metric_type_str(*metric_type),
                 "reset": reset,
                 "version": obs.version(),
-            })),
-        }),
+            });
+            if let Some(observation) = obs.metric_v5() {
+                metadata["labels"] = serde_json::json!(&observation.data.labels);
+            }
+            IngestEnvelope::Metric(MetricPoint {
+                timestamp_ms,
+                name: name.clone(),
+                value: *value,
+                host: default_host.to_owned(),
+                slice: "spindle".to_owned(),
+                unit: obs.resource().to_owned(),
+                pid: None,
+                labels_json: with_run_context(metadata),
+            })
+        }
         Data::Log { level, message } => IngestEnvelope::Log(LogRecord {
             timestamp_ms,
             level: level_str(*level).to_owned(),
@@ -327,6 +335,40 @@ pub fn observation_to_telemetry(obs: &StoredObservation, default_host: &str) -> 
     }
 }
 
+// Inspect every decoded top-level version field. A duplicate cannot hide a
+// custody claim by overwriting it in a JSON value map.
+fn claims_v5_spindle_projection(labels: &str) -> bool {
+    struct VersionProbe;
+    impl<'de> serde::de::Visitor<'de> for VersionProbe {
+        type Value = bool;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("metric metadata object")
+        }
+
+        fn visit_map<M: serde::de::MapAccess<'de>>(
+            self,
+            mut fields: M,
+        ) -> Result<Self::Value, M::Error> {
+            let mut claims_v5 = false;
+            while let Some(field) = fields.next_key::<String>()? {
+                if field == "version" {
+                    let value = fields.next_value::<serde_json::Value>()?;
+                    claims_v5 |= value.as_u64() == Some(u64::from(VERSION_V5));
+                } else {
+                    fields.next_value::<serde::de::IgnoredAny>()?;
+                }
+            }
+            Ok(claims_v5)
+        }
+    }
+    serde::Deserializer::deserialize_map(
+        &mut serde_json::Deserializer::from_str(labels),
+        VersionProbe,
+    )
+    .unwrap_or(false)
+}
+
 /// Parses either a direct `IngestEnvelope` JSON line or a versioned `StoredObservation`.
 pub fn parse_ingest_line(line: &str, default_host: &str) -> Result<IngestEnvelope, String> {
     let trimmed = line.trim();
@@ -365,9 +407,18 @@ pub fn parse_ingest_line(line: &str, default_host: &str) -> Result<IngestEnvelop
         _ => None,
     };
     if let Some(env) = direct {
+        if let IngestEnvelope::Metric(point) = &env
+            && point.slice == "spindle"
+            && claims_v5_spindle_projection(&point.labels_json)
+        {
+            return Err("v5 Spindle metric projection requires custody".into());
+        }
         return Ok(env);
     }
     let obs = decode_versioned(trimmed.as_bytes())?;
+    if obs.metric_v5().is_some() {
+        return Err("v5 Spindle metric projection requires custody".into());
+    }
     Ok(observation_to_telemetry(&obs, default_host))
 }
 
@@ -1294,6 +1345,47 @@ mod v4_bridge_tests {
             &"1".repeat(10_000),
         );
         assert!(parse_ingest_line(&oversized, "host").is_err());
+    }
+
+    #[test]
+    fn bounded_v5_labels_project_with_custody_but_are_rejected_on_direct_ingest() {
+        let raw = r#"{"version":5,"registry":"fabrico11y/5","context":{"run_id":"00000000-0000-4000-8000-000000000001"},"identity":{"producer":"probe","generation":"generation","sequence":7},"timestamp_ns":1000000,"resource":"gpu","data":{"kind":"metric","name":"stage.latency","unit":"ms","value":1.0,"metric_type":"gauge","reset":false,"labels":{"stage":"read","lane":"甲"}}}"#;
+        let observation = decode_versioned(raw.as_bytes()).unwrap();
+        let IngestEnvelope::Metric(projected) = observation_to_telemetry(&observation, "host")
+        else {
+            panic!("expected metric");
+        };
+        let fields: serde_json::Value = serde_json::from_str(&projected.labels_json).unwrap();
+        assert_eq!(
+            fields["labels"],
+            serde_json::json!({"stage": "read", "lane": "甲"})
+        );
+        assert_eq!(fields["producer"], "probe");
+        assert_eq!(fields["generation"], "generation");
+        assert_eq!(fields["sequence"], 7);
+        assert_eq!(fields["version"], 5);
+        assert_eq!(
+            fields["context_run_id"],
+            "00000000-0000-4000-8000-000000000001"
+        );
+        assert_eq!(
+            parse_ingest_line(raw, "host").unwrap_err(),
+            "v5 Spindle metric projection requires custody"
+        );
+        for labels_json in [
+            projected.labels_json.as_str(),
+            r#"{"version":5,"version":3,"labels":{"lane":"甲"}}"#,
+            r#"{"version":3,"ver\u0073ion":5,"labels":{"lane":"甲"}}"#,
+            r#"{"ver\u0073ion":5,"version":3,"labels":{"lane":"甲"}}"#,
+        ] {
+            let mut direct_point = projected.clone();
+            direct_point.labels_json = labels_json.to_owned();
+            let direct = serde_json::to_string(&IngestEnvelope::Metric(direct_point)).unwrap();
+            assert_eq!(
+                parse_ingest_line(&direct, "host").unwrap_err(),
+                "v5 Spindle metric projection requires custody"
+            );
+        }
     }
 
     #[test]

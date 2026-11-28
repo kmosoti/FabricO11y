@@ -1320,6 +1320,7 @@ fn handle(
                 observation::VERSION,
                 observation::VERSION_V3,
                 observation::VERSION_V4,
+                observation::VERSION_V5,
             ],
             origins: auth.nodes.keys().filter(|o| allows(o)).cloned().collect(),
             max_frame: canonical::MAX_FRAME,
