@@ -1295,6 +1295,148 @@ mod tests {
     }
 
     #[test]
+    fn mirror_sync_failures_expose_committed_redb_and_replay_repairs_mirror() {
+        use crate::atomic_fd::{MIRROR_SYNC_FAULT, MirrorSyncFault};
+        use fabric_graph::{EdgeKind, NodeKind};
+        use std::collections::BTreeMap;
+        fn fixture(newer: bool) -> (HostSnapshot, DriftReport, CausalGraph) {
+            let tag = if newer { "new" } else { "old" };
+            let snapshot = HostSnapshot {
+                timestamp_unix_ms: if newer {
+                    1_700_000_000_124
+                } else {
+                    1_700_000_000_123
+                },
+                hostname: tag.into(),
+                units: vec![fabric_core::UnitRecord {
+                    name: "test.service".into(),
+                    active_state: tag.into(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+            let mut graph = CausalGraph::new();
+            graph.upsert_node("one", NodeKind::Agent, tag, BTreeMap::new());
+            graph.upsert_node("two", NodeKind::SystemdUnit, "two", BTreeMap::new());
+            graph.add_edge("one", "two", EdgeKind::Controls, 1.0, tag);
+            (snapshot, DriftReport::default(), graph)
+        }
+        for fault in [
+            MirrorSyncFault::StagedFile,
+            MirrorSyncFault::DestinationDirectory,
+        ] {
+            let dir = non_tmp_dir();
+            let store = CatalogStore::open(dir.path()).unwrap();
+            let (old_snapshot, old_drift, old_graph) = fixture(false);
+            store
+                .commit_cycle(&old_snapshot, &old_drift, &old_graph)
+                .unwrap();
+            store.set_watermark("custody-test", 91).unwrap();
+            let original_mirror = fs::read(store.layout().live_state_json()).unwrap();
+            let (snapshot, drift, graph) = fixture(true);
+            MIRROR_SYNC_FAULT.with(|slot| slot.set(Some(fault)));
+            let failed = store.commit_cycle(&snapshot, &drift, &graph);
+            let remaining = MIRROR_SYNC_FAULT.with(|slot| slot.replace(None));
+            assert_eq!(remaining, None, "requested fault must fire");
+            let error = failed.expect_err("mirror failure must not acknowledge commit");
+            match fault {
+                MirrorSyncFault::StagedFile => assert!(
+                    error.contains("injected mirror file sync failure"),
+                    "{error}"
+                ),
+                MirrorSyncFault::DestinationDirectory => {
+                    assert!(error.contains("failed syncing state dir"), "{error}")
+                }
+            }
+            {
+                let db = store.open_db_with_retry().unwrap();
+                let txn = db.begin_read().unwrap();
+                let entries = |table: TableDefinition<&str, &[u8]>| {
+                    txn.open_table(table)
+                        .unwrap()
+                        .iter()
+                        .unwrap()
+                        .map(|entry| {
+                            let (key, value) = entry.unwrap();
+                            (key.value().to_owned(), value.value().to_vec())
+                        })
+                        .collect::<BTreeMap<_, _>>()
+                };
+                let entities = graph
+                    .nodes()
+                    .iter()
+                    .map(|(key, node)| (key.clone(), serde_json::to_vec(node).unwrap()))
+                    .collect();
+                assert_eq!(entries(ENTITIES_TABLE), entities);
+                assert_eq!(
+                    entries(UNITS_TABLE),
+                    BTreeMap::from([(
+                        "test.service".into(),
+                        serde_json::to_vec(&snapshot.units[0]).unwrap()
+                    )])
+                );
+                let edges = serde_json::to_vec(&graph.edges()).unwrap();
+                assert_eq!(
+                    entries(ADJ_OUT_TABLE),
+                    BTreeMap::from([("one".into(), edges.clone())])
+                );
+                assert_eq!(
+                    entries(ADJ_IN_TABLE),
+                    BTreeMap::from([("two".into(), edges)])
+                );
+                assert_eq!(
+                    entries(ANOMALIES_TABLE).get("latest_drift").unwrap(),
+                    &serde_json::to_vec(&drift).unwrap()
+                );
+                let meta = txn.open_table(META_TABLE).unwrap();
+                assert_eq!(
+                    meta.get("latest_snapshot").unwrap().unwrap().value(),
+                    serde_json::to_vec(&snapshot).unwrap()
+                );
+                assert_eq!(
+                    meta.get("latest_graph").unwrap().unwrap().value(),
+                    serde_json::to_vec(&graph).unwrap()
+                );
+                let watermarks = txn.open_table(WATERMARKS_TABLE).unwrap();
+                assert_eq!(
+                    watermarks
+                        .get("collector_last_ms")
+                        .unwrap()
+                        .unwrap()
+                        .value(),
+                    snapshot.timestamp_unix_ms as u64
+                );
+                assert_eq!(watermarks.get("custody-test").unwrap().unwrap().value(), 91);
+            }
+            let observed_bytes = fs::read(store.layout().live_state_json()).unwrap();
+            match fault {
+                MirrorSyncFault::StagedFile => assert_eq!(observed_bytes, original_mirror),
+                MirrorSyncFault::DestinationDirectory => {
+                    assert_ne!(observed_bytes, original_mirror)
+                }
+            }
+            drop(store);
+            let reopened = CatalogStore::open(dir.path()).unwrap();
+            let live = reopened.load_live_state().unwrap().unwrap();
+            let expected = match fault {
+                MirrorSyncFault::StagedFile => &old_snapshot,
+                MirrorSyncFault::DestinationDirectory => &snapshot,
+            };
+            assert_eq!(
+                serde_json::to_vec(&live.snapshot).unwrap(),
+                serde_json::to_vec(expected).unwrap()
+            );
+            reopened.commit_cycle(&snapshot, &drift, &graph).unwrap();
+            let live = reopened.load_live_state().unwrap().unwrap();
+            assert_eq!(
+                serde_json::to_vec(&live.snapshot).unwrap(),
+                serde_json::to_vec(&snapshot).unwrap()
+            );
+            assert_eq!(reopened.read_watermark("custody-test").unwrap(), Some(91));
+        }
+    }
+
+    #[test]
     fn commit_cycle_updates_existing_entity_bytes() {
         let dir = non_tmp_dir();
         let store = CatalogStore::open(dir.path()).unwrap();
