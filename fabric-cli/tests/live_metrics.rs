@@ -76,3 +76,32 @@ fn socket_failure_has_no_fallback() {
     assert!(output.stdout.is_empty());
     assert!(String::from_utf8_lossy(&output.stderr).contains("daemon socket connect"));
 }
+
+#[test]
+fn explicit_socket_overrides_runtime_directory() {
+    let root = Scratch::new();
+    let actual = root.0.join("actual");
+    std::fs::create_dir(&actual).unwrap();
+    let path = actual.join("daemon.sock");
+    let listener = UnixListener::bind(&path).unwrap();
+    let server = thread::spawn(move || {
+        let (stream, _) = listener.accept().unwrap();
+        let mut stream = BufReader::new(stream);
+        let mut line = String::new();
+        stream.read_line(&mut line).unwrap();
+        let page = serde_json::json!({"kind":"live_metrics_v1","version":1,"origin":"origin","epoch":"a".repeat(64),"observed_through":0,"epoch_start_after":0,"oldest_retained":null,"highest_lost":0,"highest_lost_reason":null,"gap":false,"gap_reason":null,"next_after":0,"entries":[]});
+        stream
+            .get_mut()
+            .write_all(format!("{page}\n").as_bytes())
+            .unwrap();
+    });
+    let result = cli(&root).arg("--socket").arg(&path).output().unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let body: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(body["data"]["epoch"], "a".repeat(64));
+    server.join().unwrap();
+}

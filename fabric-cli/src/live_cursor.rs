@@ -3,12 +3,18 @@ use clap::Args;
 use fabric::query::{LiveCursorRequest, LivePage};
 use fabric_collect::{DaemonRequest, DaemonResponse, default_daemon_socket};
 use fabric_core::StorageLayout;
+use fabric_store::validate_non_tmp_path_on_disk;
+use std::os::unix::fs::FileTypeExt;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 
 #[derive(Debug, Args)]
 pub(super) struct Args {
+    /// Existing daemon socket; defaults to the regular daemon socket path.
+    #[arg(long)]
+    socket: Option<PathBuf>,
     /// Origin from the previous page; omit both origin and epoch for a fresh cursor.
     #[arg(long, requires = "epoch")]
     origin: Option<String>,
@@ -42,15 +48,29 @@ pub(super) async fn run(
         max_bytes: args.max_bytes,
     };
     request.validate().map_err(str::to_owned)?;
-    let page = tokio::time::timeout(Duration::from_millis(750), exchange(layout, &request))
+    let socket = match &args.socket {
+        Some(path) => {
+            let path = validate_non_tmp_path_on_disk(path).map_err(|e| e.to_string())?;
+            if !std::fs::metadata(&path)
+                .map_err(|e| format!("daemon socket: {}", e.kind()))?
+                .file_type()
+                .is_socket()
+            {
+                return Err("daemon socket path is not a socket".into());
+            }
+            path
+        }
+        None => default_daemon_socket(layout),
+    };
+    let page = tokio::time::timeout(Duration::from_millis(750), exchange(&socket, &request))
         .await
         .map_err(|_| "daemon live cursor timed out".to_owned())??;
-    validate_page(&request, &page)?;
+    page.validate_for(&request).map_err(str::to_owned)?;
     emit_json("live-metrics", &page)
 }
 
-async fn exchange(layout: &StorageLayout, request: &LiveCursorRequest) -> Result<LivePage, String> {
-    let mut stream = UnixStream::connect(default_daemon_socket(layout))
+async fn exchange(socket: &Path, request: &LiveCursorRequest) -> Result<LivePage, String> {
+    let mut stream = UnixStream::connect(socket)
         .await
         .map_err(|e| format!("daemon socket connect: {}", e.kind()))?;
     let wire = DaemonRequest::LiveMetricsV1 {
@@ -82,46 +102,4 @@ async fn exchange(layout: &StorageLayout, request: &LiveCursorRequest) -> Result
         DaemonResponse::Error { message } => Err(message),
         _ => Err("unexpected daemon cursor reply".into()),
     }
-}
-
-fn validate_page(request: &LiveCursorRequest, page: &LivePage) -> Result<(), String> {
-    if page.version != 1
-        || page.origin.is_empty()
-        || page.origin.len() > 128
-        || page.origin.chars().any(char::is_control)
-        || page.epoch.len() != 64
-        || !page
-            .epoch
-            .bytes()
-            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-        || request.origin.as_ref().is_some_and(|v| v != &page.origin)
-        || request.epoch.as_ref().is_some_and(|v| v != &page.epoch)
-        || page.entries.len() > request.count
-        || page.epoch_start_after > page.observed_through
-        || page.highest_lost > page.observed_through
-        || page
-            .oldest_retained
-            .is_some_and(|v| v > page.observed_through)
-        || page.gap != (request.after < page.highest_lost || request.after < page.epoch_start_after)
-        || page.gap != page.gap_reason.is_some()
-        || (page.highest_lost == 0) != page.highest_lost_reason.is_none()
-        || page.next_after < request.after
-        || page.next_after > page.observed_through
-        || page.next_after
-            != page
-                .entries
-                .last()
-                .map_or(page.observed_through, |entry| entry.record_id)
-        || page
-            .entries
-            .iter()
-            .any(|entry| entry.record_id <= request.after || entry.record_id > page.next_after)
-        || page
-            .entries
-            .windows(2)
-            .any(|entries| entries[0].record_id >= entries[1].record_id)
-    {
-        return Err("invalid daemon live cursor response".into());
-    }
-    Ok(())
 }

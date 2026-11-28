@@ -510,6 +510,11 @@ The CLI exposes the same view as `fabric --json live-metrics`. Resume with
 `--origin ORIGIN --epoch EPOCH --after NEXT_AFTER`; `--count` and `--max-bytes`
 set the bounded page size. The command returns the versioned CLI JSON envelope
 and fails on a socket or cursor error; it does not query timestamp history.
+By default it uses the regular daemon socket resolution: `FABRIC_RUNTIME_DIR`
+when valid, then the default-data-directory XDG runtime location, otherwise the
+storage layout's state directory. For a spindle-only daemon, which binds the
+state directory regardless of `FABRIC_RUNTIME_DIR`, pass its existing socket
+explicitly with `--socket /path/to/state/daemon.sock`.
 
 The existing `hot_metrics` operation and its default budget remain available.
 Rust consumers using `fabric-client` with its direct daemon-socket transport can

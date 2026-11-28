@@ -81,3 +81,55 @@ pub struct LivePage {
     pub next_after: u64,
     pub entries: Vec<LiveMetric>,
 }
+
+impl LivePage {
+    /// Reject inconsistent or identity-mismatched replies before advancing a cursor.
+    pub fn validate_for(&self, request: &LiveCursorRequest) -> Result<(), &'static str> {
+        if self.version != 1
+            || self.origin.is_empty()
+            || self.origin.len() > 128
+            || self.origin.chars().any(char::is_control)
+            || self.epoch_start_after > self.observed_through
+            || self.highest_lost > self.observed_through
+            || page
+                .oldest_retained
+                .is_some_and(|id| id > self.observed_through)
+            || self.gap
+                != (request.after < self.highest_lost || request.after < self.epoch_start_after)
+            || self.gap != self.gap_reason.is_some()
+            || (self.highest_lost == 0) != self.highest_lost_reason.is_none()
+            || self.epoch.len() != 64
+            || !page
+                .epoch
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+            || request
+                .origin
+                .as_ref()
+                .is_some_and(|origin| origin != &self.origin)
+            || request
+                .epoch
+                .as_ref()
+                .is_some_and(|epoch| epoch != &self.epoch)
+            || self.entries.len() > request.count
+            || self.next_after < request.after
+            || self.next_after > self.observed_through
+            || self.next_after
+                != page
+                    .entries
+                    .last()
+                    .map_or(self.observed_through, |entry| entry.record_id)
+            || page
+                .entries
+                .iter()
+                .any(|entry| entry.record_id <= request.after || entry.record_id > self.next_after)
+            || page
+                .entries
+                .windows(2)
+                .any(|entries| entries[0].record_id >= entries[1].record_id)
+        {
+            return Err("invalid daemon live cursor response");
+        }
+        Ok(())
+    }
+}
