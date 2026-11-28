@@ -254,9 +254,14 @@ impl FabricQueryClient {
         let stderr = child.stderr.take().ok_or("fabric-query stderr missing")?;
         let (write, out, err, status) = tokio::time::timeout(QUERY_TIMEOUT, async {
             tokio::join!(
-                async {
-                    stdin.write_all(input).await?;
-                    stdin.shutdown().await
+                async move {
+                    let result = async {
+                        stdin.write_all(input).await?;
+                        stdin.shutdown().await
+                    }
+                    .await;
+                    drop(stdin);
+                    result
                 },
                 async {
                     let mut b = Vec::new();
