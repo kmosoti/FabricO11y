@@ -17,7 +17,8 @@ fn body(id: &str) -> RevisionBody {
         extensions: BTreeMap::new(),
     }
 }
-fn basis() -> (Vec<u8>, [u8; 32], [u8; 32], [u8; 32], [u8; 32]) {
+type Basis = (Vec<u8>, [u8; 32], [u8; 32], [u8; 32], [u8; 32]);
+fn basis() -> Basis {
     let mut c = Corpus::default();
     let a = c.admit(body("a")).unwrap();
     let b = c.admit(body("b")).unwrap();
