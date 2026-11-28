@@ -398,6 +398,20 @@ fn unknown_inflight_write_and_gateway_death_preserve_pending_binding() {
     }
     drop(proxy);
     config.engine_endpoint = Some(engine.clone());
+    // Make a spurious accounting refresh observable even on a fast restart.
+    let clock_deadline = Instant::now() + Duration::from_secs(4);
+    while std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        <= u64::try_from(before.0).unwrap()
+    {
+        assert!(
+            Instant::now() < clock_deadline,
+            "server clock did not advance"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
     let current_control = root.path().join("current-control.sqlite");
     fs::rename(config.storage.join("canonical.sqlite"), &current_control).unwrap();
     fs::copy(&old_control, config.storage.join("canonical.sqlite")).unwrap();
