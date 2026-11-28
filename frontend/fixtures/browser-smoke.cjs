@@ -14,6 +14,8 @@ if (!profile || !driver || !chrome) throw Error('UI_PROFILE, CHROMEDRIVER and CH
 let mode = 'normal';
 const requests = [];
 const maxRequests = 8;
+let heldResponse = null;
+let heldClosed = false;
 const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/v1/query') {
     let chunks = [], length = 0;
@@ -24,6 +26,11 @@ const server = http.createServer((req, res) => {
         if (requests.length >= maxRequests) { res.writeHead(429); return res.end(); }
         requests.push(q);
         if (mode === 'denied') { res.writeHead(403); return res.end(); }
+        if (mode === 'held') {
+          heldResponse = res;
+          res.on('close', () => { heldClosed = true; });
+          return;
+        }
         const file = q.operation.operation === 'list_runs' ? 'first.json' : q.operation.operation === 'run_summary' ? 'detail.json' : null;
         if (!file) { res.writeHead(400); return res.end(); }
         res.writeHead(200, {'Content-Type':'application/json','Cache-Control':'no-store'}); res.end(fs.readFileSync(path.join(fixtures,file)));
@@ -104,12 +111,34 @@ async function wait(fn, ms=10000) { const end=Date.now()+ms; let last; while(Dat
     assert.equal(widths[1], 320, `unexpected viewport ${widths}`);
     assert.ok(widths[0] <= widths[1] + 1, `horizontal overflow ${widths}`);
     assert.ok(await find(`button[aria-label="Inspect summary for ${run}"]`));
+    mode = 'held';
+    submit = await find('button[type=submit]');
+    await keys(submit, '\uE007');
+    await wait(() => heldResponse && status());
+    const stopButton = await js("return [...document.querySelectorAll('button')].find(x => x.textContent === 'Stop waiting')");
+    assert.ok(stopButton);
+    await js('arguments[0].focus()', stopButton);
+    await keys(stopButton['element-6066-11e4-a52e-4f735466cecf'], '\uE007');
+    await wait(async () => (await status()).includes('Backend work may still continue'));
+    await wait(() => heldClosed);
+    mode = 'normal';
+    const retryButton = await js("return [...document.querySelectorAll('button')].find(x => x.textContent === 'Retry read')");
+    assert.ok(retryButton);
+    await keys(retryButton['element-6066-11e4-a52e-4f735466cecf'], '\uE007');
+    await wait(async () => (await status()) === 'Results ready');
+    assert.equal(requests.at(-1).operation.operation, 'list_runs');
+    assert.equal(requests.at(-1).cursor, null);
+    // Attempt late completion after cancellation; the new view must remain ready.
+    heldResponse.end(fs.readFileSync(path.join(fixtures, 'first.json')));
+    await delay(200);
+    assert.equal(await status(), 'Results ready');
+    assert.ok(await find(`button[aria-label="Inspect summary for ${run}"]`));
     mode = 'denied';
     submit = await find('button[type=submit]');
     await keys(submit, '\uE007');
     await wait(async () => (await status()).includes('Access denied'));
-    assert.equal(requests.length, 4, 'unexpected synthetic requests');
-    console.log('Synthetic desktop browser smoke passed: list, summary, focus, denied, narrow reflow.');
+    assert.equal(requests.length, 6, 'unexpected synthetic requests');
+    console.log('Synthetic desktop browser smoke passed: list, summary, focus, cancellation, retry, denied, narrow reflow.');
   } finally {
     if(session) { try { await call(wd,'DELETE',`/session/${session}`); } catch {} }
     if (proc && proc.exitCode === null && proc.pid) {

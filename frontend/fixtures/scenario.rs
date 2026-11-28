@@ -118,7 +118,7 @@ pub fn run() -> String {
     let after_disconnect = state.phase();
     let reconnect = state
         .transition(Event::Start {
-            request: Box::new(request),
+            request: Box::new(request.clone()),
             expected_authority: "auth-1".into(),
         })
         .unwrap();
@@ -126,11 +126,74 @@ pub fn run() -> String {
         reconnect.effect,
         Some(Effect::Request { generation: 6, .. })
     ));
+    let before_late = serde_json::to_vec(&state).unwrap();
+    assert_eq!(
+        state
+            .transition(Event::Response {
+                generation: 4,
+                bytes: first.clone()
+            })
+            .unwrap()
+            .change,
+        Change::Unchanged
+    );
+    assert_eq!(serde_json::to_vec(&state).unwrap(), before_late);
     state
         .transition(Event::Response {
             generation: 6,
             bytes: first,
         })
         .unwrap();
+    // Restarting a cancelled continuation is a fresh first page at its fixed snapshot.
+    let mut paged = State::default();
+    paged
+        .transition(Event::Start {
+            request: Box::new(request.clone()),
+            expected_authority: "auth-1".into(),
+        })
+        .unwrap();
+    paged
+        .transition(Event::Response {
+            generation: 1,
+            bytes: include_bytes!("first.json").to_vec(),
+        })
+        .unwrap();
+    let next = paged.transition(Event::Next).unwrap();
+    let Some(Effect::Request {
+        request: next_request,
+        ..
+    }) = next.effect
+    else {
+        panic!("missing page")
+    };
+    paged.transition(Event::Cancel).unwrap();
+    let mut fresh = *next_request;
+    fresh.cursor = None;
+    assert_eq!(fresh.snapshot["alpha"], 3);
+    paged
+        .transition(Event::Start {
+            request: Box::new(fresh),
+            expected_authority: "auth-1".into(),
+        })
+        .unwrap();
+    let before_old_page = serde_json::to_vec(&paged).unwrap();
+    assert_eq!(
+        paged
+            .transition(Event::Response {
+                generation: 2,
+                bytes: include_bytes!("second.json").to_vec()
+            })
+            .unwrap()
+            .change,
+        Change::Unchanged
+    );
+    assert_eq!(serde_json::to_vec(&paged).unwrap(), before_old_page);
+    paged
+        .transition(Event::Response {
+            generation: 3,
+            bytes: include_bytes!("first.json").to_vec(),
+        })
+        .unwrap();
+    assert_eq!(paged.rows().len(), 1);
     json!({"completed":saved,"detail":detail_result,"detail_start":detail_start,"stale_detail":stale_detail.change,"after_cancel":cancelled.change,"after_disconnect":after_disconnect,"after_reconnect":state.phase(),"generation":state.generation(),"stale":stale.change}).to_string()
 }
