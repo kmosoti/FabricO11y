@@ -354,6 +354,28 @@ All collection and query execution obeys hard self-preservation limits:
   - `state/catalog.redb` + `state/live_state.json`: live entity registry, adjacency tables (`adj_out`/`adj_in`), unit hygiene records, watermarks (including `spindle_watermark_id`, persisted strictly **after** all OLAP Parquet domain flushes succeed), and recent anomalies.
   - `HotMetricRing` (in RAM, Sans-I/O in `fabric-core`): strictly capped at `32 MiB` with modular `wrapping` Gorilla delta-of-delta + XOR compression (preserving `labels_json`), buffer rollback on failed flush, and 60s Parquet flushes.
   - `olap/{metrics,logs,traces,fs_events,edges}/dt=YYYY-MM-DD/*.parquet`: ZSTD-compressed Arrow/Parquet partitions bounded by `RetentionJanitor` (`4 GiB` default cap, >7d downsampling).
+- **Bounded staged Parquet compaction:** `fabric-store` writes a replacement to a new
+  staging inode before changing validated inputs. The compaction output cap is
+  `64 MiB`; it applies to the serialized replacement file, including its footer.
+  Before writing, Linux `fallocate` requests allocation on that same inode for
+  the cap. This applies to compaction; uncapped non-compaction staging is
+  unchanged. After serialization, the store truncates the file to its actual
+  length, calls `sync_all`, checks the device, inode and length, then follows the
+  existing durable replace-intent and atomic promotion path. If allocation is
+  unsupported or fails, the typed refusal aborts and cleans up staging before
+  touching the old partition files. An oversized output is likewise not
+  published; compaction may retry with a smaller input group. On an allocation
+  refusal, `RetentionJanitor` returns an error and defers quota eviction for
+  the entire pass. Any atomic replacements already completed in that pass
+  remain in place; unrelated maintenance errors keep the existing eviction
+  policy. A later pass can still evict older files under that policy. This cap
+  bounds one replacement output, not input files, peak old-plus-new usage, total
+  partition or retention usage, or process-wide storage. `fallocate` support
+  and guarantees depend on the filesystem and storage stack; copy-on-write,
+  thin-provisioned, networked or other layered storage can have different
+  allocation semantics. Actual disk-exhaustion behavior and archive audit or
+  restore qualification are not established here. Retention and eviction
+  policy remain separate.
 - **Resource confinement (`fabrico11y.slice`):** `MemoryHigh=256M`, `MemoryMax=512M`, `CPUQuota=15%`, `IOWeight=30`, `TasksMax=64`, plus a `200 MiB` RSS self-shedding watchdog inside `fabric-collect`. The collector derives an [elastic hot cache budget](collection.md#elastic-collector-memory) from cgroup v2 and returns optional cache capacity on pressure. The staging and custody paths retain their existing charge and recovery contracts.
 - **Receiver resource leases:** Spindle and Fabric Server derive connection capacity from the process descriptor limit. Fabric Server samples memory and descriptor pressure to defer fresh analytical work. Active leases keep their charge through cleanup, and canonical custody and readback use the normal connection and storage paths. See [receiver resource pressure](canonical-custody.md#resource-pressure).
 - **Formal proofs & fuzzing (`proofs/`, `fuzz/`):** Verus + Charon/Aeneas Lean 4 (`ExtractedAdmission.lean`), standalone Lean 4 (`Telemetry.lean`), Z3 `QF_BV` SMT (`TelemetrySmt.smt2`), and 8 `cargo-fuzz` targets (`gorilla_ring_roundtrip`, `unified_query_and_ipc`, `causal_graph_and_wire`, plus 5 core custody targets).
