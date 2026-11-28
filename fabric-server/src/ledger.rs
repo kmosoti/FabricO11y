@@ -589,13 +589,37 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
             }
             cursor
         } else {
-            let count: i64 = tx
+            let scope_head: Option<i64> = tx
                 .query_row(
-                    "SELECT count(*) FROM plan_decision WHERE scope=?1 AND id<=?2",
-                    params![request.scope.0, frontier],
+                    "SELECT head FROM plan_scope WHERE scope=?1",
+                    [&request.scope.0],
                     |r| r.get(0),
                 )
                 .map_err(err)?;
+            let mut previous = None;
+            let mut count = 0i64;
+            {
+                let mut stmt = tx.prepare("SELECT id,previous_head FROM plan_decision WHERE scope=?1 AND id<=?2 ORDER BY id LIMIT 4097").map_err(err)?;
+                let rows = stmt
+                    .query_map(params![request.scope.0, frontier], |r| {
+                        Ok((r.get::<_, i64>(0)?, r.get::<_, Option<i64>>(1)?))
+                    })
+                    .map_err(err)?;
+                for row in rows {
+                    let (id, predecessor) = row.map_err(err)?;
+                    count += 1;
+                    if count > 4096 {
+                        return Ok(Err(Failure::Invalid));
+                    }
+                    if predecessor != previous {
+                        return Ok(Err(Failure::Gap));
+                    }
+                    previous = Some(id);
+                }
+            }
+            if previous != scope_head {
+                return Ok(Err(Failure::Gap));
+            }
             crate::plan_cursor::Cursor {
                 epoch,
                 frontier,
@@ -614,15 +638,17 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
         {
             return Ok(Err(Failure::Invalid));
         }
-        let count: i64 = tx
-            .query_row(
-                "SELECT count(*) FROM plan_decision WHERE scope=?1 AND id<=?2",
-                params![request.scope.0, cursor.frontier],
-                |r| r.get(0),
-            )
-            .map_err(err)?;
-        if count != cursor.count {
-            return Ok(Err(Failure::Gap));
+        if request.cursor.is_some() {
+            let count: i64 = tx
+                .query_row(
+                    "SELECT count(*) FROM plan_decision WHERE scope=?1 AND id<=?2",
+                    params![request.scope.0, cursor.frontier],
+                    |r| r.get(0),
+                )
+                .map_err(err)?;
+            if count != cursor.count {
+                return Ok(Err(Failure::Gap));
+            }
         }
         let mut stmt = tx.prepare("SELECT id,result FROM plan_decision WHERE scope=?1 AND id>?2 AND id<=?3 ORDER BY id LIMIT ?4").map_err(err)?;
         let rows: Vec<(i64, String)> = stmt

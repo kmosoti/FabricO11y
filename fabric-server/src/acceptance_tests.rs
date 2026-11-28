@@ -826,6 +826,119 @@ fn cursor_routes_fence_configured_and_durable_policy_after_restart() {
 }
 
 #[test]
+fn first_cursor_page_detects_missing_chain_and_allows_sparse_scopes() {
+    use canonical::{PlanCursorFailure, PlanPageRequest};
+    assert!(
+        fs::read_to_string("/proc/self/cgroup")
+            .unwrap()
+            .contains("/fabrico11y.slice/")
+    );
+    let scratch = std::env::var_os("TMPDIR").map(PathBuf::from).unwrap();
+    let root = tempfile::tempdir_in(scratch).unwrap();
+    let config = config(root.path());
+    let (address, stop, server) = start(&config);
+    let authority = match exchange(&address, READER, &Request::Progress) {
+        Response::Progress { authority, .. } => authority,
+        other => panic!("{other:?}"),
+    };
+    let page = |scope: &str| Request::PlanPage {
+        request: PlanPageRequest {
+            scope: PlanScope(scope.into()),
+            cursor: None,
+            limit: 64,
+            ttl_secs: 900,
+        },
+    };
+    assert!(
+        matches!(exchange(&address, OTHER, &page("other")), Response::PlanPage { page } if page.decisions.is_empty())
+    );
+    let raw = proposal(1, 'a');
+    let other_raw = proposal(2, 'b').replace("\\\"plan\\\"", "\\\"other\\\"");
+    assert_ne!(other_raw, proposal(2, 'b'));
+    assert!(matches!(
+        exchange(
+            &address,
+            NODE,
+            &Request::Ingest {
+                origin: "origin".into(),
+                records: vec![
+                    ForwardRecord {
+                        source_id: 1,
+                        raw: raw.clone()
+                    },
+                    ForwardRecord {
+                        source_id: 2,
+                        raw: other_raw.clone()
+                    }
+                ]
+            }
+        ),
+        Response::Committed { through: 2, .. }
+    ));
+    let one = result(accept(
+        &address,
+        WRITER,
+        &command(&authority, "chain-one", None, 1, &raw),
+    ));
+    let mut other: AcceptPlan =
+        serde_json::from_str(&command(&authority, "other-one", None, 2, &other_raw)).unwrap();
+    other.scope = PlanScope("other".into());
+    let _other = result(accept(
+        &address,
+        OTHER,
+        &serde_json::to_string(&other).unwrap(),
+    ));
+    let two = result(accept(
+        &address,
+        WRITER,
+        &command(&authority, "chain-two", Some(head(&one)), 1, &raw),
+    ));
+    let three = result(accept(
+        &address,
+        WRITER,
+        &command(&authority, "chain-three", Some(head(&two)), 1, &raw),
+    ));
+    let ids = [head(&one), head(&two), head(&three)];
+    assert!(ids[1] > ids[0] + 1);
+    assert!(
+        matches!(exchange(&address, WRITER, &page("plan")), Response::PlanPage { page } if page.decisions.len() == 3)
+    );
+    assert!(
+        matches!(exchange(&address, OTHER, &page("other")), Response::PlanPage { page } if page.decisions.len() == 1)
+    );
+    let db = rusqlite::Connection::open(config.storage.join("canonical.sqlite")).unwrap();
+    db.execute_batch("CREATE TEMP TABLE saved_decisions AS SELECT * FROM plan_decision;")
+        .unwrap();
+    for id in ids {
+        db.execute("DELETE FROM plan_decision WHERE id=?1", [id])
+            .unwrap();
+        assert!(
+            matches!(
+                exchange(&address, WRITER, &page("plan")),
+                Response::PlanCursorFailure {
+                    reason: PlanCursorFailure::Gap
+                }
+            ),
+            "missing {id}"
+        );
+        assert!(
+            matches!(exchange(&address, OTHER, &page("other")), Response::PlanPage { page } if page.decisions.len() == 1)
+        );
+        db.execute(
+            "INSERT INTO plan_decision SELECT * FROM saved_decisions WHERE id=?1",
+            [id],
+        )
+        .unwrap();
+    }
+    assert!(
+        matches!(exchange(&address, WRITER, &page("plan")), Response::PlanPage { page } if page.decisions.len() == 3)
+    );
+    drop(db);
+    stop.store(true, Ordering::SeqCst);
+    server.join().unwrap();
+}
+
+#[test]
 fn scoped_cursor_survives_restart_and_hints_coalesce() {
     use canonical::{PlanCursorFailure as Failure, PlanPageRequest};
     let scratch = std::env::var_os("TMPDIR").map(PathBuf::from).unwrap();
