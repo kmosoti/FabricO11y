@@ -3,6 +3,7 @@
 pub mod cgroups;
 pub mod channel;
 pub mod daemon;
+pub mod device_memory;
 pub mod fs_watch;
 pub mod host;
 mod host_export;
