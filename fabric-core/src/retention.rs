@@ -104,8 +104,9 @@ pub fn plan(b: Budget, candidates: &[Candidate]) -> Result<Decision, Invalid> {
         .iter()
         .filter(eligible)
         .filter(|c| {
-            c.rewrite_scratch
-                .is_some_and(|scratch| scratch + b.audit <= b.free)
+            !c.protected
+                && c.rewrite_scratch
+                    .is_some_and(|scratch| scratch + b.audit <= b.free)
         })
         .min_by_key(|c| (c.priority, c.id))
     {
@@ -180,9 +181,12 @@ mod tests {
     #[test]
     fn reservation_archive_and_active_closure() {
         let mut c = candidate(1);
-        let b = budget();
+        let mut b = budget();
+        b.free = 4;
+        c.protected = false;
         c.rewrite_scratch = Some(26);
         assert_eq!(plan(b, &[c]), Ok(Decision::Backpressure));
+        b.free = 30;
         c.rewrite_scratch = Some(25);
         assert_eq!(
             plan(b, &[c]),
@@ -193,6 +197,7 @@ mod tests {
             })
         );
         c.rewrite_scratch = None;
+        c.protected = true;
         c.archive = Some(VerifiedArchive {
             id: 2,
             digest: c.digest,
