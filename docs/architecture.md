@@ -271,12 +271,20 @@ with filesystem space also needed for the rollback journal and owner lock.
 The local API records the caller's evidence and coverage claims. Operator
 authorization, evidence readback and delivery require their own integration.
 
+The local journal can return up to 64 ordered entries per page for its
+provisioned authority and scope. The first page fixes a version frontier;
+later pages use the same frontier across appends and reopening. A page checks
+stored version order, evaluation and receipt consistency, and event identity.
+Keep the local position with its original journal. Its checks do not
+authenticate the history or re-evaluate lifecycle decisions.
+
 ```mermaid
 flowchart LR
     EVAL["Provisioned scope and evaluation"] --> CHECK["Expected version and exact replay"]
     CHECK --> REDUCE["Pure alert lifecycle"]
     REDUCE --> COMMIT["SQLite checkpoint and immutable event"]
     COMMIT --> INTENT["Transition intent in event receipt"]
+    COMMIT --> READ["Ordered local pages at a fixed version"]
 ```
 
 ### Frozen experiment snapshots
