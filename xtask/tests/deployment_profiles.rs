@@ -120,6 +120,23 @@ impl Node {
         assert_eq!(self.health().origin, self.origin);
     }
 
+    fn restart(&mut self, bins: &Path) {
+        assert!(matches!(
+            spindle::transport::request(
+                &self.config.socket,
+                &spindle::Request::Stop,
+                Instant::now() + Duration::from_secs(2),
+            )
+            .unwrap(),
+            Reply::Stopped
+        ));
+        until("Spindle stop", Duration::from_secs(5), || {
+            self.child.0.try_wait().unwrap()
+        });
+        self.child = spawn_spindle(bins, &self.config, None);
+        assert_eq!(self.health().origin, self.origin);
+    }
+
     fn submit(&self, record: &str) -> Receipt {
         spindle::transport::submit_bytes(
             &self.config.socket,
@@ -416,6 +433,125 @@ fn signal_coverage(records: &[(u64, Vec<u8>)]) -> BTreeMap<String, BTreeSet<&'st
             .insert(kind);
     }
     signals
+}
+
+#[test]
+#[ignore = "requires exact release executables and fabrico11y.slice"]
+fn versioned_wire_compatibility_accepts_v2_v3_and_refuses_unannounced_extensions() {
+    assert!(fs::read_to_string("/proc/self/cgroup")
+        .unwrap()
+        .contains("/fabrico11y.slice/"));
+    let bins = PathBuf::from(std::env::var_os("FABRIC_TEST_BIN_DIR").unwrap());
+    let sandbox = xtask::evidence::non_tmp_tempdir().unwrap();
+    let mut node = Node::open(&bins, sandbox.path(), "compat", "compat-fixture-credential");
+    let identity = json!({"producer":"compat-fixture","generation":"legacy","sequence":1});
+    let v2 = json!({
+        "version": 2,
+        "registry": "fabrico11y/2",
+        "identity": identity,
+        "timestamp_ns": 1,
+        "resource": "fixture",
+        "data": {"kind": "event", "name": "v2", "message": "old writer"}
+    })
+    .to_string();
+    let v3 = json!({
+        "version": 3,
+        "registry": "fabrico11y/3",
+        "context": {"run_id": "00000000-0000-4000-8000-000000000001"},
+        "identity": {"producer": "compat-fixture", "generation": "legacy", "sequence": 2},
+        "timestamp_ns": 2,
+        "resource": "fixture",
+        "data": {"kind": "event", "name": "v3", "message": "new writer"}
+    })
+    .to_string();
+    assert_eq!(node.submit(&v2).id, 1);
+    assert_eq!(node.submit(&v3).id, 2);
+    assert!(observation::decode(v3.as_bytes()).is_err(), "v2-only reader must reject v3");
+
+    let future_parent = json!({
+        "version": 2,
+        "registry": "fabrico11y/2",
+        "identity": {"producer": "compat-fixture", "generation": "legacy", "sequence": 3},
+        "timestamp_ns": 3,
+        "resource": "fixture",
+        "data": {
+            "kind": "service_request",
+            "service": "worker",
+            "operation": "run",
+            "duration_ns": 1,
+            "status": "ok",
+            "trace_id": null,
+            "parent_span_id": "parent"
+        }
+    })
+    .to_string();
+    let future_labels = json!({
+        "version": 3,
+        "registry": "fabrico11y/3",
+        "context": {"run_id": "00000000-0000-4000-8000-000000000001"},
+        "identity": {"producer": "compat-fixture", "generation": "legacy", "sequence": 3},
+        "timestamp_ns": 3,
+        "resource": "fixture",
+        "data": {
+            "kind": "metric",
+            "name": "latency",
+            "unit": "ms",
+            "value": 1.0,
+            "metric_type": "gauge",
+            "reset": false,
+            "labels": {"stage": "worker"}
+        }
+    })
+    .to_string();
+    let future_version = json!({
+        "version": 4,
+        "registry": "fabrico11y/4",
+        "identity": {"producer": "compat-fixture", "generation": "legacy", "sequence": 3},
+        "timestamp_ns": 3,
+        "resource": "fixture",
+        "data": {"kind": "event", "name": "future", "message": "unsupported"}
+    })
+    .to_string();
+    for (label, raw) in [
+        ("v2 future field", future_parent),
+        ("v3 future field", future_labels),
+        ("unsupported version", future_version),
+    ] {
+        let expected_error = observation::decode_versioned(raw.as_bytes()).unwrap_err();
+        let result = spindle::transport::submit_bytes(
+            &node.config.socket,
+            raw.as_bytes(),
+            Instant::now() + Duration::from_secs(3),
+        );
+        assert_eq!(
+            result.unwrap_err(),
+            expected_error,
+            "{label} must be rejected by schema validation, not a transport failure"
+        );
+        assert_eq!(node.health().highest_record_id, 2, "{label} advanced custody");
+    }
+    let v2_next = json!({
+        "version": 2,
+        "registry": "fabrico11y/2",
+        "identity": {"producer": "compat-fixture", "generation": "legacy", "sequence": 3},
+        "timestamp_ns": 3,
+        "resource": "fixture",
+        "data": {"kind": "event", "name": "v2", "message": "after refusals"}
+    })
+    .to_string();
+    assert_eq!(node.submit(&v2_next).id, 3, "refusals must leave the identity usable");
+    node.restart(&bins);
+    let mut stored = Vec::new();
+    read_lane(&node, 3, &mut stored).unwrap();
+    assert_eq!(
+        stored
+            .iter()
+            .map(|(_, raw)| observation::decode_versioned(raw).unwrap().version())
+            .collect::<Vec<_>>(),
+        [2, 3, 2]
+    );
+    assert_eq!(stored[0].1, v2.as_bytes());
+    assert_eq!(stored[1].1, v3.as_bytes());
 }
 
 fn open_batch_adapter(
