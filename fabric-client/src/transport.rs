@@ -73,12 +73,99 @@ impl DaemonSocketPool {
         serde_json::from_value(points).map_err(|e| format!("daemon rpc hot_metrics decode: {e}"))
     }
 
+    pub(crate) async fn live_cursor(
+        &self,
+        socket_path: &Path,
+        request: &fabric_query_contract::LiveCursorRequest,
+        timeout: Duration,
+    ) -> Result<fabric_query_contract::LivePage, String> {
+        request.validate().map_err(str::to_owned)?;
+        let request_json = serde_json::json!({
+            "op": "live_metrics_v1", "origin": request.origin, "epoch": request.epoch,
+            "after": request.after, "count": request.count, "max_bytes": request.max_bytes,
+        })
+        .to_string();
+        let value = self
+            .exchange_value_bounded(
+                socket_path,
+                &request_json,
+                "live_metrics_v1",
+                timeout,
+                request.max_bytes,
+                true,
+            )
+            .await?;
+        let page: fabric_query_contract::LivePage =
+            serde_json::from_value(value).map_err(|e| format!("daemon live cursor decode: {e}"))?;
+        if page.version != 1
+            || page.origin.is_empty()
+            || page.origin.len() > 128
+            || page.origin.chars().any(char::is_control)
+            || page.epoch_start_after > page.observed_through
+            || page.highest_lost > page.observed_through
+            || page
+                .oldest_retained
+                .is_some_and(|id| id > page.observed_through)
+            || page.gap
+                != (request.after < page.highest_lost || request.after < page.epoch_start_after)
+            || page.gap != page.gap_reason.is_some()
+            || (page.highest_lost == 0) != page.highest_lost_reason.is_none()
+            || page.epoch.len() != 64
+            || !page
+                .epoch
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+            || request
+                .origin
+                .as_ref()
+                .is_some_and(|origin| origin != &page.origin)
+            || request
+                .epoch
+                .as_ref()
+                .is_some_and(|epoch| epoch != &page.epoch)
+            || page.entries.len() > request.count
+            || page.next_after < request.after
+            || page.next_after > page.observed_through
+            || page
+                .entries
+                .iter()
+                .any(|entry| entry.record_id <= request.after || entry.record_id > page.next_after)
+            || page
+                .entries
+                .windows(2)
+                .any(|entries| entries[0].record_id >= entries[1].record_id)
+        {
+            return Err("invalid daemon live cursor response".into());
+        }
+        Ok(page)
+    }
+
     async fn exchange_value(
         &self,
         socket_path: &Path,
         request_json: &str,
         expected_kind: &str,
         timeout: Duration,
+    ) -> Result<serde_json::Value, String> {
+        self.exchange_value_bounded(
+            socket_path,
+            request_json,
+            expected_kind,
+            timeout,
+            MAX_DAEMON_REPLY_BYTES + 1,
+            false,
+        )
+        .await
+    }
+
+    async fn exchange_value_bounded(
+        &self,
+        socket_path: &Path,
+        request_json: &str,
+        expected_kind: &str,
+        timeout: Duration,
+        max_reply_bytes: usize,
+        require_newline: bool,
     ) -> Result<serde_json::Value, String> {
         let mut guard = self.conn.lock().await;
         let mut last_err = String::new();
@@ -90,7 +177,15 @@ impl DaemonSocketPool {
                 }
             }
             let reader = guard.as_mut().expect("connected reader");
-            match round_trip_line(reader, request_json, timeout).await {
+            match round_trip_line(
+                reader,
+                request_json,
+                timeout,
+                max_reply_bytes,
+                require_newline,
+            )
+            .await
+            {
                 Ok(line) => {
                     let val: serde_json::Value = serde_json::from_str(line.trim())
                         .map_err(|e| format!("daemon rpc json parse: {e}"))?;
@@ -209,6 +304,8 @@ async fn round_trip_line(
     reader: &mut BufReader<UnixStream>,
     request_json: &str,
     timeout: Duration,
+    max_reply_bytes: usize,
+    require_newline: bool,
 ) -> Result<String, String> {
     tokio::time::timeout(timeout, async {
         let mut payload = Vec::with_capacity(request_json.len() + 1);
@@ -232,13 +329,13 @@ async fn round_trip_line(
                 .await
                 .map_err(|e| format!("daemon socket read: {}", e.kind()))?;
             if chunk.is_empty() {
-                if buf.is_empty() {
+                if buf.is_empty() || require_newline {
                     return Err("daemon socket closed before reply".into());
                 }
                 break;
             }
             if let Some(pos) = chunk.iter().position(|&b| b == b'\n') {
-                if buf.len().saturating_add(pos) > MAX_DAEMON_REPLY_BYTES {
+                if buf.len().saturating_add(pos).saturating_add(1) > max_reply_bytes {
                     return Err("daemon socket reply exceeded size limit".into());
                 }
                 buf.extend_from_slice(&chunk[..pos]);
@@ -246,7 +343,12 @@ async fn round_trip_line(
                 break;
             }
             let len = chunk.len();
-            if buf.len().saturating_add(len) > MAX_DAEMON_REPLY_BYTES {
+            if buf
+                .len()
+                .saturating_add(len)
+                .saturating_add(usize::from(require_newline))
+                > max_reply_bytes
+            {
                 return Err("daemon socket reply exceeded size limit".into());
             }
             buf.extend_from_slice(chunk);
