@@ -1,6 +1,6 @@
 //! The CLI transports exactly the shared typed request; it does not open data files.
 use fabric::{
-    canonical::{Request, Response},
+    canonical::{PlanPageRequest, PlanScope, Request, Response},
     query::{Client, QueryRequest},
 };
 use std::{
@@ -9,8 +9,8 @@ use std::{
 };
 
 const USAGE: &str =
-    "Usage: fabric-query <query | query-versioned VERSION | plan | evidence ID | progress | capabilities | cancel ID>
-  query, plan              Read a typed request from standard input
+    "Usage: fabric-query <query | query-versioned VERSION | plan | plan-page | subscribe-plan | poll-plan-hint | evidence ID | progress | capabilities | cancel ID>
+  query, plan, plan-page, subscribe-plan, poll-plan-hint  Read a typed request from standard input
   query-versioned VERSION  Read a typed request with an operation version
   evidence ID              Read a canonical observation
   progress                 Read canonical source frontiers
@@ -41,7 +41,8 @@ fn run() -> Result<(), String> {
     }
     let (endpoint, credential) = fabric::query::connection_from_env()?;
     let request = match command.as_str() {
-        "query" | "query-versioned" | "plan" => {
+        "query" | "query-versioned" | "plan" | "plan-page" | "subscribe-plan"
+        | "poll-plan-hint" => {
             let operation_version = if command == "query-versioned" {
                 Some(
                     args.next()
@@ -60,7 +61,14 @@ fn run() -> Result<(), String> {
             if bytes.len() > 1024 * 1024 {
                 return Err("request too large".into());
             }
-            query_command(&command, operation_version, &bytes)?
+            if matches!(
+                command.as_str(),
+                "plan-page" | "subscribe-plan" | "poll-plan-hint"
+            ) {
+                plan_command(&command, &bytes)?
+            } else {
+                query_command(&command, operation_version, &bytes)?
+            }
         }
         "evidence" => Request::Evidence {
             canonical_id: args
@@ -89,6 +97,37 @@ fn run() -> Result<(), String> {
         return Err(error);
     }
     Ok(())
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ScopeInput {
+    scope: PlanScope,
+}
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HintInput {
+    scope: PlanScope,
+    subscription: String,
+}
+fn plan_command(command: &str, input: &str) -> Result<Request, String> {
+    match command {
+        "plan-page" => Ok(Request::PlanPage {
+            request: serde_json::from_str::<PlanPageRequest>(input).map_err(|e| e.to_string())?,
+        }),
+        "subscribe-plan" => {
+            let input: ScopeInput = serde_json::from_str(input).map_err(|e| e.to_string())?;
+            Ok(Request::SubscribePlan { scope: input.scope })
+        }
+        "poll-plan-hint" => {
+            let input: HintInput = serde_json::from_str(input).map_err(|e| e.to_string())?;
+            Ok(Request::PollPlanHint {
+                scope: input.scope,
+                subscription: input.subscription,
+            })
+        }
+        _ => Err("invalid plan command".into()),
+    }
 }
 
 fn query_command(
@@ -129,5 +168,35 @@ mod tests {
         assert_eq!(legacy, request);
         assert_eq!(operation_version, 2);
         assert!(query_command("query-versioned", None, input).is_err());
+    }
+    #[test]
+    fn plan_commands_accept_only_strict_typed_stdin() {
+        assert!(matches!(
+            plan_command(
+                "plan-page",
+                r#"{"scope":"team","cursor":null,"limit":4,"ttl_secs":5}"#
+            ),
+            Ok(Request::PlanPage { .. })
+        ));
+        assert!(matches!(
+            plan_command("subscribe-plan", r#"{"scope":"team"}"#),
+            Ok(Request::SubscribePlan { .. })
+        ));
+        assert!(matches!(
+            plan_command(
+                "poll-plan-hint",
+                r#"{"scope":"team","subscription":"opaque"}"#
+            ),
+            Ok(Request::PollPlanHint { .. })
+        ));
+        assert!(plan_command("subscribe-plan", r#"{"scope":"team","extra":1}"#).is_err());
+        assert!(plan_command("poll-plan-hint", r#"{"scope":"team"}"#).is_err());
+        assert!(
+            plan_command(
+                "plan-page",
+                r#"{"scope":"team","cursor":null,"limit":4,"ttl_secs":5,"extra":1}"#
+            )
+            .is_err()
+        );
     }
 }
