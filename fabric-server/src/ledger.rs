@@ -201,7 +201,6 @@ CREATE TABLE IF NOT EXISTS records(id INTEGER PRIMARY KEY AUTOINCREMENT,origin T
 CREATE TABLE IF NOT EXISTS origins(origin TEXT PRIMARY KEY,through INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS registries(name TEXT PRIMARY KEY,descriptor TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").map_err(err)?;
-        metric_series::install(&conn).map_err(err)?;
         enforce_private_state_files(dir, &["canonical.sqlite", "canonical.sqlite-journal"])?;
         let page: u64 = conn
             .pragma_query_value(None, "page_size", |r| r.get(0))
@@ -265,10 +264,6 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
             (observation::REGISTRY, observation::DESCRIPTOR),
             (observation::REGISTRY_V3, observation::DESCRIPTOR_V3),
             (observation::REGISTRY_V4, observation::DESCRIPTOR_V4),
-            (
-                observation::REGISTRY_V5,
-                include_str!("../../registry/v5/descriptor.json"),
-            ),
         ] {
             let old: Option<String> = conn
                 .query_row(
@@ -286,6 +281,22 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
                 params![name, descriptor],
             )
             .map_err(err)?;
+        }
+        // Existing V5 stores must still match the pinned descriptor, but opening
+        // a legacy store must not allocate V5 metadata or series tables.
+        let v5_descriptor: Option<String> = conn
+            .query_row(
+                "SELECT descriptor FROM registries WHERE name=?1",
+                [observation::REGISTRY_V5],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(err)?;
+        if v5_descriptor
+            .as_deref()
+            .is_some_and(|value| value != include_str!("../../registry/v5/descriptor.json"))
+        {
+            return Err("canonical registry conflict".into());
         }
         let engine = if let Some(endpoint) = endpoint {
             let old: Option<String> = conn
@@ -1018,6 +1029,28 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
         };
         self.room_for(bytes, ceiling)?;
         let tx = self.conn.transaction().map_err(err)?;
+        if admitted_at.is_some() {
+            let existing: Option<String> = tx
+                .query_row(
+                    "SELECT descriptor FROM registries WHERE name=?1",
+                    [observation::REGISTRY_V5],
+                    |r| r.get(0),
+                )
+                .optional()
+                .map_err(err)?;
+            let descriptor = include_str!("../../registry/v5/descriptor.json");
+            if existing.as_deref().is_some_and(|value| value != descriptor) {
+                return Err("canonical registry conflict".into());
+            }
+            if existing.is_none() {
+                metric_series::install(&tx).map_err(err)?;
+                tx.execute(
+                    "INSERT INTO registries VALUES(?1,?2)",
+                    params![observation::REGISTRY_V5, descriptor],
+                )
+                .map_err(err)?;
+            }
+        }
         if let Some(limit) = quota {
             let used: u64 = tx
                 .query_row(
