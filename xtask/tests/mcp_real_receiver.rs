@@ -184,7 +184,7 @@ fn stdio_reader_writer_match_live_receiver_and_verified_segment() {
         canonical::PROPOSAL_MARKER.into(),
         serde_json::to_string(&carrier).unwrap().into(),
     );
-    let raw = serde_json::to_string_pretty(&ObservationV3 {
+    let raw = serde_json::to_string(&ObservationV3 {
         version: observation::VERSION_V3,
         registry: observation::REGISTRY_V3.into(),
         context: fabric::run::RunContext {
