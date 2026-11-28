@@ -930,7 +930,7 @@ semantic_directive = false
 historical_evidence = true
 
 [[files]]
-path = "knowledge/decisions/D-0203-protected-capture.md"
+path = "knowledge/decisions/D-0239-protected-capture.md"
 classification = "knowledge-record"
 presentation_metadata = "relocated-to-knowledge/records.toml"
 machine_required_metadata = true
