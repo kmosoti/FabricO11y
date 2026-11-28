@@ -3,6 +3,7 @@ use admission_kernel::telemetry::{elastic_can_admit, elastic_lease_return};
 
 #[cfg(test)]
 mod acceptance_tests;
+pub mod alert_journal;
 pub mod engine;
 mod handshake;
 mod handshake_io;
