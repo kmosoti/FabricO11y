@@ -1,4 +1,4 @@
 [workspace]
-members = ["fabric-app-core", "parity"]
+members = ["fabric-app-core", "fabric-ui-dom", "parity"]
 default-members = ["fabric-app-core"]
 resolver = "3"
