@@ -6,7 +6,7 @@
 //! interpreted as filesystem paths.
 
 use rustix::{
-    fs::{Mode, OFlags, open},
+    fs::{Mode, OFlags, ResolveFlags, fstat, fstatfs, open, openat2},
     io::Errno,
 };
 use std::{
@@ -58,10 +58,10 @@ pub struct DeviceMemoryRegion {
     pub max_bytes: Option<DeviceMemoryMax>,
 }
 
-/// A bounded snapshot of the current process's cgroup v2 device-memory files.
+/// A bounded snapshot of selected cgroup v2 device-memory files.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeviceMemorySnapshot {
-    /// The process's normalized cgroup v2 membership path, for display only.
+    /// The normalized cgroup v2 path selected for this probe, for display only.
     pub cgroup_path: String,
     pub scope: DeviceMemoryScope,
     /// Regions are sorted lexicographically by `identifier`.
@@ -79,6 +79,7 @@ pub enum DeviceMemoryProbeError {
     MissingUnifiedMembership,
     DuplicateUnifiedMembership,
     InvalidUnifiedMembership,
+    InvalidSelectedPath,
     InvalidMountInfo {
         line: usize,
     },
@@ -86,7 +87,9 @@ pub enum DeviceMemoryProbeError {
     AmbiguousCgroup2Mount,
     Cgroup2MountRootMismatch,
     Cgroup2MountpointMismatch,
+    Cgroup2FilesystemMismatch,
     CgroupDirectoryNotDirectory,
+    CgroupDirectoryChanged,
     ThreadedCgroup,
     InvalidProcessList {
         line: usize,
@@ -134,6 +137,9 @@ impl fmt::Display for DeviceMemoryProbeError {
             Self::InvalidUnifiedMembership => {
                 f.write_str("current process has invalid cgroup v2 membership")
             }
+            Self::InvalidSelectedPath => {
+                f.write_str("selected cgroup v2 path is not normalized and bounded")
+            }
             Self::InvalidMountInfo { line } => {
                 write!(f, "invalid cgroup mount information on line {line}")
             }
@@ -147,8 +153,14 @@ impl fmt::Display for DeviceMemoryProbeError {
             Self::Cgroup2MountpointMismatch => {
                 f.write_str("cgroup v2 is not uniquely mounted at /sys/fs/cgroup")
             }
+            Self::Cgroup2FilesystemMismatch => {
+                f.write_str("/sys/fs/cgroup is not a cgroup v2 filesystem")
+            }
             Self::CgroupDirectoryNotDirectory => {
                 f.write_str("cgroup v2 membership does not resolve to a real directory")
+            }
+            Self::CgroupDirectoryChanged => {
+                f.write_str("selected cgroup directory changed during the probe")
             }
             Self::ThreadedCgroup => {
                 f.write_str("threaded cgroups do not provide unambiguous process membership")
@@ -196,6 +208,28 @@ pub fn probe_device_memory() -> Result<Option<DeviceMemorySnapshot>, DeviceMemor
     )
 }
 
+/// Reads bounded device-memory files for one explicit path in this process's
+/// cgroup v2 mount namespace. The selector is a normalized membership-like
+/// absolute path, not a filesystem path; lookups stay beneath the fixed
+/// `/sys/fs/cgroup` root and do not consult process membership.
+pub fn probe_device_memory_at(
+    cgroup_path: &str,
+) -> Result<Option<DeviceMemorySnapshot>, DeviceMemoryProbeError> {
+    let cgroup_path = normalize_selected_path(cgroup_path)?;
+    let proc_root = Path::new("/proc");
+    validate_cgroup2_mount(proc_root)?;
+    let root_fd = open_fixed_cgroup_root()?;
+    validate_cgroup2_filesystem(&root_fd)?;
+    let snapshot = probe_device_memory_at_from_root(proc_root, &root_fd, &cgroup_path)?;
+    let current_root = open_fixed_cgroup_root()?;
+    validate_cgroup2_filesystem(&current_root)?;
+    if !same_directory(&root_fd, &current_root)? {
+        return Err(DeviceMemoryProbeError::Cgroup2MountpointMismatch);
+    }
+    validate_cgroup2_mount(proc_root)?;
+    Ok(snapshot)
+}
+
 fn probe_from_roots(
     proc_root: &Path,
     cgroup_root: &Path,
@@ -204,7 +238,7 @@ fn probe_from_roots(
     validate_cgroup2_mount(proc_root)?;
     let cgroup_path = read_process_cgroup_path(proc_root)?;
     let cgroup_dir = resolve_cgroup_dir(cgroup_root, &cgroup_path)?;
-    verify_process_membership(&cgroup_dir, pid)?;
+    verify_process_membership(&cgroup_dir, pid, cgroup_path == "/")?;
     let scope = if cgroup_path == "/" {
         DeviceMemoryScope::Root
     } else {
@@ -225,6 +259,23 @@ fn probe_from_roots(
             read_nested_file(&cgroup_dir, "dmem.max", true)?,
         ),
     };
+    let snapshot = build_snapshot(&cgroup_path, scope, capacity, current, peak, max)?;
+    if read_process_cgroup_path(proc_root)? != cgroup_path {
+        return Err(DeviceMemoryProbeError::CgroupMembershipChanged);
+    }
+    verify_process_membership(&cgroup_dir, pid, cgroup_path == "/")?;
+    validate_cgroup2_mount(proc_root)?;
+    Ok(snapshot)
+}
+
+fn build_snapshot(
+    cgroup_path: &str,
+    scope: DeviceMemoryScope,
+    capacity: Option<BTreeMap<String, ParsedValue>>,
+    current: Option<BTreeMap<String, ParsedValue>>,
+    peak: Option<BTreeMap<String, ParsedValue>>,
+    max: Option<BTreeMap<String, ParsedValue>>,
+) -> Result<Option<DeviceMemorySnapshot>, DeviceMemoryProbeError> {
     let snapshot = {
         let any_file_present =
             capacity.is_some() || current.is_some() || peak.is_some() || max.is_some();
@@ -258,17 +309,185 @@ fn probe_from_roots(
                 })
                 .collect();
             Some(DeviceMemorySnapshot {
-                cgroup_path: cgroup_path.clone(),
+                cgroup_path: cgroup_path.to_owned(),
                 scope,
                 regions,
             })
         }
     };
-    if read_process_cgroup_path(proc_root)? != cgroup_path {
-        return Err(DeviceMemoryProbeError::CgroupMembershipChanged);
+    Ok(snapshot)
+}
+
+const CGROUP2_SUPER_MAGIC: u64 = 0x6367_7270;
+
+fn root_open_flags() -> OFlags {
+    OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC
+}
+
+fn beneath_flags() -> ResolveFlags {
+    ResolveFlags::BENEATH | ResolveFlags::NO_SYMLINKS | ResolveFlags::NO_XDEV
+}
+
+fn normalize_selected_path(path: &str) -> Result<String, DeviceMemoryProbeError> {
+    if !is_normalized_cgroup_path(path) {
+        return Err(DeviceMemoryProbeError::InvalidSelectedPath);
     }
-    verify_process_membership(&cgroup_dir, pid)?;
+    Ok(path.to_owned())
+}
+
+fn is_normalized_cgroup_path(path: &str) -> bool {
+    if path.is_empty()
+        || path.len() > PROC_CGROUP_MAX_BYTES
+        || !path.starts_with('/')
+        || path.contains('\0')
+        || path.chars().any(char::is_control)
+    {
+        return false;
+    }
+    if path == "/" {
+        return true;
+    }
+    let Some(tail) = path.strip_prefix('/') else {
+        return false;
+    };
+    if tail.is_empty() || tail.ends_with('/') {
+        return false;
+    }
+    tail.split('/').all(|component| {
+        !component.is_empty()
+            && component != "."
+            && component != ".."
+            && component.len() <= CGROUP_MAX_COMPONENT_BYTES
+    })
+}
+
+fn open_fixed_cgroup_root() -> Result<std::os::fd::OwnedFd, DeviceMemoryProbeError> {
+    open("/sys/fs/cgroup", root_open_flags(), Mode::empty())
+        .map_err(|error| io_error("cgroup root", io::Error::from(error)))
+}
+
+#[cfg(test)]
+fn open_test_cgroup_root(path: &Path) -> Result<std::os::fd::OwnedFd, DeviceMemoryProbeError> {
+    open(path, root_open_flags(), Mode::empty())
+        .map_err(|error| io_error("cgroup root", io::Error::from(error)))
+}
+
+fn validate_cgroup2_filesystem(
+    root_fd: &std::os::fd::OwnedFd,
+) -> Result<(), DeviceMemoryProbeError> {
+    let stats =
+        fstatfs(root_fd).map_err(|error| io_error("cgroup root", io::Error::from(error)))?;
+    if stats.f_type as u64 != CGROUP2_SUPER_MAGIC {
+        return Err(DeviceMemoryProbeError::Cgroup2FilesystemMismatch);
+    }
+    Ok(())
+}
+
+fn same_directory(
+    first: &std::os::fd::OwnedFd,
+    second: &std::os::fd::OwnedFd,
+) -> Result<bool, DeviceMemoryProbeError> {
+    let first =
+        fstat(first).map_err(|error| io_error("cgroup directory", io::Error::from(error)))?;
+    let second =
+        fstat(second).map_err(|error| io_error("cgroup directory", io::Error::from(error)))?;
+    Ok(first.st_dev == second.st_dev && first.st_ino == second.st_ino)
+}
+
+fn open_selected_cgroup(
+    root_fd: &std::os::fd::OwnedFd,
+    cgroup_path: &str,
+) -> Result<std::os::fd::OwnedFd, DeviceMemoryProbeError> {
+    let relative = cgroup_path.strip_prefix('/').unwrap_or(cgroup_path);
+    let relative = if relative.is_empty() { "." } else { relative };
+    openat2(
+        root_fd,
+        relative,
+        root_open_flags(),
+        Mode::empty(),
+        beneath_flags(),
+    )
+    .map_err(|error| io_error("cgroup directory", io::Error::from(error)))
+}
+
+fn verify_cgroup_domain_at(
+    cgroup_dir: &std::os::fd::OwnedFd,
+    is_hierarchy_root: bool,
+) -> Result<(), DeviceMemoryProbeError> {
+    if is_hierarchy_root {
+        return Ok(());
+    }
+    let cgroup_type = read_required_bounded_at(cgroup_dir, "cgroup.type", CGROUP_TYPE_MAX_BYTES)?;
+    if cgroup_type != "domain\n" {
+        return Err(DeviceMemoryProbeError::ThreadedCgroup);
+    }
+    Ok(())
+}
+
+fn read_nested_file_at(
+    cgroup_dir: &std::os::fd::OwnedFd,
+    filename: &'static str,
+    allow_unbounded: bool,
+) -> Result<Option<BTreeMap<String, ParsedValue>>, DeviceMemoryProbeError> {
+    let Some(text) = read_optional_bounded_at(cgroup_dir, filename, DMEM_FILE_MAX_BYTES)? else {
+        return Ok(None);
+    };
+    parse_nested_file(&text, filename, allow_unbounded).map(Some)
+}
+
+fn probe_device_memory_at_from_root(
+    proc_root: &Path,
+    root_fd: &std::os::fd::OwnedFd,
+    cgroup_path: &str,
+) -> Result<Option<DeviceMemorySnapshot>, DeviceMemoryProbeError> {
+    let cgroup_dir = open_selected_cgroup(root_fd, cgroup_path)?;
+    verify_cgroup_domain_at(&cgroup_dir, cgroup_path == "/")?;
+
+    let scope = if cgroup_path == "/" {
+        DeviceMemoryScope::Root
+    } else {
+        DeviceMemoryScope::NonRoot
+    };
+    let (capacity, current, peak, max) = match scope {
+        DeviceMemoryScope::Root => (
+            read_nested_file_at(&cgroup_dir, "dmem.capacity", false)?,
+            None,
+            None,
+            None,
+        ),
+        DeviceMemoryScope::NonRoot => (
+            None,
+            read_nested_file_at(&cgroup_dir, "dmem.current", false)?,
+            read_nested_file_at(&cgroup_dir, "dmem.peak", false)?,
+            read_nested_file_at(&cgroup_dir, "dmem.max", true)?,
+        ),
+    };
+    let snapshot = build_snapshot(cgroup_path, scope, capacity, current, peak, max)?;
+
+    let current_dir = open_selected_cgroup(root_fd, cgroup_path)?;
+    if !same_directory(&cgroup_dir, &current_dir)? {
+        return Err(DeviceMemoryProbeError::CgroupDirectoryChanged);
+    }
     validate_cgroup2_mount(proc_root)?;
+    Ok(snapshot)
+}
+
+#[cfg(test)]
+fn probe_device_memory_at_from_roots(
+    proc_root: &Path,
+    cgroup_root: &Path,
+    cgroup_path: &str,
+) -> Result<Option<DeviceMemorySnapshot>, DeviceMemoryProbeError> {
+    let cgroup_path = normalize_selected_path(cgroup_path)?;
+    validate_cgroup2_mount(proc_root)?;
+    // Fixture roots live on the test filesystem, not cgroupfs; only this
+    // test-only seam skips the production `fstatfs` magic check.
+    let root_fd = open_test_cgroup_root(cgroup_root)?;
+    let snapshot = probe_device_memory_at_from_root(proc_root, &root_fd, &cgroup_path)?;
+    let current_root = open_test_cgroup_root(cgroup_root)?;
+    if !same_directory(&root_fd, &current_root)? {
+        return Err(DeviceMemoryProbeError::Cgroup2MountpointMismatch);
+    }
     Ok(snapshot)
 }
 
@@ -290,14 +509,20 @@ fn validate_cgroup2_mount(proc_root: &Path) -> Result<(), DeviceMemoryProbeError
     parse_mountinfo(&raw)
 }
 
-fn verify_process_membership(cgroup_dir: &Path, pid: u32) -> Result<(), DeviceMemoryProbeError> {
-    let cgroup_type = read_required_bounded(
-        &cgroup_dir.join("cgroup.type"),
-        "cgroup.type",
-        CGROUP_TYPE_MAX_BYTES,
-    )?;
-    if cgroup_type != "domain\n" {
-        return Err(DeviceMemoryProbeError::ThreadedCgroup);
+fn verify_process_membership(
+    cgroup_dir: &Path,
+    pid: u32,
+    is_hierarchy_root: bool,
+) -> Result<(), DeviceMemoryProbeError> {
+    if !is_hierarchy_root {
+        let cgroup_type = read_required_bounded(
+            &cgroup_dir.join("cgroup.type"),
+            "cgroup.type",
+            CGROUP_TYPE_MAX_BYTES,
+        )?;
+        if cgroup_type != "domain\n" {
+            return Err(DeviceMemoryProbeError::ThreadedCgroup);
+        }
     }
 
     let processes = read_required_bounded(
@@ -395,31 +620,8 @@ fn parse_unified_cgroup_path(raw: &str) -> Result<String, DeviceMemoryProbeError
         }
     }
     let path = unified.ok_or(DeviceMemoryProbeError::MissingUnifiedMembership)?;
-    if path.is_empty()
-        || path.len() > PROC_CGROUP_MAX_BYTES
-        || !path.starts_with('/')
-        || path.contains('\0')
-        || path.chars().any(char::is_control)
-    {
+    if !is_normalized_cgroup_path(path) {
         return Err(DeviceMemoryProbeError::InvalidUnifiedMembership);
-    }
-    if path == "/" {
-        return Ok(path.to_owned());
-    }
-    let tail = path
-        .strip_prefix('/')
-        .ok_or(DeviceMemoryProbeError::InvalidUnifiedMembership)?;
-    if tail.is_empty() || tail.ends_with('/') {
-        return Err(DeviceMemoryProbeError::InvalidUnifiedMembership);
-    }
-    for component in tail.split('/') {
-        if component.is_empty()
-            || component == "."
-            || component == ".."
-            || component.len() > CGROUP_MAX_COMPONENT_BYTES
-        {
-            return Err(DeviceMemoryProbeError::InvalidUnifiedMembership);
-        }
     }
     Ok(path.to_owned())
 }
@@ -590,6 +792,44 @@ fn read_bounded(
         Err(Errno::NOENT) => return Ok(None),
         Err(error) => return Err(io_error(file, io::Error::from(error))),
     };
+    read_bounded_fd(fd, file, max_bytes).map(Some)
+}
+
+fn read_required_bounded_at(
+    cgroup_dir: &std::os::fd::OwnedFd,
+    filename: &'static str,
+    max_bytes: usize,
+) -> Result<String, DeviceMemoryProbeError> {
+    read_optional_bounded_at(cgroup_dir, filename, max_bytes)?.ok_or(DeviceMemoryProbeError::Io {
+        file: filename,
+        kind: io::ErrorKind::NotFound,
+    })
+}
+
+fn read_optional_bounded_at(
+    cgroup_dir: &std::os::fd::OwnedFd,
+    filename: &'static str,
+    max_bytes: usize,
+) -> Result<Option<String>, DeviceMemoryProbeError> {
+    let fd = match openat2(
+        cgroup_dir,
+        filename,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
+        Mode::empty(),
+        beneath_flags(),
+    ) {
+        Ok(fd) => fd,
+        Err(Errno::NOENT) => return Ok(None),
+        Err(error) => return Err(io_error(filename, io::Error::from(error))),
+    };
+    read_bounded_fd(fd, filename, max_bytes).map(Some)
+}
+
+fn read_bounded_fd(
+    fd: std::os::fd::OwnedFd,
+    file: &'static str,
+    max_bytes: usize,
+) -> Result<String, DeviceMemoryProbeError> {
     let mut bytes = Vec::new();
     File::from(fd)
         .take(max_bytes as u64 + 1)
@@ -598,9 +838,7 @@ fn read_bounded(
     if bytes.len() > max_bytes {
         return Err(DeviceMemoryProbeError::FileTooLarge { file });
     }
-    String::from_utf8(bytes)
-        .map(Some)
-        .map_err(|_| DeviceMemoryProbeError::InvalidUtf8 { file })
+    String::from_utf8(bytes).map_err(|_| DeviceMemoryProbeError::InvalidUtf8 { file })
 }
 
 fn io_error(file: &'static str, error: io::Error) -> DeviceMemoryProbeError {
@@ -655,7 +893,9 @@ mod tests {
                 self.cgroup_root.join(path.trim_start_matches('/'))
             };
             fs::create_dir_all(&dir).unwrap();
-            fs::write(dir.join("cgroup.type"), "domain\n").unwrap();
+            if path != "/" {
+                fs::write(dir.join("cgroup.type"), "domain\n").unwrap();
+            }
             fs::write(
                 dir.join("cgroup.procs"),
                 format!("{}\n", std::process::id()),
@@ -675,6 +915,13 @@ mod tests {
             probe_from_roots(&self.proc_root, &self.cgroup_root, pid)
         }
 
+        fn probe_at(
+            &self,
+            path: &str,
+        ) -> Result<Option<DeviceMemorySnapshot>, DeviceMemoryProbeError> {
+            probe_device_memory_at_from_roots(&self.proc_root, &self.cgroup_root, path)
+        }
+
         fn mountinfo(&self, text: &str) {
             fs::write(self.proc_root.join("self/mountinfo"), text).unwrap();
         }
@@ -690,6 +937,7 @@ mod tests {
         )
         .unwrap();
         let snapshot = fixture.probe().unwrap().unwrap();
+        assert_eq!(fixture.probe_at("/").unwrap(), Some(snapshot.clone()));
         assert_eq!(snapshot.scope, DeviceMemoryScope::Root);
         assert_eq!(snapshot.cgroup_path, "/");
         assert_eq!(snapshot.regions[0].identifier, "drm/0000:03:00.0/vram0");
@@ -708,6 +956,10 @@ mod tests {
         fs::write(dir.join("dmem.peak"), "gpu/vram0 32\n").unwrap();
         fs::write(dir.join("dmem.max"), "gpu/vram0 max\ngpu/stolen 0\n").unwrap();
         let snapshot = fixture.probe().unwrap().unwrap();
+        assert_eq!(
+            fixture.probe_at("/user.slice/job.scope").unwrap(),
+            Some(snapshot.clone())
+        );
         assert_eq!(snapshot.scope, DeviceMemoryScope::NonRoot);
         assert_eq!(snapshot.regions.len(), 2);
         assert_eq!(
@@ -742,6 +994,7 @@ mod tests {
         fixture.membership("/child");
         let dir = fixture.cgroup("/child");
         assert_eq!(fixture.probe().unwrap(), None);
+        assert_eq!(fixture.probe_at("/child").unwrap(), None);
 
         fs::create_dir(dir.join("dmem.current")).unwrap();
         assert!(matches!(
@@ -830,6 +1083,14 @@ mod tests {
             format!("{}\n", std::process::id()),
         )
         .unwrap();
+        fs::remove_file(dir.join("cgroup.type")).unwrap();
+        let missing_type = DeviceMemoryProbeError::Io {
+            file: "cgroup.type",
+            kind: io::ErrorKind::NotFound,
+        };
+        assert_eq!(fixture.probe(), Err(missing_type.clone()));
+        assert_eq!(fixture.probe_at("/child"), Err(missing_type));
+        fs::write(dir.join("cgroup.type"), "domain\n").unwrap();
         fs::write(dir.join("cgroup.type"), "domain threaded\n").unwrap();
         assert_eq!(fixture.probe(), Err(DeviceMemoryProbeError::ThreadedCgroup));
         fs::write(dir.join("cgroup.type"), "domain\n").unwrap();
@@ -887,6 +1148,107 @@ mod tests {
         assert!(matches!(
             parse_nested_file(&too_many, "dmem.current", false),
             Err(DeviceMemoryProbeError::TooManyRegions { .. })
+        ));
+    }
+
+    #[test]
+    fn selected_path_validation_precedes_any_filesystem_io() {
+        let nonexistent = Path::new("/path/that/does/not/exist");
+        for path in [
+            "",
+            "child",
+            "//",
+            "/a//b",
+            "/a/./b",
+            "/a/../b",
+            "/child/",
+            "/bad\npath",
+        ] {
+            assert_eq!(
+                probe_device_memory_at_from_roots(nonexistent, nonexistent, path),
+                Err(DeviceMemoryProbeError::InvalidSelectedPath),
+                "{path:?}"
+            );
+        }
+        assert_eq!(
+            probe_device_memory_at_from_roots(
+                nonexistent,
+                nonexistent,
+                &format!("/{}", "x".repeat(PROC_CGROUP_MAX_BYTES))
+            ),
+            Err(DeviceMemoryProbeError::InvalidSelectedPath)
+        );
+        assert_eq!(
+            probe_device_memory_at_from_roots(
+                nonexistent,
+                nonexistent,
+                &format!("/{}", "x".repeat(CGROUP_MAX_COMPONENT_BYTES + 1))
+            ),
+            Err(DeviceMemoryProbeError::InvalidSelectedPath)
+        );
+    }
+
+    #[test]
+    fn explicit_selector_does_not_require_process_membership_and_distinguishes_absence() {
+        let fixture = Fixture::new();
+        let dir = fixture.cgroup("/child");
+        fs::write(dir.join("dmem.current"), "gpu/vram0 0\n").unwrap();
+        fs::remove_file(dir.join("cgroup.procs")).unwrap();
+        let snapshot = fixture.probe_at("/child").unwrap().unwrap();
+        assert_eq!(snapshot.cgroup_path, "/child");
+        assert_eq!(snapshot.regions[0].current_bytes, Some(0));
+
+        let missing_controller = fixture.cgroup("/without-controller");
+        fs::remove_file(missing_controller.join("cgroup.procs")).unwrap();
+        assert_eq!(fixture.probe_at("/without-controller").unwrap(), None);
+        assert_eq!(
+            fixture.probe_at("/missing-target"),
+            Err(DeviceMemoryProbeError::Io {
+                file: "cgroup directory",
+                kind: io::ErrorKind::NotFound,
+            })
+        );
+    }
+
+    #[test]
+    fn explicit_selector_refuses_nested_and_final_symlinks() {
+        use std::os::unix::fs::symlink;
+
+        let fixture = Fixture::new();
+        let actual = fixture.cgroup("/actual/child");
+        fs::write(actual.join("dmem.current"), "gpu/vram0 1\n").unwrap();
+        symlink("actual", fixture.cgroup_root.join("nested-link")).unwrap();
+        symlink("actual/child", fixture.cgroup_root.join("final-link")).unwrap();
+        for path in ["/nested-link/child", "/final-link"] {
+            assert!(matches!(
+                fixture.probe_at(path),
+                Err(DeviceMemoryProbeError::Io {
+                    file: "cgroup directory",
+                    ..
+                })
+            ));
+        }
+        let root_alias = fixture._temp.path().join("cgroup-root-alias");
+        symlink(&fixture.cgroup_root, &root_alias).unwrap();
+        assert!(matches!(
+            open_test_cgroup_root(&root_alias),
+            Err(DeviceMemoryProbeError::Io {
+                file: "cgroup root",
+                ..
+            })
+        ));
+
+        let fixture = Fixture::new();
+        let child = fixture.cgroup("/child");
+        let target = fixture._temp.path().join("target");
+        fs::write(&target, "gpu/vram0 1\n").unwrap();
+        symlink(target, child.join("dmem.current")).unwrap();
+        assert!(matches!(
+            fixture.probe_at("/child"),
+            Err(DeviceMemoryProbeError::Io {
+                file: "dmem.current",
+                ..
+            })
         ));
     }
 }
