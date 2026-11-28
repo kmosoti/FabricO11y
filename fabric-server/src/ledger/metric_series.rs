@@ -136,6 +136,82 @@ mod tests {
         }).to_string() }
     }
     #[test]
+    fn legacy_open_and_failed_first_v5_leave_no_series_schema() {
+        let scratch = std::env::var_os("TMPDIR").expect("disk TMPDIR required");
+        let root = tempfile::tempdir_in(scratch).unwrap();
+        let ledger = super::super::Ledger::open(root.path(), 64 * 1024 * 1024).unwrap();
+        let count = |db: &Connection| -> u64 {
+            db.query_row("SELECT count(*) FROM sqlite_schema WHERE name IN ('v5_series_window','v5_series_clock','v5_series_expiry')", [], |r| r.get(0)).unwrap()
+        };
+        assert_eq!(count(&ledger.conn), 0);
+        let before: u64 = ledger
+            .conn
+            .pragma_query_value(None, "page_count", |r| r.get(0))
+            .unwrap();
+        drop(ledger);
+        let mut ledger = super::super::Ledger::open(root.path(), 64 * 1024 * 1024).unwrap();
+        assert_eq!(count(&ledger.conn), 0);
+        assert_eq!(
+            ledger
+                .conn
+                .pragma_query_value(None, "page_count", |r| r.get::<_, u64>(0))
+                .unwrap(),
+            before
+        );
+        assert_eq!(
+            ledger
+                .conn
+                .pragma_query_value(None, "freelist_count", |r| r.get::<_, u64>(0))
+                .unwrap(),
+            0
+        );
+        ledger
+            .conn
+            .pragma_update(None, "max_page_count", before)
+            .unwrap();
+        assert_eq!(
+            ledger
+                .conn
+                .pragma_query_value(None, "max_page_count", |r| r.get::<_, u64>(0))
+                .unwrap(),
+            before
+        );
+        assert!(ledger.ingest("origin", &[record(1, 1)]).is_err());
+        assert_eq!(count(&ledger.conn), 0);
+        assert_eq!(
+            ledger
+                .conn
+                .query_row(
+                    "SELECT count(*) FROM registries WHERE name=?1",
+                    [fabric::observation::REGISTRY_V5],
+                    |r| r.get::<_, u64>(0)
+                )
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            ledger
+                .conn
+                .query_row("SELECT count(*) FROM records", [], |r| r.get::<_, u64>(0))
+                .unwrap(),
+            0
+        );
+        drop(ledger);
+        let ledger = super::super::Ledger::open(root.path(), 64 * 1024 * 1024).unwrap();
+        assert_eq!(count(&ledger.conn), 0);
+        ledger
+            .conn
+            .execute(
+                "INSERT INTO registries VALUES(?1,?2)",
+                rusqlite::params![fabric::observation::REGISTRY_V5, "wrong descriptor"],
+            )
+            .unwrap();
+        drop(ledger);
+        assert!(
+            matches!(super::super::Ledger::open(root.path(), 64 * 1024 * 1024), Err(error) if error.contains("canonical registry conflict"))
+        );
+    }
+    #[test]
     fn canonical_new_series_retries_and_failed_batches_are_atomic() {
         let scratch = std::env::var_os("TMPDIR").expect("disk TMPDIR required");
         let root = tempfile::tempdir_in(scratch).unwrap();
