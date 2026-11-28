@@ -116,8 +116,8 @@ pub fn plan(b: Budget, candidates: &[Candidate]) -> Result<Decision, Invalid> {
             audit: b.audit,
         });
     }
-    if b.audit <= b.free {
-        if let Some(c) = candidates
+    if b.audit <= b.free
+        && let Some(c) = candidates
             .iter()
             .filter(eligible)
             .filter(|c| {
@@ -129,12 +129,11 @@ pub fn plan(b: Budget, candidates: &[Candidate]) -> Result<Decision, Invalid> {
                         })
             })
             .min_by_key(|c| (c.priority, c.id))
-        {
-            return Ok(Decision::Evict {
-                id: c.id,
-                audit: b.audit,
-            });
-        }
+    {
+        return Ok(Decision::Evict {
+            id: c.id,
+            audit: b.audit,
+        });
     }
     Ok(Decision::Backpressure)
 }
