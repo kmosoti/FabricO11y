@@ -1927,3 +1927,227 @@ fn isolated_cli_cursor_rejects_pre_restart_token() {
     drop(client);
     stack.shutdown_and_assert();
 }
+
+#[test]
+#[ignore = "requires collected fabrico11y.slice and exact CLI executable"]
+fn live_cursor_precedes_projected_frontier_after_canonical_ack() {
+    assert!(
+        in_fabrico11y_slice(),
+        "run inside collected fabrico11y.slice"
+    );
+    let root_guard = non_tmp_test_root();
+    let root = root_guard.path();
+    let socket_dir = root.join("sock");
+    let collector_tmp = root.join("ct");
+    create_private_dir(&socket_dir);
+    create_private_dir(&collector_tmp);
+    let spindle_socket = socket_dir.join("spindle.sock");
+    let spindle_dir = root.join("sp");
+    let server_dir = root.join("srv");
+    let collector_data = root.join("collector");
+    let daemon_socket = validated_storage_layout(&collector_data)
+        .unwrap()
+        .state_dir()
+        .join("daemon.sock");
+    let node = root.join("node.key");
+    let reader = root.join("reader.key");
+    write_secret(&node, "frontier-fixture-node");
+    write_secret(&reader, "frontier-fixture-reader");
+    let origin = spindle::custody::Store::open(&spindle_dir, 64 * 1024 * 1024)
+        .unwrap()
+        .origin()
+        .to_owned();
+    let authority = fabric_server::ledger::Ledger::open(&server_dir, 128 * 1024 * 1024)
+        .unwrap()
+        .authority
+        .clone();
+    let server = fabric_server::Server::open(fabric_server::Config {
+        listen: "127.0.0.1:0".into(),
+        storage: server_dir,
+        projection: root.join("projection"),
+        quota_bytes: 128 * 1024 * 1024,
+        projection_quota_bytes: 64 * 1024 * 1024,
+        reader_credential_file: reader,
+        nodes: vec![fabric_server::NodeGrant {
+            origin: origin.clone(),
+            credential_file: node.clone(),
+        }],
+        decision_writers: Vec::new(),
+        node_quota_bytes: Default::default(),
+        engine_endpoint: None,
+        engine_auth_token_file: None,
+        allow_unauthenticated_loopback_engine: false,
+        max_connections: 16,
+    })
+    .unwrap();
+    let endpoint = server.address();
+    let server_stop = server.stop_handle();
+    let server_thread = thread::spawn(move || server.serve());
+    let mut spindle_daemon = spindle::Daemon::open(spindle::Config {
+        socket: spindle_socket.clone(),
+        storage: spindle_dir,
+        quota_bytes: 64 * 1024 * 1024,
+        forwarding: Some(ForwardConfig {
+            endpoint,
+            credential_file: node,
+            authority,
+            reclaim_confirmed: false,
+        }),
+        max_connections: 16,
+        client_timeout_ms: 1000,
+        files: Vec::new(),
+        journal: None,
+        host: None,
+    })
+    .unwrap();
+    let spindle_thread = thread::spawn(move || spindle_daemon.run());
+    let stack = StackGuard {
+        spindle_sock: spindle_socket.clone(),
+        server_stop,
+        spindle_thread: Some(spindle_thread),
+        server_thread: Some(server_thread),
+    };
+    let ready = Instant::now() + Duration::from_secs(10);
+    while transport::request(
+        &spindle_socket,
+        &Request::Status,
+        Instant::now() + Duration::from_millis(250),
+    )
+    .is_err()
+    {
+        assert!(Instant::now() < ready, "Spindle startup deadline");
+        thread::sleep(Duration::from_millis(20));
+    }
+    let mut config = SdkConfig::local(spindle_socket.clone(), "frontier-fixture".into()).unwrap();
+    config.delivery_timeout = Duration::from_secs(2);
+    let client = Client::new(config).unwrap();
+    let submit = |name: &str| {
+        let result = client.try_record(
+            Data::Metric {
+                name: name.into(),
+                unit: "count".into(),
+                value: 1.0,
+                metric_type: MetricType::Gauge,
+                reset: false,
+            },
+            1_700_000_000_000_000_000,
+        );
+        assert!(matches!(result, Admission::Accepted { .. }), "{result:?}");
+        client
+            .flush(Instant::now() + Duration::from_secs(5))
+            .unwrap()
+            .unwrap()
+            .id
+    };
+    let first = submit("frontier.marker");
+    struct ChildGuard(std::process::Child);
+    impl Drop for ChildGuard {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    let executable = std::env::var_os("FABRIC_QUALIFY_CLI").expect("exact CLI executable");
+    let mut collector = ChildGuard(
+        Command::new(executable)
+            .arg("--data-dir")
+            .arg(&collector_data)
+            .arg("--tmp-dir")
+            .arg(&collector_tmp)
+            .args([
+                "daemon",
+                "--spindle-only",
+                "--interval-ms",
+                "2000",
+                "--max-ticks",
+                "20",
+                "--ring-budget-bytes",
+                "2097152",
+                "--max-disk-bytes",
+                "67108864",
+                "--spindle-socket",
+            ])
+            .arg(&spindle_socket)
+            .env("FABRIC_LIVE_CURSOR_BYTES", "32768")
+            .env_remove("FABRIC_RUNTIME_DIR")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    let layout = validated_storage_layout(&collector_data).unwrap();
+    let ready = Instant::now() + Duration::from_secs(10);
+    let first_page = loop {
+        let frontier = CatalogStore::read_spindle_projection_frontier(
+            &layout,
+            Instant::now() + Duration::from_millis(500),
+        );
+        if frontier
+            .as_ref()
+            .is_ok_and(|f| f.origin.as_deref() == Some(origin.as_str()) && f.record_id == first)
+            && let Some(DaemonResponse::LiveMetricsV1(page)) = query_daemon_socket(
+                &daemon_socket,
+                &DaemonRequest::LiveMetricsV1 {
+                    origin: None,
+                    epoch: None,
+                    after: 0,
+                    count: 64,
+                    max_bytes: 32768,
+                },
+            )
+            && page.entries.iter().any(|entry| entry.record_id == first)
+        {
+            break page;
+        }
+        assert!(
+            collector.0.try_wait().unwrap().is_none(),
+            "collector exited during initial flush"
+        );
+        assert!(Instant::now() < ready, "first projection gate deadline");
+        thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(first_page.origin, origin);
+    assert!(!first_page.gap);
+    let second = submit("frontier.pending");
+    assert!(second > first);
+    let ready = Instant::now() + Duration::from_secs(10);
+    loop {
+        let canonical = matches!(transport::request(&spindle_socket, &Request::Status, Instant::now() + Duration::from_millis(250)), Ok(Reply::Status { status }) if status.canonical_through >= second);
+        let live = matches!(query_daemon_socket(&daemon_socket, &DaemonRequest::LiveMetricsV1 { origin: Some(origin.clone()), epoch: Some(first_page.epoch.clone()), after: first_page.next_after, count: 64, max_bytes: 32768 }), Some(DaemonResponse::LiveMetricsV1(page)) if !page.gap && page.entries.iter().any(|entry| entry.record_id == second && entry.point.name == "frontier.pending"));
+        if canonical && live {
+            break;
+        }
+        assert!(
+            Instant::now() < ready,
+            "canonical and live observation deadline"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    let before = CatalogStore::read_spindle_projection_frontier(
+        &layout,
+        Instant::now() + Duration::from_secs(1),
+    )
+    .unwrap();
+    assert_eq!(before.origin.as_deref(), Some(origin.as_str()));
+    assert_eq!(before.record_id, first);
+    assert!(matches!(
+        query_daemon_socket(&daemon_socket, &DaemonRequest::Flush),
+        Some(DaemonResponse::Flushed { .. })
+    ));
+    let after = CatalogStore::read_spindle_projection_frontier(
+        &layout,
+        Instant::now() + Duration::from_secs(1),
+    )
+    .unwrap();
+    assert_eq!(after.origin.as_deref(), Some(origin.as_str()));
+    assert_eq!(after.record_id, second);
+    println!(
+        "canonical and live record={second}; projection before={first} after={}",
+        after.record_id
+    );
+    drop(client);
+    let _ = collector.0.kill();
+    let _ = collector.0.wait();
+    stack.shutdown_and_assert();
+}
