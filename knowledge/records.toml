@@ -488,3 +488,12 @@ source_path = "knowledge/observations/O-0300-proof-inventory-and-trust-boundarie
 date = 2026-11-27
 added_by = "agent"
 human_ratified = false
+
+[[records]]
+id = "D-0348"
+source_path = "knowledge/decisions/D-0348-receipt-bound-attempts.md"
+title = "Receipt-bound reported attempts"
+type = "decision"
+date = 2026-11-27
+added_by = "agent"
+human_ratified = false
