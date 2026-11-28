@@ -47,7 +47,8 @@ pub struct Premise {
 pub struct Group {
     pub attributed_to: String,
     pub premises: Vec<Premise>,
-    pub complete: bool,
+    /// All selected premises were enumerated; this does not mean resolved.
+    pub enumeration_complete: bool,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Node {
@@ -139,43 +140,43 @@ pub fn project(
         }
         let node_selection = selection(view.revision(&id));
         let mut groups = Vec::new();
-        if node_selection == Selection::Present {
-            if let Some(selected_groups) = by_conclusion.get(&id) {
-                for group in selected_groups {
-                    if groups_used >= limits.groups || !budget.tick() {
+        if node_selection == Selection::Present
+            && let Some(selected_groups) = by_conclusion.get(&id)
+        {
+            for group in selected_groups {
+                if groups_used >= limits.groups || !budget.tick() {
+                    budget.truncated = true;
+                    break;
+                }
+                groups_used += 1;
+                let mut entry = Group {
+                    attributed_to: group.attributed_to.clone(),
+                    premises: Vec::new(),
+                    enumeration_complete: true,
+                };
+                let projection = &view.groups()[*group];
+                for (premise, relation) in &group.premises {
+                    if edges_used >= limits.edges || !budget.tick() {
                         budget.truncated = true;
+                        entry.enumeration_complete = false;
                         break;
                     }
-                    groups_used += 1;
-                    let mut entry = Group {
-                        attributed_to: group.attributed_to.clone(),
-                        premises: Vec::new(),
-                        complete: true,
-                    };
-                    let projection = &view.groups()[*group];
-                    for (premise, relation) in &group.premises {
-                        if edges_used >= limits.edges || !budget.tick() {
-                            budget.truncated = true;
-                            entry.complete = false;
-                            break;
-                        }
-                        edges_used += 1;
-                        let status = projection.premises()[premise];
-                        entry.premises.push(Premise {
-                            revision: *premise,
-                            relation: *relation,
-                            revision_selection: selection(view.revision(premise)),
-                            relation_selection: selection(view.relation(relation)),
-                            status,
-                        });
-                        if status == PremiseStatus::Present && !nodes.contains_key(premise) {
-                            queue.insert(*premise);
-                        }
+                    edges_used += 1;
+                    let status = projection.premises()[premise];
+                    entry.premises.push(Premise {
+                        revision: *premise,
+                        relation: *relation,
+                        revision_selection: selection(view.revision(premise)),
+                        relation_selection: selection(view.relation(relation)),
+                        status,
+                    });
+                    if status == PremiseStatus::Present && !nodes.contains_key(premise) {
+                        queue.insert(*premise);
                     }
-                    groups.push(entry);
-                    if budget.truncated {
-                        break;
-                    }
+                }
+                groups.push(entry);
+                if budget.truncated {
+                    break;
                 }
             }
         }
