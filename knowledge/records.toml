@@ -605,3 +605,12 @@ status = "proposed"
 date = 2026-11-28
 added_by = "agent"
 human_ratified = false
+
+[[records]]
+id = "D-0305"
+source_path = "knowledge/decisions/D-0305-private-browser-gateway.md"
+title = "Private browser query gateway"
+date = 2026-11-28
+added_by = "agent"
+human_ratified = false
+related = ["D-0192"]

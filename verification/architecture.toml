@@ -2,6 +2,7 @@
 [headless]
 roots = ["fabric-cli", "fabric-client", "fabric-mcp", "fabric-server"]
 renderer_families = ["leptos", "tauri", "wgpu"]
+optional_packages = ["fabric-ui-dom", "fabric-ui-gateway-core", "fabric-app-core", "fabric-app-parity"]
 
 # Direct dependency boundaries, including test dependencies.
 [crates]
@@ -23,3 +24,10 @@ fabric-server = ["fabric", "fabric-alert", "fabric-query", "serde", "serde_json"
 fabric-cli = ["admission-kernel", "arrow", "chrono", "clap", "fabric", "fabric-collect", "fabric-core", "fabric-graph", "fabric-query", "fabric-store", "rustix", "serde", "serde_json", "sha2", "tokio", "toml"]
 fabric-client = ["fabric-query-contract", "fabric", "serde", "serde_json", "tokio"]
 xtask = ["serde", "serde_json", "tempfile", "toml", "proc-macro2", "arrow-array", "arrow-schema", "arrow-ipc", "fabric", "fabric-core", "fabric-server", "rusqlite", "rustix"]
+
+# Independently locked optional workspaces; direct dependencies include tests.
+[optional_crates]
+fabric-app-core = ["fabric-query-contract", "serde", "serde_json"]
+fabric-app-parity = ["fabric-app-core", "fabric-query-contract", "serde_json"]
+fabric-ui-dom = ["fabric-app-core", "fabric-query-contract", "leptos", "serde_json", "wasm-bindgen", "wasm-bindgen-futures", "js-sys", "web-sys"]
+fabric-ui-gateway-core = ["fabric", "fabric-client", "fabric-query-contract", "serde_json", "tokio", "hyper", "hyper-util", "http-body-util", "tempfile", "fabric-server"]

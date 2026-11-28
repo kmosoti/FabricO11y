@@ -354,28 +354,34 @@ flowchart LR
 
 ### Optional frontend boundary
 
-The proposed frontend crates consume typed, authorized query results. The shared
-app core owns models, navigation state, reducers, and transformations. Its
-native and wasm builds must run identical reducer fixtures. Thin web and desktop
-roots adapt transport and platform integration. Renderer dependencies stay in
-the opt-in frontend graph.
+The separate frontend workspace contains the transport-free `fabric-app-core`
+reducer and an explicitly selected `fabric-ui-dom` browser renderer. The
+separately packaged native gateway accepts only bounded run-list and run-summary
+queries on a private Unix socket. Its owner-provisioned authority and source
+scope constrain the authenticated canonical query client. A responsive layout
+is present; mobile behavior has not been qualified.
 
 ```mermaid
 flowchart LR
-    CLI["Fabric CLI and typed client"] --> PORT["Authorized query adapter"]
-    PORT --> CORE["fabric-app-core (target-independent state and reducers)"]
-    CORE --> DOM["fabric-ui-dom (Leptos)"]
-    CORE --> GPU["fabric-ui-gpu (wgpu)"]
-    DOM --> WEB["Web root"]
-    DOM --> DESKTOP["Desktop root (Tauri)"]
-    GPU --> WEB
-    GPU --> DESKTOP
+    DOM["Optional browser renderer"] --> CORE["Typed run reducer and pinned snapshot"]
+    DOM -->|"same-origin HTTPS"| PROXY["Owner-managed proxy and authenticated holder"]
+    PROXY -->|"private Unix socket; same UID"| GATEWAY["Scoped read gateway"]
+    GATEWAY -->|"authenticated loopback"| CANONICAL["Canonical query service"]
 ```
 
-The backend currently ships headless packages. `cargo xtask architecture`
-checks the declared direct dependencies and the default headless runtime and
-build graphs. See the [frontend decision](../knowledge/decisions/D-0192-optional-frontend.md)
-for the proposed crate boundaries and qualification requirements.
+The proxy and holder authentication are separately provisioned: the Unix
+socket trusts all processes with the gateway UID. Browser-supplied authority
+and scope are not grants. The gateway does not itself establish a browser
+session, and closing a connection does not establish that backend query work
+has stopped. Browser and mobile runtime behavior, Tauri, PWA or offline cache,
+and the external holder-authenticated deployment remain unqualified.
+
+`cargo xtask architecture` checks locked root dependencies and the headless
+runtime and build graph, and reads locked offline metadata for each optional
+workspace to enforce its direct dependency and default-member boundaries. The
+metadata check neither builds nor qualifies an optional artifact. See the
+[frontend decision](../knowledge/decisions/D-0192-optional-frontend.md) and
+[private gateway decision](../knowledge/decisions/D-0305-private-browser-gateway.md).
 
 ## 2. Converged Telemetry Engine & Self-Preservation Pipeline
 

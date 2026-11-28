@@ -3,8 +3,12 @@
 This separate Cargo workspace contains `fabric-app-core`, a Sans-I/O reducer
 for the existing `ListRuns` and `RunSummary` query contracts. The same reducer
 can open a typed run detail at the list snapshot. It has no renderer or transport.
-The adapter authenticates the backend, supplies the expected authority, and
-bounds incoming bytes before constructing a response event. An expected
+The optional `fabric-ui-dom` browser renderer uses this reducer. The separate
+`gateway` workspace provides a private same-UID Unix read adapter to the
+authenticated canonical query service. An owner-managed same-origin HTTPS
+proxy must authenticate the browser holder and forward to that socket. The
+adapter supplies the expected authority and bounds incoming bytes before
+constructing a response event. An expected
 identity or returned coverage field is not an authorization grant.
 
 The reducer accepts at most 256 retained run rows, 32 pages, 256 KiB per
@@ -26,3 +30,8 @@ The `parity` package is test-only and not a default member. Its recorded
 fixture can be executed natively and as a `wasm32-unknown-unknown` cdylib via
 `parity/wasm-fixture.cjs`; compare the two exact outputs using Node. This
 harness is not a browser or frontend package qualification.
+
+The gateway does not establish or revoke browser sessions. Browser and mobile
+behavior, Tauri, PWA or offline cache, and the owner-managed holder proxy remain
+unqualified. Disconnecting a browser does not prove backend query cancellation.
+See [gateway setup](gateway/README.md) for the local trust boundary.
