@@ -125,6 +125,20 @@ pub fn prepare(
     Ok(Preparation::Ready(Box::new(Prepared { request })))
 }
 impl Prepared {
+    /// Checks a caller-selected scope and revision against this validated key.
+    pub fn binds(
+        &self,
+        view: [u8; 32],
+        root: RevisionDigest,
+        revision: RevisionDigest,
+        scope: &str,
+    ) -> bool {
+        self.request.view_digest == view
+            && self.request.root == root
+            && self.request.scope == scope
+            && self.request.selected.binary_search(&revision).is_ok()
+    }
+
     /// Compare the complete key and validate the claimed output length and digest.
     /// The returned bytes are a derivative claim, not independently verified content.
     pub fn validate_cached<'a>(

@@ -160,3 +160,7 @@ A later basis cannot retroactively change an earlier claim.
 Identifiers are limited to 256 bytes and receipt pointers to 1024 bytes; the
 existing revision and portable-view budgets also apply. The projection does not
 execute content, infer authority, or verify artifact availability.
+
+## In-memory representation selection
+
+A caller may select raw captured bytes, a supplied abstract, or omission for each handoff citation under a bounded byte budget. Raw bytes are checked against the captured source and citation; supplied abstracts retain their enrichment identity and remain unverified derivative claims. Omission and dissent markers remain explicit. This selection does not authorize expansion or establish custody.
