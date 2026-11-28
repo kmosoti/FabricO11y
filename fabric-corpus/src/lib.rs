@@ -16,6 +16,7 @@ pub mod investigation_proposal;
 pub mod lexical;
 pub mod portable;
 pub mod reconcile;
+pub mod representation;
 pub mod source;
 
 use sha2::{Digest, Sha256};
