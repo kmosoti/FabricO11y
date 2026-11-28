@@ -8,6 +8,7 @@
 pub mod as_of;
 pub mod context;
 pub mod differential;
+pub mod failure_claim;
 pub mod lexical;
 pub mod portable;
 pub mod reconcile;

@@ -143,3 +143,20 @@ Unrelated snapshot changes do not change this applicability result. From and To
 are caller labels, not proof of chronology or an ordered event replay. Selection
 counts and imported bytes inherit the portable view limits; no retrieval or
 authorization decision is made.
+
+## Prior-failure claims
+
+The `fabric.prior-failure` custom revision profiles carry versioned, inert
+claim and attempt-observation data. Attempt, candidate, intended strategy,
+actual artifact reference and diagnosis are separate fields. Claim bodies are
+recorded outside the frozen portable basis whose digest they name; an optional
+receipt pointer is an untrusted string. The projection checks the original basis
+digest and the separately recorded claim before considering its selected
+observation. A matching typed observation in the basis yields
+`EvidenceReferenced`, not verified fact, receipt authentication or enforcement.
+Missing references are unsupported, omitted, unknown or conflicting as appropriate.
+A later basis cannot retroactively change an earlier claim.
+
+Identifiers are limited to 256 bytes and receipt pointers to 1024 bytes; the
+existing revision and portable-view budgets also apply. The projection does not
+execute content, infer authority, or verify artifact availability.
