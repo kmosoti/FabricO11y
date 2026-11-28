@@ -153,6 +153,74 @@ fn head(result: &str) -> i64 {
 }
 
 #[test]
+fn rotated_credentials_reauthenticate_existing_policy_after_restart() {
+    let scratch = std::env::var_os("TMPDIR").map(PathBuf::from).unwrap();
+    let root = tempfile::tempdir_in(scratch).unwrap();
+    let config = config(root.path());
+    let (address, stop, server) = start(&config);
+    let authority = match exchange(&address, READER, &Request::Progress) {
+        Response::Progress { authority, .. } => authority,
+        other => panic!("unexpected progress: {other:?}"),
+    };
+    let raw = proposal(1, 'a');
+    let ingest = Request::Ingest {
+        origin: "origin".into(),
+        records: vec![ForwardRecord {
+            source_id: 1,
+            raw: raw.clone(),
+        }],
+    };
+    assert!(matches!(
+        exchange(&address, NODE, &ingest),
+        Response::Committed { through: 1, .. }
+    ));
+    let body = command(&authority, "rotate", None, 1, &raw);
+    let saved = result(accept(&address, WRITER, &body));
+    stop.store(true, Ordering::SeqCst);
+    server.join().unwrap();
+
+    const NEW_READER: &str = "replacement-reader-secret";
+    const NEW_NODE: &str = "replacement-node-secret";
+    const NEW_WRITER: &str = "replacement-writer-secret";
+    fs::write(&config.reader_credential_file, NEW_READER).unwrap();
+    fs::write(&config.nodes[0].credential_file, NEW_NODE).unwrap();
+    fs::write(&config.decision_writers[0].credential_file, NEW_WRITER).unwrap();
+    let (address, stop, server) = start(&config);
+    for (secret, request) in [
+        (READER, Request::Progress),
+        (NODE, Request::Progress),
+        (WRITER, Request::AcceptPlan { body: body.clone() }),
+    ] {
+        assert!(
+            canonical::exchange(
+                &address,
+                secret,
+                &request,
+                Instant::now() + Duration::from_secs(5)
+            )
+            .is_err()
+        );
+    }
+    assert!(matches!(exchange(&address, NEW_READER, &Request::Progress),
+        Response::Progress { authority: actual, .. } if actual == authority));
+    assert!(matches!(
+        exchange(&address, NEW_NODE, &ingest),
+        Response::Committed { through: 1, .. }
+    ));
+    assert_eq!(result(accept(&address, NEW_WRITER, &body)), saved);
+    assert!(matches!(
+        accept(&address, NEW_READER, &body),
+        Response::Error { .. }
+    ));
+    assert!(matches!(
+        exchange(&address, NEW_WRITER, &Request::Progress),
+        Response::Error { .. }
+    ));
+    stop.store(true, Ordering::SeqCst);
+    server.join().unwrap();
+}
+
+#[test]
 fn competing_acceptance_lost_reply_new_head_and_restart() {
     transaction_fixture();
 }
