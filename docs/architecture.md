@@ -324,6 +324,12 @@ flowchart LR
     PQ -->|"guarded full-row read and receipt provenance"| READY
 ```
 
+When the local live metric cursor is enabled and the configured collector tick
+exceeds one second, a separate skipped-tick Spindle poll shares the same
+serialized projection path. Backpressure defers these polls until a normal tick
+services the existing flush and retention paths. This does not change the host
+collection cadence or turn the cursor into a custody frontier.
+
 The local projection binds its Spindle origin before staging a contiguous prefix.
 New metrics, logs, and traces carry internal receipt provenance in Parquet. The
 public query schema omits this field. Compaction retains raw provenance and metric
