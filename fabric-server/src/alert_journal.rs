@@ -363,12 +363,12 @@ mod tests {
     fn disk_replay_fencing_and_bounded_intents() {
         let root = tempfile::tempdir_in(std::env::var_os("TMPDIR").expect("disk TMPDIR")).unwrap();
         let p = provision(3);
-        let mut j = AlertJournal::open(root.path(), p.clone()).unwrap();
+        let mut j = AlertJournal::open(&root.path().join("journal"), p.clone()).unwrap();
         let first = j.apply("auth", "scope", "one", 0, input(1, 1, 11)).unwrap();
         assert_eq!(first.decision.lifecycle, Lifecycle::Pending);
         assert!(first.intent_id.is_some());
         drop(j);
-        let mut j = AlertJournal::open(root.path(), p.clone()).unwrap();
+        let mut j = AlertJournal::open(&root.path().join("journal"), p.clone()).unwrap();
         let second = j.apply("auth", "scope", "two", 1, input(2, 3, 11)).unwrap();
         assert_eq!(second.decision.lifecycle, Lifecycle::Firing);
         assert!(second.intent_id.is_some());
@@ -411,10 +411,10 @@ mod tests {
         let mut wrong = p.clone();
         wrong.rule.source = [7; 32];
         assert!(matches!(
-            AlertJournal::open(root.path(), wrong),
+            AlertJournal::open(&root.path().join("journal"), wrong),
             Err(JournalError::ScopeMismatch)
         ));
-        let mut j = AlertJournal::open(root.path(), p).unwrap();
+        let mut j = AlertJournal::open(&root.path().join("journal"), p).unwrap();
         assert_eq!(
             j.apply("auth", "scope", "three", 2, input(3, 4, 11))
                 .unwrap(),
@@ -429,7 +429,7 @@ mod tests {
     #[test]
     fn missing_inputs_can_advance_time_at_same_frontier() {
         let root = tempfile::tempdir_in(std::env::var_os("TMPDIR").expect("disk TMPDIR")).unwrap();
-        let mut journal = AlertJournal::open(root.path(), provision(4)).unwrap();
+        let mut journal = AlertJournal::open(&root.path().join("journal"), provision(4)).unwrap();
         journal
             .apply("auth", "scope", "initial", 0, input(1, 1, 11))
             .unwrap();
@@ -445,5 +445,85 @@ mod tests {
             .unwrap();
         assert_eq!(second.decision.lifecycle, Lifecycle::Inactive);
         assert!(second.intent_id.is_none());
+    }
+    #[test]
+    fn committed_alert_survives_owner_process_kill() {
+        use std::{
+            io::Write,
+            os::unix::process::ExitStatusExt,
+            process::{Child, Command, Stdio},
+            time::{Duration, Instant},
+        };
+        const CHILD: &str = "FABRIC_ALERT_JOURNAL_CHILD_ROOT";
+        if let Some(root) = std::env::var_os(CHILD) {
+            let root = std::path::PathBuf::from(root);
+            let mut journal = AlertJournal::open(&root.join("journal"), provision(4)).unwrap();
+            let receipt = journal
+                .apply("auth", "scope", "one", 0, input(1, 1, 11))
+                .unwrap();
+            let mut marker = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(root.join("ready-staged"))
+                .unwrap();
+            marker
+                .write_all(&serde_json::to_vec(&receipt).unwrap())
+                .unwrap();
+            marker.sync_all().unwrap();
+            drop(marker);
+            std::fs::rename(root.join("ready-staged"), root.join("ready")).unwrap();
+            loop {
+                std::thread::park();
+            }
+        }
+        struct Guard(Child);
+        impl Drop for Guard {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+                let _ = self.0.wait();
+            }
+        }
+        let root = tempfile::tempdir_in(std::env::var_os("TMPDIR").expect("disk TMPDIR")).unwrap();
+        let mut child = Guard(
+            Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "alert_journal::tests::committed_alert_survives_owner_process_kill",
+                    "--nocapture",
+                ])
+                .env(CHILD, root.path())
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap(),
+        );
+        let deadline = Instant::now() + Duration::from_secs(15);
+        let marker = root.path().join("ready");
+        while !marker.exists() {
+            assert!(
+                child.0.try_wait().unwrap().is_none(),
+                "child exited before readiness"
+            );
+            assert!(Instant::now() < deadline, "child readiness deadline");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        // The marker appears only after the committed receipt has been written.
+        let bytes = std::fs::read(&marker).unwrap();
+        let receipt: Receipt = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(receipt.decision.lifecycle, Lifecycle::Pending);
+        assert!(matches!(
+            AlertJournal::open(&root.path().join("journal"), provision(4)),
+            Err(JournalError::Storage)
+        ));
+        child.0.kill().unwrap();
+        let status = child.0.wait().unwrap();
+        assert_eq!(status.signal(), Some(9));
+        let mut reopened = AlertJournal::open(&root.path().join("journal"), provision(4)).unwrap();
+        assert_eq!(reopened.read("one").unwrap(), Some(receipt));
+        let next = reopened
+            .apply("auth", "scope", "two", 1, input(2, 3, 11))
+            .unwrap();
+        assert_eq!(next.decision.lifecycle, Lifecycle::Firing);
     }
 }
