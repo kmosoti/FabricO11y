@@ -106,3 +106,20 @@ revision, omitted captured bytes and an external-only source remain distinct
 from verified supplied bytes. Invalid supplied bytes reject the context. The
 view retains selected dissent and relation claims. Neither a recorded claim nor
 a digest establishes authorization, custody, availability, or truth.
+
+## Explicit selected-head reconciliation
+
+`fabric-corpus::reconcile` analyzes same-object revision ancestry in a frozen
+as-of selection. It reports maximal present selected revisions, all selected
+missing revisions and parent digests omitted from the selection. A missing
+selection has unknown object identity, so any such selection makes the analysis
+incomplete. Reconciliation refuses incomplete selections and requires a new
+body whose parents are exactly the two or more considered heads. It rechecks
+selected bodies against the supplied corpus before ordinary append admission.
+The operation retains all prior revision, relation and dissent claims.
+
+Analysis is bounded by the as-of view limits, 4096 ancestry links, 256 distinct
+unselected parent digests and a 1024-byte object ID. These are limits on a
+selected snapshot, not evidence that every concurrent global head was selected.
+This pure operation does not perform an authoritative global head query or an
+atomic conditional write; callers must provide those boundaries where needed.

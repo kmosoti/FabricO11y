@@ -49,6 +49,7 @@ TOML-native records without changing that cohort or its count.
 | [D-0190 · Zero-UI Typed Consumer Crate (`fabric-client`)](decisions/D-0190-zero-ui-fabric-client.md) | `agent` | `false` | Zero-UI `fabric.cli.v1` schema crate (`fabric-client`), `FABRIC_CREDENTIAL_FILE`-only `FabricQueryClient`, env stripping, redaction, and `kill_on_drop` |
 | [D-0191 · Verified develop integration and human release promotion](decisions/D-0191-verified-develop-integration.md) | `agent` | `false` | Current-base integration, exact promotion and final artifact qualification |
 | [D-0194 · Causal contribution projection](decisions/D-0194-causal-contributions.md) | `agent` | `false` | Bounded runtime-neutral contribution and proposal heads |
+| [D-0205 · Selected-head reconciliation](decisions/D-0205-selected-head-reconciliation.md) | `agent` | `false` | Explicit bounded reconciliation of complete selected ancestry |
 | [D-0204 · Frozen citation context](decisions/D-0204-frozen-context.md) | `agent` | `false` | Reverify bounded supplied passages within selected frozen evidence |
 | [D-0203 · Bounded lexical rebuild](decisions/D-0203-bounded-lexical.md) | `agent` | `false` | Deterministic within-revision token adjacency with explicit limits |
 | [D-0202 · Portable corpus views](decisions/D-0202-portable-corpus.md) | `agent` | `false` | Bounded deterministic view transfer and availability claims |
