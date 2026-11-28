@@ -472,6 +472,23 @@ individual footer, page and Arrow operations are not preemptible mid-call. Rows 
 caller's barrier are not looked up. The lock is held for this inspection; this can delay
 projection work for other origins. Native engine mode remains unavailable.
 
+### Versioned trace parents
+
+The opt-in `fabrico11y/4` trace envelope uses the v3 context and producer lease
+and retains its own descriptor. A bounded decoder checks the explicit trace
+and span IDs before owning the tokens. The bridge preserves the optional
+same-trace parent, the producer metadata and the wire version in the shared
+trace schema. Parent IDs describe producer-supplied references. Trace storage
+can retain late parents, unmatched references and duplicate claimed span IDs.
+
+```mermaid
+flowchart LR
+    WIRE["Opt-in v4 trace frame"] --> DECODE["Bounded decoder and retained registry"]
+    DECODE --> CUSTODY["Exact-byte Spindle custody"]
+    CUSTODY --> BRIDGE["Bridge projects trace, span and parent IDs"]
+    BRIDGE --> ROW["Trace Parquet and query"]
+```
+
 ## Versioned service configuration
 
 The shared loader reads bounded regular files. Explicit service launch paths

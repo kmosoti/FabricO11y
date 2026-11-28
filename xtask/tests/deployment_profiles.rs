@@ -522,8 +522,8 @@ fn versioned_wire_compatibility_accepts_v2_v3_and_refuses_unannounced_extensions
     })
     .to_string();
     let future_version = json!({
-        "version": 4,
-        "registry": "fabrico11y/4",
+        "version": 5,
+        "registry": "fabrico11y/5",
         "identity": {"producer": v3_producer, "generation": v3_generation.as_str(), "sequence": 2},
         "timestamp_ns": 3,
         "resource": "fixture",
@@ -566,19 +566,83 @@ fn versioned_wire_compatibility_accepts_v2_v3_and_refuses_unannounced_extensions
         3,
         "refusals must leave the identity usable"
     );
+    let v4 = json!({
+        "version": 4,
+        "registry": "fabrico11y/4",
+        "context": {"run_id": "00000000-0000-4000-8000-000000000001"},
+        "identity": {"producer": v3_producer, "generation": v3_generation.as_str(), "sequence": 2},
+        "timestamp_ns": 4,
+        "resource": "fixture",
+        "data": {
+            "kind": "service_request",
+            "service": "worker",
+            "operation": "child",
+            "duration_ns": 1,
+            "status": "ok",
+            "trace_id": null
+        },
+        "span": {
+            "trace_id": "11111111111111112222222222222222",
+            "span_id": "0000000000000002",
+            "parent_span_id": "0000000000000001"
+        }
+    });
+    let v4_raw = v4.to_string();
+    assert!(serde_json::from_str::<observation::ObservationV3>(&v4_raw).is_err());
+    assert_eq!(node.submit(&v4_raw).id, 4);
+    let mut next = v4;
+    next["identity"]["sequence"] = json!(3);
+    let next_with_parent = next.to_string();
+    for token in [
+        "1".repeat(4096),
+        format!(r"\u0031{}", "0".repeat(15)),
+        r"\u0031".repeat(4096),
+    ] {
+        let malformed = next_with_parent.replace(
+            r#""parent_span_id":"0000000000000001""#,
+            &format!(r#""parent_span_id":"{token}""#),
+        );
+        assert_ne!(malformed, next_with_parent);
+        assert!(malformed.len() < observation::MAX_FRAME);
+        assert!(observation::decode_versioned(malformed.as_bytes()).is_err());
+        let refused = spindle::transport::submit_bytes(
+            &node.config.socket,
+            malformed.as_bytes(),
+            Instant::now() + Duration::from_secs(3),
+        );
+        assert!(refused.is_err());
+        assert_eq!(node.health().highest_record_id, 4);
+    }
+    next["span"]["span_id"] = json!("0000000000000001");
+    next["span"]["parent_span_id"] = Value::Null;
+    let mut unleased = next.clone();
+    unleased["identity"]["generation"] = json!("legacy");
+    assert!(
+        spindle::transport::submit_bytes(
+            &node.config.socket,
+            unleased.to_string().as_bytes(),
+            Instant::now() + Duration::from_secs(3),
+        )
+        .is_err()
+    );
+    assert_eq!(node.health().highest_record_id, 4);
+    let next_raw = next.to_string();
+    assert_eq!(node.submit(&next_raw).id, 5);
     node.restart(&bins);
     let mut stored = Vec::new();
-    read_lane(&node, 3, &mut stored).unwrap();
+    read_lane(&node, 5, &mut stored).unwrap();
     assert_eq!(
         stored
             .iter()
             .map(|(_, raw)| observation::decode_versioned(raw).unwrap().version())
             .collect::<Vec<_>>(),
-        [2, 3, 2]
+        [2, 3, 2, 4, 4]
     );
     assert_eq!(stored[0].1, v2.as_bytes());
     assert_eq!(stored[1].1, v3.as_bytes());
     assert_eq!(stored[2].1, v2_next.as_bytes());
+    assert_eq!(stored[3].1, v4_raw.as_bytes());
+    assert_eq!(stored[4].1, next_raw.as_bytes());
 }
 
 fn open_batch_adapter(

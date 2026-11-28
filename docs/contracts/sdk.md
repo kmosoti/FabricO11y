@@ -41,6 +41,17 @@ must equal that global ID. V2 run labels remain local historical labels and do
 not imply cross-origin correlation. The v2 descriptor and strict wire shape are
 unchanged; v3 has a separate retained descriptor.
 
+An explicit trace producer can call `fabric::observation::encode_v4` and submit
+the resulting bytes through the bounded Spindle transport with a valid
+producer lease. The `fabrico11y/4` envelope adds `span` to the v3 context and
+retains the existing request, agent-run and tool-execution data kinds. The
+span has a 32-character lowercase hexadecimal trace ID, a 16-character
+lowercase hexadecimal span ID and an optional 16-character parent span ID.
+IDs are nonzero and the parent differs from the child. JSON ID strings use
+plain hex without escapes. A service request's data trace ID, when present,
+equals the envelope trace ID. The ordinary Client and RunClient still emit
+v2 and v3 respectively.
+
 `RunClient::new(config, context)` performs bounded lease and progress control
 exchanges, each limited by `config.delivery_timeout` (at most five seconds).
 `try_record` performs no registration or transport work. An authenticated,

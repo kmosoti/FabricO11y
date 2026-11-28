@@ -525,6 +525,26 @@ mod v4_tests {
         serde_json::to_vec(value).unwrap()
     }
     #[test]
+    fn retained_v4_registry_fixtures_match_wire_validation() {
+        let cases: Vec<serde_json::Value> =
+            serde_json::from_str(include_str!("../../registry/v4/fixtures.json")).unwrap();
+        assert_eq!(cases.len(), 13);
+        for case in cases {
+            let bytes = serde_json::to_vec(&case["wire"]).unwrap();
+            let observed = decode_versioned(&bytes);
+            assert_eq!(
+                observed.is_ok(),
+                case["valid"].as_bool().unwrap(),
+                "{}: {observed:?}",
+                case["name"],
+            );
+            if let Ok(record) = observed {
+                assert_eq!(record.version(), VERSION_V4);
+            }
+        }
+    }
+
+    #[test]
     fn v4_explicit_roundtrip_and_three_trace_kinds() {
         for data in [
             serde_json::json!({"kind":"service_request","service":"api","operation":"get","duration_ns":4,"status":"ok","trace_id":TRACE}),
