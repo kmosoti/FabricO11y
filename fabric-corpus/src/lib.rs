@@ -18,6 +18,7 @@ pub mod portable;
 pub mod reconcile;
 pub mod representation;
 pub mod source;
+pub mod wiki;
 
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};

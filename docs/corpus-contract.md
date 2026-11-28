@@ -95,6 +95,19 @@ count, plus 32 bytes per selected digest, missing digest and provenance entry;
 it is not a wire format or an allocator measurement. Costs also report scanned
 bytes, tokens and pair occurrences. Limit failure returns no partial result.
 
+## Selected relation backlinks
+
+`fabric-corpus::wiki::project` checks the portable view against its expected
+digest and groups explicitly selected incoming relations for an exact predicate.
+It carries the predicate, relation digests, source revision IDs and attribution.
+It keeps missing selected relations separate and distinguishes present,
+selected-missing, and omitted endpoints. A scoped view can contain cycles.
+
+Its output cost charges the predicate and projected relation payload, with
+the object key counted for each link. Allocation and serialized size depend
+on representation. The projection describes a frozen selection, with
+authority and current index visibility supplied by the caller.
+
 ## Frozen citation context
 
 `fabric-corpus::context` assembles caller-selected citations over an immutable

@@ -7,3 +7,7 @@ keeps rebuilding deterministic across native and wasm targets and preserves
 missing selected revisions. A locale-aware tokenizer would need a separately
 versioned contract and new fixtures. Authorization, incremental indexing and
 wiki projections remain outside this decision.
+
+Attribute-preserving backlinks use the exact selected relation digests and an
+explicit predicate rather than token proximity. The frozen projection retains
+selected-missing relations and distinguishes missing or omitted endpoints.
