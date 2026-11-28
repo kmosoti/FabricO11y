@@ -1,6 +1,8 @@
 //! In-memory, runtime-neutral contribution and causal proposal state.
 //! Caller-supplied identities are opaque claims, not authentication or receipts.
 
+pub mod work_claim;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 pub const MAX_CONTRIBUTIONS: usize = 4096;
