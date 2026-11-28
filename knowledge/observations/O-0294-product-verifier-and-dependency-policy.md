@@ -1,10 +1,3 @@
----
-id: O-0294
-date: 2026-11-27
-added_by: agent
-human_ratified: false
----
-
 # Product verifier and dependency-policy evidence
 
 This is a source-bound observation for [#294](https://github.com/kmosoti/FabricO11y/issues/294).
