@@ -139,3 +139,13 @@ for that command. It records outcomes, not the resolved `vstd` for the direct
 Verus fixture. This is a checker-control result, not a rerun of all proof suites
 or an extraction run. No verification dependencies, host configuration,
 product behavior, or proof specifications were changed.
+
+## Required native runtime controls
+
+The coverage manifest selects exact library fixtures for partial-flush and
+deferred-watermark protection and for over-quota partition eviction. These
+checks are part of native acceptance. The real RSS guard fixture has a
+separate confined Linux profile with one owned process and exact cgroup
+limits. Its optional-history branch test does not cover daemon scheduling
+with concurrent cgroup pressure. The observed checks above remain evidence
+for their recorded source and tools.

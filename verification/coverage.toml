@@ -1,5 +1,7 @@
 version = 1
 
+# Checks select an integration target by name or explicitly select library = true.
+
 [[invariants]]
 id = "acknowledged-readback"
 requirement = "Every acknowledged valid observation remains readable and export cannot stop at a valid record, including after restart."
@@ -189,8 +191,10 @@ checks = [
   "rollup-alignment-euclidean-timestamps",
   "hot-metric-ring-headroom-matches-verified-kernel",
   "unified-query-spec-operator-precedence-and-literals",
+  "partial-flush-protects-uncommitted-partitions",
+  "janitor-evicts-over-quota",
 ]
-proof_scope = "Four fabric-core telemetry_invariants checks directly exercise Gorilla compression roundtripping, Euclidean 5-minute rollup alignment, ring_can_buffer headroom gating, and SQL literal/operator validation. Verus + Charon/Aeneas Lean 4 contracts also cover watermark_advance, disk_needs_eviction, and rss_shedding_decision alongside Z3 QF_BV SMT checks (TelemetrySmt.smt2), 9 Lean 4 theorems (Telemetry.lean, valid over [-9_223_372_036_854_600_000, i64::MAX] before i64::MIN saturation), 3 cargo-fuzz harnesses, unit tests in fabric-store::janitor and fabric-collect::daemon, and end-to-end spindle_unification integration tests; declared coverage checks do not directly trigger post-flush daemon durability, over-quota disk eviction, or active RSS shedding."
+proof_scope = "Four fabric-core telemetry_invariants checks directly exercise Gorilla compression roundtripping, Euclidean 5-minute rollup alignment, ring_can_buffer headroom gating, and SQL literal/operator validation. Verus + Charon/Aeneas Lean 4 contracts also cover watermark_advance, disk_needs_eviction, and rss_shedding_decision alongside Z3 QF_BV SMT checks (TelemetrySmt.smt2), 9 Lean 4 theorems (Telemetry.lean, valid over [-9_223_372_036_854_600_000, i64::MAX] before i64::MIN saturation), 3 cargo-fuzz harnesses and end-to-end spindle_unification integration tests. Two exact library checks drive partial flush, deferred watermark, pending partition protection and recovery, and local over-quota partition eviction. The isolated Linux RSS watchdog control is separate and requires a collected process in a provisioned cgroup. The declared checks do not establish complete daemon scheduling under RSS pressure or power-loss durability."
 assumptions = ["Operating system kernel /proc and cgroup v2 counters report accurate instantaneous byte counts; storage filesystem honors atomic rename and fsync semantics for Parquet partitions and SQLite/redb commits."]
 
 [[checks]]
@@ -216,6 +220,18 @@ id = "unified-query-spec-operator-precedence-and-literals"
 package = "fabric-core"
 target = "telemetry_invariants"
 test = "unified_query_spec_operator_precedence_and_numeric_literals"
+
+[[checks]]
+id = "partial-flush-protects-uncommitted-partitions"
+package = "fabric-collect"
+library = true
+test = "daemon::tests::uncommitted_partitions_stay_protected_across_partial_flush_and_deferred_watermark"
+
+[[checks]]
+id = "janitor-evicts-over-quota"
+package = "fabric-store"
+library = true
+test = "janitor::tests::compacts_downsamples_and_evicts_over_quota"
 
 [[invariants]]
 id = "receipt-projection-readiness"
