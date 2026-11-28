@@ -17,3 +17,8 @@ returns an explicit refusal so callers can preserve their source position
 for later work. Keep the first profile single-owner, with independently
 provisioned scope and no automatic event eviction. Treat source and evidence
 references as caller assertions until an adapter performs readback.
+
+Read history in bounded local pages. Keep the first read version fixed through
+appends and reopening, and check persisted evaluation and receipt consistency
+before returning entries. The local position belongs with the original journal
+and does not carry authentication.
