@@ -263,6 +263,7 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
         for (name, descriptor) in [
             (observation::REGISTRY, observation::DESCRIPTOR),
             (observation::REGISTRY_V3, observation::DESCRIPTOR_V3),
+            (observation::REGISTRY_V4, observation::DESCRIPTOR_V4),
         ] {
             let old: Option<String> = conn
                 .query_row(

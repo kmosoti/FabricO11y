@@ -135,7 +135,10 @@ fn metric_type_str(metric_type: MetricType) -> &'static str {
 pub fn observation_to_telemetry(obs: &StoredObservation, default_host: &str) -> IngestEnvelope {
     let timestamp_ms = i64::try_from(obs.timestamp_ns() / 1_000_000).unwrap_or(i64::MAX);
     let id = obs.identity();
-    let span_id = format!("{}:{}", id.generation, id.sequence);
+    let span_id = obs
+        .span()
+        .map(|span| span.span_id.clone())
+        .unwrap_or_else(|| format!("{}:{}", id.generation, id.sequence));
     let context_run_id = obs.context().map(|ctx| ctx.run_id.clone());
     let with_run_context = |mut attributes: serde_json::Value| {
         if let Some(run_id) = context_run_id.as_deref() {
@@ -153,12 +156,14 @@ pub fn observation_to_telemetry(obs: &StoredObservation, default_host: &str) -> 
             trace_id,
         } => IngestEnvelope::Trace(TraceSpanRecord {
             timestamp_ms,
-            trace_id: trace_id
-                .clone()
+            trace_id: obs
+                .span()
+                .map(|span| span.trace_id.clone())
+                .or_else(|| trace_id.clone())
                 .or_else(|| context_run_id.clone())
                 .unwrap_or_else(|| span_id.clone()),
             span_id,
-            parent_span_id: None,
+            parent_span_id: obs.span().and_then(|span| span.parent_span_id.clone()),
             name: operation.clone(),
             service: service.clone(),
             duration_ms: (*duration_ns as f64) / 1_000_000.0,
@@ -181,9 +186,12 @@ pub fn observation_to_telemetry(obs: &StoredObservation, default_host: &str) -> 
             status,
         } => IngestEnvelope::Trace(TraceSpanRecord {
             timestamp_ms,
-            trace_id: run_id.clone(),
+            trace_id: obs
+                .span()
+                .map(|span| span.trace_id.clone())
+                .unwrap_or_else(|| run_id.clone()),
             span_id,
-            parent_span_id: None,
+            parent_span_id: obs.span().and_then(|span| span.parent_span_id.clone()),
             name: "agent_run".to_owned(),
             service: agent.clone(),
             duration_ms: (*duration_ns as f64) / 1_000_000.0,
@@ -207,9 +215,12 @@ pub fn observation_to_telemetry(obs: &StoredObservation, default_host: &str) -> 
             status,
         } => IngestEnvelope::Trace(TraceSpanRecord {
             timestamp_ms,
-            trace_id: run_id.clone(),
+            trace_id: obs
+                .span()
+                .map(|span| span.trace_id.clone())
+                .unwrap_or_else(|| run_id.clone()),
             span_id,
-            parent_span_id: None,
+            parent_span_id: obs.span().and_then(|span| span.parent_span_id.clone()),
             name: tool.clone(),
             service: id.producer.clone(),
             duration_ms: (*duration_ns as f64) / 1_000_000.0,
@@ -322,7 +333,38 @@ pub fn parse_ingest_line(line: &str, default_host: &str) -> Result<IngestEnvelop
     if trimmed.is_empty() {
         return Err("empty ingest line".into());
     }
-    if let Ok(env) = serde_json::from_str::<IngestEnvelope>(trimmed) {
+    // Probe only the small tag. Unknown values are skipped without building the
+    // internally tagged enum's owned intermediate JSON content.
+    #[derive(Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    enum DirectKind {
+        Metric,
+        Log,
+        Trace,
+    }
+    #[derive(Deserialize)]
+    struct DirectTag {
+        kind: Option<DirectKind>,
+    }
+    let direct = match serde_json::from_str::<DirectTag>(trimmed) {
+        Ok(DirectTag {
+            kind: Some(DirectKind::Metric),
+        }) => serde_json::from_str::<MetricPoint>(trimmed)
+            .ok()
+            .map(IngestEnvelope::Metric),
+        Ok(DirectTag {
+            kind: Some(DirectKind::Log),
+        }) => serde_json::from_str::<LogRecord>(trimmed)
+            .ok()
+            .map(IngestEnvelope::Log),
+        Ok(DirectTag {
+            kind: Some(DirectKind::Trace),
+        }) => serde_json::from_str::<TraceSpanRecord>(trimmed)
+            .ok()
+            .map(IngestEnvelope::Trace),
+        _ => None,
+    };
+    if let Some(env) = direct {
         return Ok(env);
     }
     let obs = decode_versioned(trimmed.as_bytes())?;
@@ -1212,6 +1254,107 @@ mod tests {
                 IngestEnvelope::Log(log) => assert_eq!(log.attributes_json, expected_json),
                 other => panic!("expected Log, got {other:?}"),
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod v4_bridge_tests {
+    use super::*;
+    use fabric::observation::{
+        Identity, ObservationV4, Outcome, REGISTRY_V4, SpanContext, VERSION_V4, encode_v4,
+    };
+    use fabric::run::RunContext;
+    #[test]
+    fn direct_envelopes_skip_irrelevant_span_and_v4_observations_validate_raw() {
+        let direct = serde_json::json!({"kind":"metric","timestamp_ms":1,"name":"name","value":1.0,"host":"host","slice":"slice","unit":"unit","pid":null,"labels_json":"{}"}).to_string();
+        let IngestEnvelope::Metric(expected) =
+            serde_json::from_str::<IngestEnvelope>(&direct).unwrap()
+        else {
+            panic!("metric");
+        };
+        let mut with_extra = direct.clone();
+        with_extra.pop();
+        with_extra.push_str(&format!(
+            ",\"version\":4,\"span\":\"{}\"}}",
+            "\\u0031".repeat(2000)
+        ));
+        let IngestEnvelope::Metric(actual) = parse_ingest_line(&with_extra, "host").unwrap() else {
+            panic!("metric");
+        };
+        assert_eq!(actual, expected);
+        let IngestEnvelope::Metric(actual) = parse_ingest_line(&direct, "host").unwrap() else {
+            panic!("metric");
+        };
+        assert_eq!(actual, expected);
+        let bad = r#"{"version":4,"registry":"fabrico11y/4","context":{"run_id":"00000000-0000-4000-8000-000000000001"},"identity":{"producer":"p","generation":"g","sequence":1},"timestamp_ns":1,"resource":"r","data":{"kind":"agent_run","agent":"a","run_id":"00000000-0000-4000-8000-000000000001","duration_ns":1,"status":"ok"},"span":{"trace_id":"\u00311111111111111111111111111111111","span_id":"2222222222222222"}}"#;
+        assert!(parse_ingest_line(bad, "host").is_err());
+        let oversized = bad.replace(
+            "\\u00311111111111111111111111111111111",
+            &"1".repeat(10_000),
+        );
+        assert!(parse_ingest_line(&oversized, "host").is_err());
+    }
+
+    #[test]
+    fn explicit_trace_ids_and_parent_are_preserved_for_each_v4_kind() {
+        let run = "00000000-0000-4000-8000-000000000001";
+        let trace = "11111111111111111111111111111111";
+        let span = "2222222222222222";
+        let parent = "3333333333333333";
+        for data in [
+            Data::ServiceRequest {
+                service: "svc".into(),
+                operation: "operation".into(),
+                duration_ns: 1,
+                status: Outcome::Ok,
+                trace_id: Some(trace.into()),
+            },
+            Data::AgentRun {
+                agent: "agent".into(),
+                run_id: run.into(),
+                duration_ns: 1,
+                status: Outcome::Ok,
+            },
+            Data::ToolExecution {
+                tool: "tool".into(),
+                run_id: run.into(),
+                duration_ns: 1,
+                status: Outcome::Ok,
+            },
+        ] {
+            let observation = ObservationV4 {
+                version: VERSION_V4,
+                registry: REGISTRY_V4.into(),
+                context: RunContext { run_id: run.into() },
+                identity: Identity {
+                    producer: "producer".into(),
+                    generation: "generation".into(),
+                    sequence: 1,
+                },
+                timestamp_ns: 1_000_000,
+                resource: "resource".into(),
+                data,
+                span: SpanContext {
+                    trace_id: trace.into(),
+                    span_id: span.into(),
+                    parent_span_id: Some(parent.into()),
+                },
+            };
+            let decoded = decode_versioned(&encode_v4(&observation).unwrap()).unwrap();
+            let IngestEnvelope::Trace(projected) = observation_to_telemetry(&decoded, "host")
+            else {
+                panic!("expected trace");
+            };
+            assert_eq!(projected.trace_id, trace);
+            assert_eq!(projected.span_id, span);
+            assert_eq!(projected.parent_span_id.as_deref(), Some(parent));
+            let attrs: serde_json::Value =
+                serde_json::from_str(&projected.attributes_json).unwrap();
+            assert_eq!(attrs["version"], 4);
+            assert_eq!(attrs["producer"], "producer");
+            assert_eq!(attrs["generation"], "generation");
+            assert_eq!(attrs["sequence"], 1);
         }
     }
 }

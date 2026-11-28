@@ -12,6 +12,9 @@ pub mod vocabulary;
 
 pub const VERSION: u32 = 2;
 pub const VERSION_V3: u32 = 3;
+pub const VERSION_V4: u32 = 4;
+pub const REGISTRY_V4: &str = "fabrico11y/4";
+pub const DESCRIPTOR_V4: &str = include_str!("../../registry/v4/descriptor.json");
 pub const REGISTRY_V3: &str = "fabrico11y/3";
 pub const DESCRIPTOR_V3: &str = include_str!("../../registry/v3/descriptor.json");
 pub const MAX_FRAME: usize = 65536;
@@ -291,53 +294,193 @@ impl ObservationV3 {
         Ok(())
     }
 }
+
+/// Caller-supplied trace context. Parent identity is scoped to the trace; it
+/// does not prove parent existence, uniqueness, or authentication.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct SpanContext {
+    pub trace_id: String,
+    pub span_id: String,
+    #[serde(default)]
+    pub parent_span_id: Option<String>,
+}
+fn valid_span_id(value: &str, width: usize) -> bool {
+    value.len() == width
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        && value.bytes().any(|b| b != b'0')
+}
+impl SpanContext {
+    fn validate(&self) -> bool {
+        valid_span_id(&self.trace_id, 32)
+            && valid_span_id(&self.span_id, 16)
+            && self
+                .parent_span_id
+                .as_ref()
+                .is_none_or(|id| valid_span_id(id, 16) && id != &self.span_id)
+    }
+}
+/// Explicit opt-in trace-bearing observation. Other observation kinds retain
+/// their existing v2/v3 wire contracts.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ObservationV4 {
+    pub version: u32,
+    pub registry: String,
+    pub context: crate::run::RunContext,
+    pub identity: Identity,
+    pub timestamp_ns: u64,
+    pub resource: String,
+    pub data: Data,
+    pub span: SpanContext,
+}
+impl ObservationV4 {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.version != VERSION_V4 || self.registry != REGISTRY_V4 || !self.span.validate() {
+            return Err("invalid v4 envelope".into());
+        }
+        self.context.validate()?;
+        if !valid_identity_resource(&self.identity, &self.resource)
+            || !self.data.validate_in_context(&self.context)
+        {
+            return Err("invalid v4 observation fields".into());
+        }
+        match &self.data {
+            Data::ServiceRequest { trace_id, .. }
+                if trace_id.as_ref().is_none_or(|id| id == &self.span.trace_id) =>
+            {
+                Ok(())
+            }
+            Data::AgentRun { .. } | Data::ToolExecution { .. } => Ok(()),
+            _ => Err("invalid v4 trace data".into()),
+        }
+    }
+}
+/// Serialize the explicit v4 envelope; existing SDK encoders remain unchanged.
+pub fn encode_v4(observation: &ObservationV4) -> Result<Vec<u8>, String> {
+    observation.validate()?;
+    let bytes = serde_json::to_vec(observation).map_err(|e| e.to_string())?;
+    check_json(&bytes, MAX_FRAME)?;
+    Ok(bytes)
+}
+
+// RawValue borrows the original token without decoding escape sequences or
+// allocating an owned ID. Only exact quoted lowercase hex is accepted.
+fn raw_span_id(raw: &serde_json::value::RawValue, width: usize) -> Result<&str, String> {
+    let token = raw.get();
+    let bytes = token.as_bytes();
+    if bytes.len() != width + 2 || bytes.first() != Some(&b'"') || bytes.last() != Some(&b'"') {
+        return Err("invalid raw span identity".into());
+    }
+    let id = &token[1..token.len() - 1];
+    if !valid_span_id(id, width) {
+        return Err("invalid raw span identity".into());
+    }
+    Ok(id)
+}
+pub(crate) fn validate_v4_raw(bytes: &[u8]) -> Result<(), String> {
+    use serde_json::value::RawValue;
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct RawSpan<'a> {
+        #[serde(borrow)]
+        trace_id: &'a RawValue,
+        #[serde(borrow)]
+        span_id: &'a RawValue,
+        #[serde(default, borrow)]
+        parent_span_id: Option<&'a RawValue>,
+    }
+    #[derive(Deserialize)]
+    struct RawData<'a> {
+        #[serde(default, borrow)]
+        trace_id: Option<&'a RawValue>,
+    }
+    #[derive(Deserialize)]
+    struct RawEnvelope<'a> {
+        #[serde(borrow)]
+        span: RawSpan<'a>,
+        #[serde(borrow)]
+        data: RawData<'a>,
+    }
+    let raw: RawEnvelope<'_> = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
+    let trace = raw_span_id(raw.span.trace_id, 32)?;
+    let span = raw_span_id(raw.span.span_id, 16)?;
+    if let Some(parent) = raw.span.parent_span_id
+        && raw_span_id(parent, 16)? == span
+    {
+        return Err("span cannot parent itself".into());
+    }
+    if let Some(data_trace) = raw.data.trace_id
+        && raw_span_id(data_trace, 32)? != trace
+    {
+        return Err("trace identity mismatch".into());
+    }
+    Ok(())
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum StoredObservation {
     V2(Observation),
     V3(ObservationV3),
+    V4(ObservationV4),
 }
 impl StoredObservation {
     pub fn registry(&self) -> &str {
         match self {
             Self::V2(o) => &o.registry,
             Self::V3(o) => &o.registry,
+            Self::V4(o) => &o.registry,
         }
     }
     pub fn identity(&self) -> &Identity {
         match self {
             Self::V2(o) => &o.identity,
             Self::V3(o) => &o.identity,
+            Self::V4(o) => &o.identity,
         }
     }
     pub fn context(&self) -> Option<&crate::run::RunContext> {
         match self {
             Self::V2(_) => None,
             Self::V3(o) => Some(&o.context),
+            Self::V4(o) => Some(&o.context),
         }
     }
     pub fn timestamp_ns(&self) -> u64 {
         match self {
             Self::V2(o) => o.timestamp_ns,
             Self::V3(o) => o.timestamp_ns,
+            Self::V4(o) => o.timestamp_ns,
         }
     }
     pub fn data(&self) -> &Data {
         match self {
             Self::V2(o) => &o.data,
             Self::V3(o) => &o.data,
+            Self::V4(o) => &o.data,
         }
     }
     pub fn resource(&self) -> &str {
         match self {
             Self::V2(o) => &o.resource,
             Self::V3(o) => &o.resource,
+            Self::V4(o) => &o.resource,
+        }
+    }
+    pub fn span(&self) -> Option<&SpanContext> {
+        match self {
+            Self::V4(o) => Some(&o.span),
+            _ => None,
         }
     }
     pub fn version(&self) -> u32 {
         match self {
             Self::V2(o) => o.version,
             Self::V3(o) => o.version,
+            Self::V4(o) => o.version,
         }
     }
 }
@@ -358,6 +501,102 @@ pub fn decode_versioned(bytes: &[u8]) -> Result<StoredObservation, String> {
             observation.validate()?;
             Ok(StoredObservation::V3(observation))
         }
+        VERSION_V4 => {
+            validate_v4_raw(bytes)?;
+            let observation: ObservationV4 =
+                serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
+            observation.validate()?;
+            Ok(StoredObservation::V4(observation))
+        }
         _ => Err("unsupported observation version".into()),
+    }
+}
+
+#[cfg(test)]
+mod v4_tests {
+    use super::*;
+    const RUN: &str = "00000000-0000-4000-8000-000000000001";
+    const TRACE: &str = "11111111111111111111111111111111";
+    const SPAN: &str = "2222222222222222";
+    fn envelope(data: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({"version":4,"registry":"fabrico11y/4","context":{"run_id":RUN},"identity":{"producer":"producer","generation":"generation","sequence":1},"timestamp_ns":1,"resource":"resource","data":data,"span":{"trace_id":TRACE,"span_id":SPAN,"parent_span_id":"3333333333333333"}})
+    }
+    fn encode(value: &serde_json::Value) -> Vec<u8> {
+        serde_json::to_vec(value).unwrap()
+    }
+    #[test]
+    fn v4_explicit_roundtrip_and_three_trace_kinds() {
+        for data in [
+            serde_json::json!({"kind":"service_request","service":"api","operation":"get","duration_ns":4,"status":"ok","trace_id":TRACE}),
+            serde_json::json!({"kind":"agent_run","agent":"agent","run_id":RUN,"duration_ns":4,"status":"ok"}),
+            serde_json::json!({"kind":"tool_execution","tool":"tool","run_id":RUN,"duration_ns":4,"status":"ok"}),
+        ] {
+            let decoded = decode_versioned(&encode(&envelope(data))).unwrap();
+            let StoredObservation::V4(observation) = decoded else {
+                panic!("expected v4");
+            };
+            let bytes = encode_v4(&observation).unwrap();
+            assert_eq!(
+                decode_versioned(&bytes).unwrap(),
+                StoredObservation::V4(observation)
+            );
+        }
+        let mut no_parent = envelope(
+            serde_json::json!({"kind":"agent_run","agent":"agent","run_id":RUN,"duration_ns":1,"status":"ok"}),
+        );
+        no_parent["span"]
+            .as_object_mut()
+            .unwrap()
+            .remove("parent_span_id");
+        assert!(decode_versioned(&encode(&no_parent)).is_ok());
+        no_parent["span"]["parent_span_id"] = serde_json::Value::Null;
+        assert!(decode_versioned(&encode(&no_parent)).is_ok());
+    }
+    #[test]
+    fn v4_rejects_invalid_raw_ids_scope_and_shape() {
+        let base = envelope(
+            serde_json::json!({"kind":"service_request","service":"api","operation":"get","duration_ns":4,"status":"ok","trace_id":TRACE}),
+        );
+        for (field, value) in [
+            ("trace_id", "00000000000000000000000000000000"),
+            ("trace_id", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
+            ("span_id", "0000000000000000"),
+            ("span_id", "123"),
+            ("parent_span_id", SPAN),
+        ] {
+            let mut bad = base.clone();
+            bad["span"][field] = value.into();
+            assert!(decode_versioned(&encode(&bad)).is_err());
+        }
+        let mut bad = base.clone();
+        bad["span"]["trace_id"] = "1".repeat(10_000).into();
+        assert!(decode_versioned(&encode(&bad)).is_err());
+        bad = base.clone();
+        bad["span"]["parent_span_id"] = "0000000000000000".into();
+        assert!(decode_versioned(&encode(&bad)).is_err());
+        bad = base.clone();
+        bad["data"]["trace_id"] = "44444444444444444444444444444444".into();
+        assert!(decode_versioned(&encode(&bad)).is_err());
+        bad = base.clone();
+        bad["data"] = serde_json::json!({"kind":"event","name":"event","message":"text"});
+        assert!(decode_versioned(&encode(&bad)).is_err());
+        bad = base.clone();
+        bad["span"]["unexpected"] = true.into();
+        assert!(decode_versioned(&encode(&bad)).is_err());
+        bad = base.clone();
+        bad.as_object_mut().unwrap().remove("span");
+        assert!(decode_versioned(&encode(&bad)).is_err());
+        let raw = String::from_utf8(encode(&base)).unwrap();
+        let escaped = raw.replacen(TRACE, "\\u00311111111111111111111111111111111", 1);
+        assert_ne!(escaped, raw);
+        assert!(decode_versioned(escaped.as_bytes()).is_err());
+        let escaped_span = raw.replacen(SPAN, "\\u0032222222222222222", 1);
+        assert_ne!(escaped_span, raw);
+        assert!(decode_versioned(escaped_span.as_bytes()).is_err());
+        let field = format!("\"span_id\":\"{SPAN}\"");
+        let duplicate = raw.replacen(&field, &format!("{field},{field}"), 1);
+        assert_ne!(duplicate, raw);
+        assert!(decode_versioned(duplicate.as_bytes()).is_err());
+        assert!(decode_versioned(&vec![b' '; MAX_FRAME + 1]).is_err());
     }
 }

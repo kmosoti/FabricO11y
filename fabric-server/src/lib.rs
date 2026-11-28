@@ -1316,7 +1316,11 @@ fn handle(
         }
         Request::Capabilities => Ok(Response::Capabilities {
             authority: reads.authority.clone(),
-            schemas: vec![2, 3],
+            schemas: vec![
+                observation::VERSION,
+                observation::VERSION_V3,
+                observation::VERSION_V4,
+            ],
             origins: auth.nodes.keys().filter(|o| allows(o)).cloned().collect(),
             max_frame: canonical::MAX_FRAME,
             max_batch_records: canonical::MAX_BATCH,
