@@ -10,6 +10,7 @@ pub mod janitor;
 pub mod olap;
 pub mod parquet_guard;
 pub mod paths;
+pub mod restored_evidence;
 pub mod ring;
 
 pub use catalog::{CatalogStore, PersistedLiveState, SpindleProjectionFrontier};
