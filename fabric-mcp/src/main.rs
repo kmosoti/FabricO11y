@@ -507,6 +507,37 @@ struct AcceptPlanInput {
     proposal_raw: String,
 }
 
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct PlanPageInput {
+    authority: String,
+    scope: String,
+    cursor: Option<String>,
+    limit: u8,
+    ttl_secs: u16,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct PlanScopeInput {
+    scope: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct PlanHintInput {
+    scope: String,
+    subscription: String,
+}
+
+fn valid_plan_scope(scope: &str) -> bool {
+    !scope.is_empty()
+        && scope.len() <= 128
+        && scope
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b':'))
+}
+
 #[derive(Clone)]
 struct PlanWriter {
     io: Investigation,
@@ -520,6 +551,139 @@ impl PlanWriter {
             tool_router: Self::tool_router(),
         }
     }
+    #[tool(
+        description = "Read one bounded frozen page of decisions for the configured writer scope."
+    )]
+    async fn plan_page(
+        &self,
+        Parameters(input): Parameters<PlanPageInput>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if !valid_plan_scope(&input.scope)
+            || input.authority.is_empty()
+            || input.authority.len() > 256
+            || !(1..=64).contains(&input.limit)
+            || !(1..=900).contains(&input.ttl_secs)
+            || input.cursor.as_ref().is_some_and(|s| s.len() > 1024)
+        {
+            return Err(ErrorData::invalid_params("invalid plan page request", None));
+        }
+        let response = self
+            .io
+            .start_exchange(Request::PlanPage {
+                request: fabric::canonical::PlanPageRequest {
+                    scope: fabric::canonical::PlanScope(input.scope.clone()),
+                    cursor: input.cursor,
+                    limit: input.limit,
+                    ttl_secs: input.ttl_secs,
+                },
+            })?
+            .await
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        match &response {
+            Ok(Response::PlanPage { page })
+                if page.authority == input.authority
+                    && page.scope.0 == input.scope
+                    && page.frontier >= 0
+                    && page.decisions.len() <= usize::from(input.limit)
+                    && page
+                        .next_cursor
+                        .as_ref()
+                        .is_none_or(|c| !c.is_empty() && c.len() <= 1024)
+                    && page.decisions.iter().all(|d| {
+                        d.version == 1
+                            && d.authority == input.authority
+                            && d.scope.0 == input.scope
+                            && d.head > 0
+                            && d.head <= page.frontier
+                    })
+                    && page.decisions.windows(2).all(|w| w[0].head < w[1].head) => {}
+            Ok(Response::PlanCursorFailure { .. } | Response::Error { .. }) | Err(_) => {}
+            _ => {
+                return Ok(CallToolResult::error(vec![ContentBlock::text(
+                    "invalid plan page response",
+                )]));
+            }
+        }
+        if let Ok(page_response @ Response::PlanPage { .. }) = &response {
+            let payload = serde_json::to_value(page_response)
+                .map_err(|_| ErrorData::internal_error("invalid plan response", None))?;
+            if fabric::observation::frame_untrusted_telemetry("plan_page", payload.clone())["telemetry_payload"]
+                != payload
+            {
+                return Ok(CallToolResult::error(vec![ContentBlock::text(
+                    "plan page cannot be represented safely",
+                )]));
+            }
+        }
+        Investigation::render(response)
+    }
+
+    #[tool(description = "Subscribe to advisory decision hints for the configured writer scope.")]
+    async fn subscribe_plan(
+        &self,
+        Parameters(input): Parameters<PlanScopeInput>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if !valid_plan_scope(&input.scope) {
+            return Err(ErrorData::invalid_params("invalid plan scope", None));
+        }
+        let response = self
+            .io
+            .start_exchange(Request::SubscribePlan {
+                scope: fabric::canonical::PlanScope(input.scope),
+            })?
+            .await
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        match &response {
+            Ok(Response::PlanSubscribed {
+                subscription,
+                frontier,
+            }) if *frontier >= 0
+                && subscription.len() == 64
+                && subscription
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) => {}
+            Ok(Response::PlanCursorFailure { .. } | Response::Error { .. }) | Err(_) => {}
+            _ => {
+                return Ok(CallToolResult::error(vec![ContentBlock::text(
+                    "invalid plan subscription response",
+                )]));
+            }
+        }
+        Investigation::render(response)
+    }
+
+    #[tool(description = "Poll one advisory decision hint for the configured writer scope.")]
+    async fn poll_plan_hint(
+        &self,
+        Parameters(input): Parameters<PlanHintInput>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if !valid_plan_scope(&input.scope) || input.subscription.len() > 1024 {
+            return Err(ErrorData::invalid_params("invalid plan hint request", None));
+        }
+        let response = self
+            .io
+            .start_exchange(Request::PollPlanHint {
+                scope: fabric::canonical::PlanScope(input.scope),
+                subscription: input.subscription,
+            })?
+            .await
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        match &response {
+            Ok(
+                Response::PlanHint { .. }
+                | Response::PlanCursorFailure { .. }
+                | Response::Error { .. },
+            )
+            | Err(_) => {}
+            _ => {
+                return Ok(CallToolResult::error(vec![ContentBlock::text(
+                    "invalid plan hint response",
+                )]));
+            }
+        }
+        Investigation::render(response)
+    }
+
     #[tool(
         description = "Accept a typed proposal using the configured decision writer. Retry the same command ID with exactly the same arguments after an uncertain outcome.",
         annotations(
