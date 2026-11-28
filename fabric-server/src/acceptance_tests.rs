@@ -504,3 +504,115 @@ fn transaction_fixture() {
     stop.store(true, Ordering::SeqCst);
     server.join().unwrap();
 }
+
+#[test]
+fn segment_tickets_bind_real_reader_and_verified_resume() {
+    let scratch = std::env::var_os("TMPDIR").unwrap();
+    let root = tempfile::tempdir_in(scratch).unwrap();
+    let config = config(root.path());
+    let server = Server::open(config.clone()).unwrap();
+    let raw = proposal(1, 'a');
+    server
+        .ledger
+        .lock()
+        .unwrap()
+        .ingest(
+            "origin",
+            &[ForwardRecord {
+                source_id: 1,
+                raw: raw.clone(),
+            }],
+        )
+        .unwrap();
+    server
+        .projection
+        .lock()
+        .unwrap()
+        .apply(&[canonical::CanonicalRow {
+            canonical_id: 1,
+            origin: "origin".into(),
+            source_id: 1,
+            raw,
+        }])
+        .unwrap();
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(config.projection.join("manifest.json")).unwrap())
+            .unwrap();
+    let segment = &manifest["manifest"]["segments"][0];
+    let digest = segment["digest"].as_str().unwrap().to_owned();
+    let bytes = fs::read(config.projection.join(segment["file"].as_str().unwrap())).unwrap();
+    let address = server.address();
+    let stop = server.stop_handle();
+    let task = thread::spawn(move || server.serve().unwrap());
+    let authority = match exchange(&address, READER, &Request::Progress) {
+        Response::Progress { authority, .. } => authority,
+        other => panic!("{other:?}"),
+    };
+    let issue = |origin: &str| Request::IssueSegmentTicket {
+        version: 1,
+        authority: authority.clone(),
+        origin: origin.into(),
+        digest: digest.clone(),
+        start: 0,
+        end: bytes.len() as u64,
+    };
+    assert!(matches!(
+        exchange(&address, NODE, &issue("origin")),
+        Response::Error { .. }
+    ));
+    assert!(matches!(
+        exchange(&address, READER, &issue("unknown")),
+        Response::Error { .. }
+    ));
+    let ticket = match exchange(&address, READER, &issue("origin")) {
+        Response::SegmentTicket { ticket } => ticket,
+        other => panic!("{other:?}"),
+    };
+    let split = bytes.len().min(100);
+    let read =
+        |ticket: canonical::SegmentTicket, offset: u64, length: u32| Request::ReadSegmentChunk {
+            ticket,
+            offset,
+            length,
+        };
+    let first = exchange(&address, READER, &read(ticket.clone(), 0, split as u32));
+    assert!(matches!(first, Response::SegmentChunk { offset: 0, bytes: b } if b == bytes[..split]));
+    if split < bytes.len() {
+        let len = (bytes.len() - split).min(100);
+        let resumed = exchange(
+            &address,
+            READER,
+            &read(ticket.clone(), split as u64, len as u32),
+        );
+        assert!(
+            matches!(resumed, Response::SegmentChunk { offset, bytes: b } if offset == split as u64 && b == bytes[split..split + len])
+        );
+    }
+    let mut tampered = ticket.clone();
+    tampered.digest = "b".repeat(64);
+    assert!(matches!(
+        exchange(&address, READER, &read(tampered, 0, 1)),
+        Response::Error { .. }
+    ));
+    assert!(matches!(
+        exchange(
+            &address,
+            READER,
+            &read(ticket.clone(), bytes.len() as u64, 1)
+        ),
+        Response::Error { .. }
+    ));
+    assert!(matches!(
+        exchange(&address, NODE, &read(ticket.clone(), 0, 1)),
+        Response::Error { .. }
+    ));
+    stop.store(true, Ordering::SeqCst);
+    task.join().unwrap();
+    let (address, stop, task) = start(&config);
+    assert!(matches!(
+        exchange(&address, READER, &read(ticket, 0, 1)),
+        Response::Error { .. }
+    ));
+    stop.store(true, Ordering::SeqCst);
+    task.join().unwrap();
+}
