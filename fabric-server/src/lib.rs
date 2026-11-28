@@ -1494,6 +1494,66 @@ mod receipt_tests {
     }
 
     #[test]
+    fn socket_write_error_retains_query_lease_until_response_cleanup() {
+        use std::net::{Shutdown, TcpListener, TcpStream};
+
+        let (_root, server) = fixture();
+        let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let _peer = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (mut socket, _) = listener.accept().unwrap();
+        // A local write-half shutdown is deterministic and leaves the peer alive.
+        socket.shutdown(Shutdown::Write).unwrap();
+        let request = Request::Plan {
+            request: QueryRequest {
+                version: fabric::query::API_VERSION,
+                query_id: "write-failure".into(),
+                authority: None,
+                scope: vec!["alpha".into()],
+                snapshot: Default::default(),
+                filter: Default::default(),
+                operation: fabric::query::Operation::Evidence,
+                budgets: Default::default(),
+                cursor: None,
+            },
+        };
+        let mut failure = None;
+        respond(
+            Ok((test_grant(&server, "reader", &request), request)),
+            &server.ledger,
+            &server.projection,
+            &server.auth,
+            &server.projection_error,
+            &server.reads,
+            |body| {
+                assert!(matches!(
+                    serde_json::from_slice(body),
+                    Ok(Response::Plan { .. })
+                ));
+                assert_eq!(
+                    reserve(&server.reads, "competing", &mut None).unwrap_err(),
+                    "query busy"
+                );
+                failure = Some(
+                    canonical::write_frame(
+                        &mut socket,
+                        body,
+                        Instant::now() + Duration::from_secs(2),
+                    )
+                    .unwrap_err(),
+                );
+                assert_eq!(
+                    reserve(&server.reads, "competing", &mut None).unwrap_err(),
+                    "query busy"
+                );
+            },
+        );
+        assert!(failure.unwrap().starts_with("write; outcome unknown:"));
+        let mut lease = None;
+        assert!(reserve(&server.reads, "competing", &mut lease).is_ok());
+        assert!(lease.is_some());
+    }
+
+    #[test]
     fn exact_receipt_lookup_binds_authority_role_origin_and_source() {
         let (_root, server) = fixture();
         let raw = serde_json::json!({"version":2,"registry":"fabrico11y/2", "identity":{"producer":"alpha","generation":"sample","sequence":1}, "timestamp_ns":0,"resource":"service","data":{"kind":"log","level":"info","message":"sample"}}).to_string();
