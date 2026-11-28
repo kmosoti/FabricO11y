@@ -52,6 +52,15 @@ struct Cursor {
     after: Option<CursorKey>,
     expires: u64,
 }
+// This is the same complete-prefix invariant checked against the engine's
+// COUNT below; compute it before dispatching work for budget admission.
+fn expected_prefix_count(request: &QueryRequest) -> Result<u128, String> {
+    request.snapshot.values().try_fold(0u128, |sum, prefix| {
+        sum.checked_add(u128::from(*prefix))
+            .ok_or_else(|| "snapshot count overflow".into())
+    })
+}
+
 impl Greptime {
     pub fn open(endpoint: &str) -> Result<Self, String> {
         let mut key = [0; 32];
@@ -576,10 +585,7 @@ impl Greptime {
             .transpose()
             .map_err(err)?
             .unwrap_or(0);
-        let expected = request.snapshot.values().try_fold(0u128, |sum, prefix| {
-            sum.checked_add(u128::from(*prefix))
-                .ok_or("snapshot count overflow")
-        })?;
+        let expected = expected_prefix_count(request)?;
         if u128::from(scanned) != expected {
             return Err("canonical history missing from engine source prefix".into());
         }
@@ -634,6 +640,9 @@ impl Greptime {
         let deadline =
             deadline.min(started + Duration::from_millis(u64::from(request.budgets.timeout_ms)));
         let (request, offset, after) = self.resolve(request, &frontiers)?;
+        if expected_prefix_count(&request)? > u128::from(request.budgets.scan_rows) {
+            return Err("scan budget exhausted; aggregate totals unavailable".into());
+        }
         let (scope_predicate, scanned, checkpoint) =
             self.prefix_state(&request, deadline, cancel)?;
         if scanned > u64::from(request.budgets.scan_rows) {
@@ -1128,6 +1137,74 @@ fn evidence_page_limit(rows_budget: u32, output_bytes_budget: u32) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn over_budget_snapshot_never_dispatches_prefix_sql() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let engine = Greptime {
+            endpoint: format!("http://{}", listener.local_addr().unwrap()),
+            http: Client::new(),
+            cursor_key: [7; 32],
+            auth_token: None,
+            authority: Arc::new(Mutex::new(Some("authority".into()))),
+        };
+        let frontiers = BTreeMap::from([("alpha".into(), 2), ("beta".into(), 2)]);
+        let mut request = QueryRequest {
+            version: API_VERSION,
+            query_id: "scan-gate".into(),
+            authority: Some("authority".into()),
+            scope: vec!["alpha".into(), "beta".into()],
+            snapshot: BTreeMap::new(),
+            filter: Filter::default(),
+            operation: Operation::Capabilities,
+            budgets: Budgets {
+                scan_rows: 3,
+                ..Budgets::default()
+            },
+            cursor: None,
+        };
+        let error = engine
+            .query(
+                request.clone(),
+                frontiers.clone(),
+                &AtomicBool::new(false),
+                Instant::now() + Duration::from_secs(5),
+            )
+            .unwrap_err();
+        assert!(error.contains("scan budget"), "{error}");
+        assert!(matches!(listener.accept(), Err(e) if e.kind() == std::io::ErrorKind::WouldBlock));
+
+        // At the exact bound, the same query is allowed to reach prefix SQL.
+        listener.set_nonblocking(false).unwrap();
+        let worker = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buffer = [0u8; 4096];
+            assert!(stream.read(&mut buffer).unwrap() > 0);
+            let body = r#"{"code":0,"output":[]}"#;
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .unwrap();
+        });
+        request.budgets.scan_rows = 4;
+        let error = engine
+            .query(
+                request,
+                frontiers,
+                &AtomicBool::new(false),
+                Instant::now() + Duration::from_secs(5),
+            )
+            .unwrap_err();
+        assert!(!error.contains("scan budget"), "{error}");
+        worker.join().unwrap();
+    }
+
     fn quoted_batch(maximal_fields: bool) -> Vec<CanonicalRow> {
         let (identity, resource, name, run) = if maximal_fields {
             (128, 256, 256, 128)
