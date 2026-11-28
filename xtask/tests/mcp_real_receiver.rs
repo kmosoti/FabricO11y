@@ -1,0 +1,297 @@
+//! End-to-end qualification with an externally selected, hashed MCP executable.
+use fabric::{
+    canonical::{
+        self, AcceptPlan, ForwardRecord, PlanProposal, PlanScope, Request, Response, SegmentTicket,
+    },
+    observation::{self, Data, Identity, ObservationV3},
+    query::{API_VERSION, Budgets, Filter, Operation, QueryRequest},
+};
+use fabric_server::{Config, DecisionWriterGrant, NodeGrant, Server};
+use serde_json::{Value, json};
+use std::{
+    collections::BTreeMap,
+    fs,
+    io::{BufRead, BufReader, Read, Write},
+    os::unix::fs::PermissionsExt,
+    path::{Path, PathBuf},
+    process::{Child, ChildStdin, Command, Stdio},
+    sync::{atomic::Ordering, mpsc},
+    thread,
+    time::{Duration, Instant},
+};
+
+const READER: &str = "reader-credential-for-mcp-test";
+const NODE: &str = "node-credential-for-mcp-test";
+const WRITER: &str = "writer-credential-for-mcp-test";
+fn credential(root: &Path, name: &str, value: &str) -> PathBuf {
+    let path = root.join(name);
+    fs::write(&path, value).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+    path
+}
+fn direct(address: &str, secret: &str, request: &Request) -> Response {
+    canonical::exchange(
+        address,
+        secret,
+        request,
+        Instant::now() + Duration::from_secs(15),
+    )
+    .unwrap()
+}
+struct Mcp {
+    child: Child,
+    input: ChildStdin,
+    output: mpsc::Receiver<Value>,
+    reader: Option<thread::JoinHandle<()>>,
+}
+impl Mcp {
+    fn start(binary: &Path, address: &str, mode: &str, path: &Path) -> Self {
+        let mut cmd = Command::new(binary);
+        cmd.env("FABRIC_ENDPOINT", address)
+            .env("FABRIC_MCP_MODE", mode)
+            .env_remove("FABRIC_CREDENTIAL")
+            .env_remove("FABRIC_CREDENTIAL_FILE")
+            .env_remove("FABRIC_WRITER_CREDENTIAL_FILE")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        if mode == "writer" {
+            cmd.env("FABRIC_WRITER_CREDENTIAL_FILE", path);
+        } else {
+            cmd.env("FABRIC_CREDENTIAL_FILE", path);
+        }
+        let mut child = cmd.spawn().unwrap();
+        let input = child.stdin.take().unwrap();
+        let stdout = child.stdout.take().unwrap();
+        let (tx, output) = mpsc::channel();
+        let reader = thread::spawn(move || {
+            let mut stream = BufReader::new(stdout);
+            loop {
+                let mut line = String::new();
+                let Ok(count) = stream.by_ref().take(1024 * 1024 + 1).read_line(&mut line) else {
+                    break;
+                };
+                if count == 0 || count > 1024 * 1024 || !line.ends_with('\n') {
+                    break;
+                }
+                if let Ok(value) = serde_json::from_str::<Value>(&line)
+                    && tx.send(value).is_err()
+                {
+                    break;
+                }
+            }
+        });
+        let mut m = Self {
+            child,
+            input,
+            output,
+            reader: Some(reader),
+        };
+        m.send(json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"real-receiver-test","version":"1"}}}));
+        assert_eq!(m.receive()["id"], 1);
+        m.send(json!({"jsonrpc":"2.0","method":"notifications/initialized"}));
+        m
+    }
+    fn send(&mut self, value: Value) {
+        writeln!(self.input, "{value}").unwrap();
+        self.input.flush().unwrap();
+    }
+    fn receive(&self) -> Value {
+        self.output.recv_timeout(Duration::from_secs(20)).unwrap()
+    }
+    fn call(&mut self, id: u32, name: &str, arguments: Value) -> Value {
+        self.send(json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"name":name,"arguments":arguments}}));
+        let result = self.receive();
+        assert_eq!(result["id"], id);
+        assert_ne!(result["result"]["isError"], true, "MCP tool failed");
+        let frame: Value =
+            serde_json::from_str(result["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(frame["untrusted_telemetry"], true);
+        frame["telemetry_payload"].clone()
+    }
+}
+impl Drop for Mcp {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        if let Some(reader) = self.reader.take() {
+            let _ = reader.join();
+        }
+    }
+}
+fn hash(path: &Path) -> String {
+    let output = Command::new("sha256sum").arg(path).output().unwrap();
+    assert!(output.status.success());
+    String::from_utf8(output.stdout)
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap()
+        .to_owned()
+}
+
+#[test]
+#[ignore = "run in the confined slice with a selected hashed fabric-mcp binary"]
+fn stdio_reader_writer_match_live_receiver_and_verified_segment() {
+    let binary =
+        PathBuf::from(std::env::var_os("FABRIC_MCP_TEST_BIN").expect("FABRIC_MCP_TEST_BIN"));
+    let expected_hash = std::env::var("FABRIC_MCP_TEST_SHA256").expect("FABRIC_MCP_TEST_SHA256");
+    assert!(binary.is_absolute());
+    assert_eq!(hash(&binary), expected_hash);
+    let root = xtask::evidence::non_tmp_tempdir().unwrap();
+    let reader_path = credential(root.path(), "reader", READER);
+    let node_path = credential(root.path(), "node", NODE);
+    let writer_path = credential(root.path(), "writer", WRITER);
+    let config = Config {
+        listen: "127.0.0.1:0".into(),
+        storage: root.path().join("ledger"),
+        projection: root.path().join("projection"),
+        quota_bytes: 16 << 20,
+        projection_quota_bytes: 4 << 20,
+        reader_credential_file: reader_path.clone(),
+        nodes: vec![NodeGrant {
+            origin: "origin".into(),
+            credential_file: node_path,
+        }],
+        decision_writers: vec![DecisionWriterGrant {
+            writer: "owner".into(),
+            scope: "plan".into(),
+            origin: "origin".into(),
+            producer: "worker".into(),
+            credential_file: writer_path.clone(),
+        }],
+        node_quota_bytes: BTreeMap::new(),
+        engine_endpoint: None,
+        engine_auth_token_file: None,
+        allow_unauthenticated_loopback_engine: false,
+        max_connections: 8,
+    };
+    let server = Server::open(config.clone()).unwrap();
+    let address = server.address();
+    let stop = server.stop_handle();
+    let task = thread::spawn(move || server.serve().unwrap());
+    let authority = match direct(&address, READER, &Request::Progress) {
+        Response::Progress { authority, .. } => authority,
+        _ => panic!("progress failed"),
+    };
+    let carrier = PlanProposal {
+        version: 1,
+        scope: PlanScope("plan".into()),
+        proposal_id: "a".repeat(64),
+    };
+    let mut fields = serde_json::Map::new();
+    fields.insert(
+        canonical::PROPOSAL_MARKER.into(),
+        serde_json::to_string(&carrier).unwrap().into(),
+    );
+    let raw = serde_json::to_string_pretty(&ObservationV3 {
+        version: observation::VERSION_V3,
+        registry: observation::REGISTRY_V3.into(),
+        context: fabric::run::RunContext {
+            run_id: "aaaa0000-0000-0000-0000-000000000001".into(),
+        },
+        identity: Identity {
+            producer: "worker".into(),
+            generation: "generation".into(),
+            sequence: 1,
+        },
+        timestamp_ns: 7,
+        resource: "local".into(),
+        data: Data::JsonLog { fields },
+    })
+    .unwrap();
+    assert!(matches!(
+        direct(
+            &address,
+            NODE,
+            &Request::Ingest {
+                origin: "origin".into(),
+                records: vec![ForwardRecord {
+                    source_id: 1,
+                    raw: raw.clone()
+                }]
+            }
+        ),
+        Response::Committed { through: 1, .. }
+    ));
+    let query = QueryRequest {
+        version: API_VERSION,
+        query_id: "mcp-live-query".into(),
+        authority: Some(authority.clone()),
+        scope: vec!["origin".into()],
+        snapshot: BTreeMap::new(),
+        filter: Filter::default(),
+        operation: Operation::Evidence,
+        budgets: Budgets::default(),
+        cursor: None,
+    };
+    let oracle = match direct(
+        &address,
+        READER,
+        &Request::Query {
+            request: query.clone(),
+        },
+    ) {
+        Response::Query { response } => response,
+        _ => panic!("direct query failed"),
+    };
+    assert!(!oracle.rows.is_empty());
+    let mut reader = Mcp::start(&binary, &address, "reader", &reader_path);
+    let actual = reader.call(2, "query", serde_json::to_value(&query).unwrap());
+    assert_eq!(
+        actual["response"]["rows"],
+        serde_json::to_value(&oracle.rows).unwrap()
+    );
+    assert_eq!(
+        actual["response"]["coverage"]["snapshot"],
+        serde_json::to_value(&oracle.coverage).unwrap()["snapshot"]
+    );
+    assert_eq!(
+        actual["response"]["coverage"]["canonical_frontier"],
+        serde_json::to_value(&oracle.coverage).unwrap()["canonical_frontier"]
+    );
+    let manifest: Value =
+        serde_json::from_slice(&fs::read(config.projection.join("manifest.json")).unwrap())
+            .unwrap();
+    let segment = &manifest["manifest"]["segments"][0];
+    let digest = segment["digest"].as_str().unwrap();
+    let expected = fs::read(config.projection.join(segment["file"].as_str().unwrap())).unwrap();
+    let len = expected.len().min(128);
+    let payload = reader.call(3, "inspect_segment", json!({"authority":authority,"origin":"origin","digest":digest,"start":"0","end":len.to_string()}));
+    let ticket: SegmentTicket = serde_json::from_value(payload["ticket"].clone()).unwrap();
+    let result = direct(
+        &address,
+        READER,
+        &Request::ReadSegmentChunk {
+            ticket,
+            offset: 0,
+            length: len as u32,
+        },
+    );
+    assert!(
+        matches!(result, Response::SegmentChunk { offset: 0, bytes } if bytes == expected[..len])
+    );
+    let mut writer = Mcp::start(&binary, &address, "writer", &writer_path);
+    let arguments = json!({"authority":authority,"command_id":"stable-id","scope":"plan","expected_head":null,"origin":"origin","source_id":"1","proposal_raw":raw});
+    let result = writer.call(2, "accept_plan", arguments);
+    let receipt = result["decision"].as_str().unwrap();
+    let body = serde_json::to_string(&AcceptPlan {
+        version: 1,
+        authority,
+        command_id: "stable-id".into(),
+        scope: PlanScope("plan".into()),
+        expected_head: None,
+        origin: "origin".into(),
+        source_id: 1,
+        proposal_raw: raw,
+    })
+    .unwrap();
+    assert!(
+        matches!(direct(&address, WRITER, &Request::AcceptPlan { body }), Response::PlanAccepted { decision } if decision == receipt)
+    );
+    drop(writer);
+    drop(reader);
+    stop.store(true, Ordering::SeqCst);
+    task.join().unwrap();
+    assert_eq!(hash(&binary), expected_hash);
+}
