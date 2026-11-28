@@ -1,4 +1,4 @@
-//! `fabric` — Deterministic CLI sensory plane for FabricO11y host, agent, and OTLP telemetry.
+//! `fabric` — Deterministic CLI for FabricO11y host and agent telemetry.
 
 use arrow::array::{BooleanArray, StringArray, UInt64Array};
 use arrow::datatypes::{DataType, Field, Schema};
@@ -52,7 +52,7 @@ enum OutputFormat {
 #[derive(Debug, Parser)]
 #[command(
     name = "fabric",
-    about = "Converged Linux host, autonomous agent, and OTLP observability CLI",
+    about = "Linux observability CLI for hosts and autonomous agents",
     version
 )]
 struct Cli {

@@ -1,5 +1,5 @@
 //! Non-blocking local Unix socket bridge (`ingest.sock`) and Spindle custody
-//! poller mapping OTLP JSONL and versioned `fabric::observation` records into
+//! poller mapping Fabric-local JSONL and versioned `fabric::observation` records into
 //! bounded telemetry queues.
 
 use crate::channel::BoundedTelemetryQueue;
@@ -627,7 +627,7 @@ where
     Ok(out)
 }
 
-/// Spawns the background local OTLP/Spindle ingest listener using bounded `try_emit`.
+/// Spawns the background local JSONL ingest listener using bounded `try_emit`.
 pub async fn serve_ingest_socket(
     sock_path: &Path,
     metrics_q: BoundedTelemetryQueue<MetricPoint>,
@@ -640,7 +640,7 @@ pub async fn serve_ingest_socket(
         .await
 }
 
-/// Spawns the background local OTLP/Spindle ingest listener and drains connection tasks on shutdown.
+/// Spawns the background local JSONL ingest listener and drains connection tasks on shutdown.
 pub async fn serve_ingest_socket_until_shutdown(
     sock_path: &Path,
     metrics_q: BoundedTelemetryQueue<MetricPoint>,
