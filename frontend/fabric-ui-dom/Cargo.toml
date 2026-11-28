@@ -1,0 +1,16 @@
+[package]
+name = "fabric-ui-dom"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+fabric-app-core = { path = "../fabric-app-core" }
+fabric-query-contract = { path = "../../fabric-query-contract" }
+leptos = { version = "=0.8.23", features = ["csr"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["Window", "Document", "Crypto", "Element", "HtmlElement", "AbortController", "AbortSignal", "RequestRedirect", "Request", "RequestInit", "RequestMode", "RequestCredentials", "Response", "Headers", "ReadableStream", "ReadableStreamDefaultReader"] }
