@@ -10,6 +10,7 @@ pub mod context;
 pub mod differential;
 pub mod failure_claim;
 pub mod investigation;
+pub mod investigation_proposal;
 pub mod lexical;
 pub mod portable;
 pub mod reconcile;
