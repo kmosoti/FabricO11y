@@ -272,14 +272,41 @@ struct HashingWriter<W: Write> {
     inner: W,
     hasher: Sha256,
     written: u64,
+    limit: Option<u64>,
+}
+
+#[derive(Debug)]
+struct StagingLimit;
+
+impl std::fmt::Display for StagingLimit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("staged parquet byte limit exceeded")
+    }
+}
+impl std::error::Error for StagingLimit {}
+
+fn is_staging_limit(err: &parquet::errors::ParquetError) -> bool {
+    let mut current: Option<&(dyn std::error::Error + 'static)> = Some(err);
+    while let Some(e) = current {
+        if e.downcast_ref::<StagingLimit>().is_some()
+            || e.downcast_ref::<std::io::Error>()
+                .and_then(std::io::Error::get_ref)
+                .is_some_and(|inner| inner.downcast_ref::<StagingLimit>().is_some())
+        {
+            return true;
+        }
+        current = e.source();
+    }
+    false
 }
 
 impl<W: Write> HashingWriter<W> {
-    fn new(inner: W) -> Self {
+    fn new(inner: W, limit: Option<u64>) -> Self {
         Self {
             inner,
             hasher: Sha256::new(),
             written: 0,
+            limit,
         }
     }
 
@@ -290,6 +317,13 @@ impl<W: Write> HashingWriter<W> {
 
 impl<W: Write> Write for HashingWriter<W> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let len = u64::try_from(buf.len()).unwrap_or(u64::MAX);
+        if self
+            .limit
+            .is_some_and(|max| self.written.checked_add(len).is_none_or(|n| n > max))
+        {
+            return Err(std::io::Error::other(StagingLimit));
+        }
         let n = self.inner.write(buf)?;
         self.hasher.update(&buf[..n]);
         self.written = self.written.saturating_add(n as u64);
@@ -4517,29 +4551,29 @@ impl OlapParquetStore {
             }
         };
         let inner_res = (|| -> Result<Option<(u64, String)>, String> {
-            let mut writer = ArrowWriter::try_new(
-                HashingWriter::new(writer_file),
+            macro_rules! parquet_write {
+                ($op:expr) => {
+                    match $op {
+                        Ok(value) => value,
+                        Err(err) if is_staging_limit(&err) => return Ok(None),
+                        Err(err) => return Err(err.to_string()),
+                    }
+                };
+            }
+            let mut writer = parquet_write!(ArrowWriter::try_new(
+                HashingWriter::new(writer_file, max_staged_bytes),
                 first_batch.schema(),
                 Some(props),
-            )
-            .map_err(|e| e.to_string())?;
-            writer.write(&first_batch).map_err(|e| e.to_string())?;
-            if max_staged_bytes.is_some_and(|max| (writer.bytes_written() as u64) > max) {
-                drop(writer);
-                return Ok(None);
-            }
+            ));
+            parquet_write!(writer.write(&first_batch));
             for next in iter {
                 let batch = next?;
                 if batch.num_rows() == 0 {
                     continue;
                 }
-                writer.write(&batch).map_err(|e| e.to_string())?;
-                if max_staged_bytes.is_some_and(|max| (writer.bytes_written() as u64) > max) {
-                    drop(writer);
-                    return Ok(None);
-                }
+                parquet_write!(writer.write(&batch));
             }
-            let hashing = writer.into_inner().map_err(|e| e.to_string())?;
+            let hashing = parquet_write!(writer.into_inner());
             let (mut synced_file, written_len, sha256) = hashing.finish();
             synced_file.sync_all().map_err(|e| e.to_string())?;
             let post_meta = synced_file
@@ -6717,6 +6751,111 @@ mod tests {
         );
         assert!(part_dir.join(REPLACE_INTENT_FILE).is_file());
         assert!(olap.snapshot_pinned_parquet_files("metrics", None).is_err());
+    }
+
+    #[test]
+    fn hashing_writer_enforces_cap_before_forwarding_and_preserves_io_errors() {
+        let mut writer = HashingWriter::new(Vec::new(), Some(4));
+        writer.write_all(b"abcd").unwrap();
+        let err = writer.write_all(b"e").unwrap_err();
+        assert!(
+            err.get_ref()
+                .unwrap()
+                .downcast_ref::<StagingLimit>()
+                .is_some()
+        );
+        let (bytes, len, _) = writer.finish();
+        assert_eq!(bytes, b"abcd");
+        assert_eq!(len, 4);
+        struct Broken;
+        impl Write for Broken {
+            fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::new(ErrorKind::BrokenPipe, "disk failure"))
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let err = HashingWriter::new(Broken, Some(4))
+            .write_all(b"a")
+            .unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::BrokenPipe);
+    }
+
+    #[test]
+    fn capped_staging_rejects_footer_and_preserves_existing_source() {
+        let dir = non_tmp_dir();
+        let catalog = crate::CatalogStore::open(dir.path()).unwrap();
+        let layout = catalog.layout().clone();
+        let olap = OlapParquetStore::new(layout.clone());
+        let point = MetricPoint {
+            timestamp_ms: 1_700_000_000_000,
+            name: "limit".into(),
+            value: 1.0,
+            host: "h".into(),
+            slice: "agent.slice".into(),
+            unit: "u".into(),
+            pid: None,
+            labels_json: "{}".into(),
+        };
+        let source = olap
+            .write_metrics(std::slice::from_ref(&point))
+            .unwrap()
+            .pop()
+            .unwrap();
+        let source_hash = sha256_regular_file(&File::open(&source).unwrap()).unwrap();
+        let day = day_from_ms(point.timestamp_ms);
+        let batch = metrics_to_record_batch(&[point]).unwrap();
+        let stage = |cap| {
+            olap.write_batches_to_staging_bounded(
+                "metrics",
+                day,
+                None,
+                std::iter::once(Ok(batch.clone())),
+                true,
+                cap,
+            )
+            .unwrap()
+        };
+        let StagingOutcome::Staged(unbounded) = stage(None) else {
+            panic!("expected staging")
+        };
+        let len = unbounded.len;
+        let digest = unbounded.sha256.clone();
+        drop(unbounded);
+        assert!(matches!(
+            stage(Some(len - 1)),
+            StagingOutcome::ExceededMaxBytes
+        ));
+        let pinned = olap.snapshot_pinned_parquet_files("metrics", None).unwrap();
+        let maint = acquire_maintenance_lock(&layout).unwrap();
+        let outcome = olap
+            .replace_batches_in_partition_with_validated_capped(
+                "metrics",
+                day,
+                None,
+                &pinned,
+                None,
+                &[],
+                std::iter::once(Ok(batch.clone())),
+                Some(len - 1),
+                &maint,
+            )
+            .unwrap();
+        assert!(matches!(outcome, ReplaceOutcome::ExceededMaxBytes));
+        drop(maint);
+        drop(pinned);
+        assert_eq!(fs::read_dir(layout.staging_dir()).unwrap().count(), 0);
+        assert_eq!(
+            sha256_regular_file(&File::open(&source).unwrap()).unwrap(),
+            source_hash
+        );
+        let StagingOutcome::Staged(exact) = stage(Some(len)) else {
+            panic!("exact cap rejected")
+        };
+        assert_eq!((exact.len, &exact.sha256), (len, &digest));
+        drop(exact);
+        assert_eq!(fs::read_dir(layout.staging_dir()).unwrap().count(), 0);
     }
 
     #[test]
