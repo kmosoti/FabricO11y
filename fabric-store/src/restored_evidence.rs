@@ -228,6 +228,201 @@ pub fn verify_restore_files(
     })
 }
 
+/// Outcome of publishing one verified artifact in an authorized local directory.
+#[derive(Debug)]
+pub struct PublishedRestore {
+    pub basename: String,
+    pub archive: VerifiedArchive,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PublishError {
+    Verification(RestoreError),
+    /// No visible artifact was created by this call.
+    Unavailable,
+    /// The filesystem does not support unnamed temporary files.
+    Unsupported,
+    /// A pre-existing destination is not the independently expected artifact.
+    ExistingMismatch,
+    /// The collision could not be inspected; no claim about its contents is made.
+    ExistingUnavailable(ExistingFailure),
+    /// The destination may be visible, but its durability was not established.
+    DurabilityUnknown,
+}
+
+/// Cause of an inconclusive check of an existing destination.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExistingFailure {
+    Open(i32),
+    Inspect(i32),
+    Read(i32),
+    Changed,
+}
+
+fn existing_open_error(error: rustix::io::Errno) -> PublishError {
+    if error == rustix::io::Errno::LOOP {
+        // The final path component was a symlink and NOFOLLOW rejected it.
+        PublishError::ExistingMismatch
+    } else {
+        // Includes disappearance after EEXIST, permission and transient I/O errors.
+        PublishError::ExistingUnavailable(ExistingFailure::Open(error.raw_os_error()))
+    }
+}
+
+fn verify_existing(file: &File, length: u64, expected_hex: &str) -> Result<(), PublishError> {
+    let meta = file.metadata().map_err(|error| {
+        PublishError::ExistingUnavailable(ExistingFailure::Inspect(
+            error.raw_os_error().unwrap_or(0),
+        ))
+    })?;
+    if !meta.is_file() || meta.len() != length {
+        return Err(PublishError::ExistingMismatch);
+    }
+    let mut hasher = crate::olap::Sha256::new();
+    let mut buf = [0u8; 8192];
+    let mut offset = 0;
+    while offset < length {
+        let limit = (length - offset).min(buf.len() as u64) as usize;
+        let n = loop {
+            match file.read_at(&mut buf[..limit], offset) {
+                Ok(n) => break n,
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(error) => {
+                    return Err(PublishError::ExistingUnavailable(ExistingFailure::Read(
+                        error.raw_os_error().unwrap_or(0),
+                    )));
+                }
+            }
+        };
+        if n == 0 {
+            return Err(PublishError::ExistingUnavailable(ExistingFailure::Changed));
+        }
+        hasher.update(&buf[..n]);
+        offset += n as u64;
+    }
+    let current = file.metadata().map_err(|error| {
+        PublishError::ExistingUnavailable(ExistingFailure::Inspect(
+            error.raw_os_error().unwrap_or(0),
+        ))
+    })?;
+    if !same_snapshot(&meta, &current) {
+        return Err(PublishError::ExistingUnavailable(ExistingFailure::Changed));
+    }
+
+    if hasher.finish_hex() != expected_hex {
+        return Err(PublishError::ExistingMismatch);
+    }
+    Ok(())
+}
+
+impl From<RestoreError> for PublishError {
+    fn from(value: RestoreError) -> Self {
+        Self::Verification(value)
+    }
+}
+
+/// Publish exact verified bytes relative to an already-authorized directory handle.
+/// The filesystem must support unnamed temporary files and linking them by fd;
+/// unsupported filesystems fail closed. A caller must control concurrent mutation of
+/// the destination directory. The returned assertion says nothing about future retention.
+/// Input file offsets are preserved. A durability-unknown result can be retried.
+pub fn publish_restore_files(
+    manifest_file: &File,
+    artifact_file: &File,
+    directory: &File,
+    expected: &ExpectedRestore,
+) -> Result<PublishedRestore, PublishError> {
+    use rustix::fs::{AtFlags, Mode, OFlags, linkat, openat};
+    use std::io::Write;
+
+    if !directory
+        .metadata()
+        .map_err(|_| PublishError::Unavailable)?
+        .is_dir()
+    {
+        return Err(PublishError::Unavailable);
+    }
+    let manifest_meta = regular_metadata(manifest_file)?;
+    if manifest_meta.len() > MAX_MANIFEST_BYTES as u64 {
+        return Err(RestoreError::Size.into());
+    }
+    let mut manifest_bytes = vec![0; manifest_meta.len() as usize];
+    read_at_exact(manifest_file, 0, &mut manifest_bytes)?;
+    check_end(manifest_file, manifest_meta.len(), &manifest_meta)?;
+    let manifest = validate_manifest(&manifest_bytes, expected)?;
+    let artifact_meta = regular_metadata(artifact_file)?;
+    if artifact_meta.len() > MAX_ARTIFACT_BYTES as u64 {
+        return Err(RestoreError::Size.into());
+    }
+    if artifact_meta.len() != manifest.artifact_len
+        || manifest.artifact_digest != expected.artifact_digest
+    {
+        return Err(RestoreError::ArtifactDigest.into());
+    }
+    let basename: String = expected
+        .artifact_digest
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    // O_TMPFILE creates an unnamed, exclusive inode. Do not set O_EXCL: on
+    // Linux that flag would prohibit subsequently linking this inode.
+    let fd = openat(
+        directory,
+        ".",
+        OFlags::TMPFILE | OFlags::WRONLY | OFlags::CLOEXEC,
+        Mode::RUSR | Mode::WUSR,
+    )
+    .map_err(|error| match error {
+        rustix::io::Errno::OPNOTSUPP | rustix::io::Errno::INVAL => PublishError::Unsupported,
+        _ => PublishError::Unavailable,
+    })?;
+    let mut temp = File::from(fd);
+    let mut hasher = crate::olap::Sha256::new();
+    let mut buf = [0u8; 8192];
+    let mut offset = 0;
+    while offset < manifest.artifact_len {
+        let n = (manifest.artifact_len - offset).min(buf.len() as u64) as usize;
+        read_at_exact(artifact_file, offset, &mut buf[..n])?;
+        hasher.update(&buf[..n]);
+        temp.write_all(&buf[..n])
+            .map_err(|_| PublishError::Unavailable)?;
+        offset += n as u64;
+    }
+    check_end(artifact_file, offset, &artifact_meta)?;
+    if hasher.finish_hex() != basename {
+        return Err(RestoreError::ArtifactDigest.into());
+    }
+    temp.sync_all().map_err(|_| PublishError::Unavailable)?;
+    match linkat(&temp, "", directory, basename.as_str(), AtFlags::EMPTY_PATH) {
+        Ok(()) => {}
+        Err(rustix::io::Errno::EXIST) => {
+            let fd = openat(
+                directory,
+                basename.as_str(),
+                OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
+                Mode::empty(),
+            )
+            .map_err(existing_open_error)?;
+            let existing = File::from(fd);
+            verify_existing(&existing, manifest.artifact_len, &basename)?;
+            existing
+                .sync_all()
+                .map_err(|_| PublishError::DurabilityUnknown)?;
+        }
+        Err(_) => return Err(PublishError::DurabilityUnknown),
+    }
+    directory
+        .sync_all()
+        .map_err(|_| PublishError::DurabilityUnknown)?;
+    Ok(PublishedRestore {
+        basename,
+        archive: VerifiedArchive {
+            id: expected.candidate_id,
+            digest: expected.artifact_digest,
+        },
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -266,6 +461,100 @@ mod tests {
             archive: None,
         }
     }
+    #[test]
+    fn publication_is_verified_atomic_and_retryable() {
+        use std::io::{Seek, SeekFrom};
+        let root = tempfile::tempdir_in(PathBuf::from(
+            std::env::var_os("TMPDIR").expect("disk TMPDIR"),
+        ))
+        .unwrap();
+        let output = root.path().join("output");
+        fs::create_dir(&output).unwrap();
+        let bytes = vec![b'x'; 20_000];
+        let artifact_digest = digest(&bytes);
+        let manifest = Manifest {
+            version: 1,
+            authority: "authority".into(),
+            origin: "origin".into(),
+            candidate_id: 7,
+            profile: Profile::Exact,
+            artifact_len: bytes.len() as u64,
+            artifact_digest,
+        };
+        let encoded = serde_json::to_vec(&manifest).unwrap();
+        let expected = ExpectedRestore {
+            authority: "authority".into(),
+            origin: "origin".into(),
+            candidate_id: 7,
+            manifest_digest: digest(&encoded),
+            artifact_digest,
+        };
+        let mp = root.path().join("manifest");
+        let ap = root.path().join("artifact");
+        fs::write(&mp, &encoded).unwrap();
+        fs::write(&ap, vec![b'y'; bytes.len()]).unwrap();
+        let mut mf = File::open(&mp).unwrap();
+        let mut af = File::open(&ap).unwrap();
+        let dir = File::open(&output).unwrap();
+        mf.seek(SeekFrom::Start(3)).unwrap();
+        af.seek(SeekFrom::Start(5)).unwrap();
+        assert!(matches!(
+            publish_restore_files(&mf, &af, &dir, &expected),
+            Err(PublishError::Verification(RestoreError::ArtifactDigest))
+        ));
+        assert_eq!(fs::read_dir(&output).unwrap().count(), 0);
+        fs::write(&ap, &bytes).unwrap();
+        let published = publish_restore_files(&mf, &af, &dir, &expected).unwrap();
+        assert_eq!(published.archive.id, 7);
+        assert_eq!(published.archive.digest, artifact_digest);
+        assert_eq!(fs::read(output.join(&published.basename)).unwrap(), bytes);
+        assert_eq!(
+            publish_restore_files(&mf, &af, &dir, &expected)
+                .unwrap()
+                .basename,
+            published.basename
+        );
+        assert_eq!(mf.stream_position().unwrap(), 3);
+        assert_eq!(af.stream_position().unwrap(), 5);
+        fs::write(output.join(&published.basename), b"other").unwrap();
+        assert!(matches!(
+            publish_restore_files(&mf, &af, &dir, &expected),
+            Err(PublishError::ExistingMismatch)
+        ));
+        assert_eq!(
+            fs::read(output.join(&published.basename)).unwrap(),
+            b"other"
+        );
+        assert_eq!(fs::read_dir(&output).unwrap().count(), 1);
+        fs::remove_file(output.join(&published.basename)).unwrap();
+        std::os::unix::fs::symlink(&ap, output.join(&published.basename)).unwrap();
+        assert!(matches!(
+            publish_restore_files(&mf, &af, &dir, &expected),
+            Err(PublishError::ExistingMismatch)
+        ));
+        assert!(
+            fs::symlink_metadata(output.join(&published.basename))
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+
+        // A write-only FD deterministically fails reading regardless of user capabilities.
+        let unreadable = fs::OpenOptions::new().write(true).open(&ap).unwrap();
+        assert_eq!(
+            verify_existing(&unreadable, bytes.len() as u64, &published.basename),
+            Err(PublishError::ExistingUnavailable(ExistingFailure::Read(
+                rustix::io::Errno::BADF.raw_os_error()
+            )))
+        );
+        for error in [rustix::io::Errno::ACCESS, rustix::io::Errno::NOENT] {
+            assert_eq!(
+                existing_open_error(error),
+                PublishError::ExistingUnavailable(ExistingFailure::Open(error.raw_os_error()))
+            );
+        }
+    }
+
     #[test]
     fn file_restore_checks_exact_bytes_without_moving_offsets() {
         use std::io::{Seek, SeekFrom};
