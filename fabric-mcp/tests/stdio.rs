@@ -54,7 +54,7 @@ fn official_stdio_lifecycle_lists_only_read_only_typed_tools() {
     input.flush().unwrap();
     let listed = rx.recv_timeout(Duration::from_secs(10)).unwrap();
     let tools = listed["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 6);
+    assert_eq!(tools.len(), 7);
     for tool in tools {
         assert_eq!(tool["annotations"]["readOnlyHint"], true);
         assert_eq!(tool["annotations"]["destructiveHint"], false);
@@ -151,6 +151,15 @@ fn cancellation_reaches_canonical_and_capacity_waits_for_actual_exchange() {
                             Request::Cancel { query_id } => {
                                 tx.send("cancel").unwrap();
                                 Response::Cancelled { query_id }
+                            }
+                            Request::IssueSegmentTicket { version, authority, origin, digest, start, end } => {
+                                assert_eq!((version, authority.as_str(), origin.as_str(), digest.as_str(), start, end),
+                                    (1, "authority", "origin", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", 5, 25));
+                                tx.send("ticket").unwrap();
+                                Response::SegmentTicket { ticket: canonical::SegmentTicket {
+                                    version, authority, origin, digest, start, end, expires: 99,
+                                    mac: "0123456789abcdef".repeat(4),
+                                } }
                             }
                             Request::Progress => Response::Progress {
                                 authority: "test".into(),
@@ -260,6 +269,24 @@ fn cancellation_reaches_canonical_and_capacity_waits_for_actual_exchange() {
     assert!(!serialized_payload.contains("</telemetry_payload>"));
     assert!(!serialized_payload.contains('\x1b'));
     assert!(!progress.to_string().contains("MCP worker busy"));
+    writeln!(input, "{}", json!({"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"inspect_segment","arguments":{"authority":"authority","origin":"origin","digest":"a".repeat(64),"start":"5","end":"25"}}})).unwrap();
+    input.flush().unwrap();
+    assert_eq!(
+        events.recv_timeout(Duration::from_secs(5)).unwrap(),
+        "ticket"
+    );
+    let inspected = rx.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert_eq!(inspected["id"], 6);
+    let frame: Value =
+        serde_json::from_str(inspected["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(frame["untrusted_telemetry"], true);
+    assert_eq!(
+        frame["telemetry_payload"],
+        json!({"result":"segment_ticket","ticket":{
+            "version":1,"authority":"authority","origin":"origin","digest":"a".repeat(64),
+            "start":5,"end":25,"expires":99,"mac":"0123456789abcdef".repeat(4)
+        }})
+    );
     let _ = child.kill();
     let _ = child.wait();
     drop(input);
