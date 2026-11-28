@@ -135,3 +135,11 @@ is cooperative between bounded HTTP phases and keeps the reservation until the
 active phase finishes. The default DataFusion pool and spill settings apply to the
 SQLite projection; configure the engine's query pool separately within the same
 receiver-group limit. See [canonical custody](canonical-custody.md).
+
+The Reader MCP service can expose a volatile local metric cursor when launched
+with `FABRIC_MCP_LIVE_SOCKET` set to an existing absolute daemon socket path.
+The socket is trusted launch configuration and cannot be selected by tool
+arguments. `live_metrics` accepts a decimal `after` position and the cursor
+origin, epoch, count, and byte budget; it returns the CLI-shaped page inside
+the untrusted telemetry frame. Cursor positions are not durable frontiers.
+Writer mode does not expose this tool or accept its socket configuration.

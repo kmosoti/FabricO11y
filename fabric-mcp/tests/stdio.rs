@@ -14,6 +14,7 @@ fn official_stdio_lifecycle_lists_only_read_only_typed_tools() {
     std::fs::set_permissions(&credential, std::fs::Permissions::from_mode(0o600)).unwrap();
     let mut child = Command::new(env!("CARGO_BIN_EXE_fabric-mcp"))
         .env("FABRIC_ENDPOINT", "127.0.0.1:9")
+        .env_remove("FABRIC_MCP_LIVE_SOCKET")
         .env_remove("FABRIC_CREDENTIAL")
         .env("FABRIC_CREDENTIAL_FILE", &credential)
         .stdin(Stdio::piped())
@@ -54,11 +55,13 @@ fn official_stdio_lifecycle_lists_only_read_only_typed_tools() {
     input.flush().unwrap();
     let listed = rx.recv_timeout(Duration::from_secs(10)).unwrap();
     let tools = listed["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 7);
+    assert_eq!(tools.len(), 8);
     for tool in tools {
         assert_eq!(tool["annotations"]["readOnlyHint"], true);
         assert_eq!(tool["annotations"]["destructiveHint"], false);
     }
+    let cursor = tools.iter().find(|t| t["name"] == "live_metrics").unwrap();
+    assert!(cursor["inputSchema"]["properties"].get("socket").is_none());
     let query = tools.iter().find(|t| t["name"] == "query").unwrap();
     let schema = &query["inputSchema"];
     assert!(schema["properties"]["scope"].is_object());
@@ -499,4 +502,70 @@ fn writer_mode_exposes_only_acceptance_and_retries_identical_body() {
     let _ = child.wait();
     drop(input);
     reader.join().unwrap();
+}
+
+#[test]
+fn live_cursor_stdio_uses_launch_socket_and_rejects_invalid_progress() {
+    use std::os::unix::{fs::PermissionsExt, net::UnixListener};
+    let root = tempfile::tempdir_in("/data/tmp").unwrap();
+    let credential = root.path().join("reader.key");
+    std::fs::write(&credential, "owned-test-credential").unwrap();
+    std::fs::set_permissions(&credential, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let socket = root.path().join("daemon.sock");
+    let listener = UnixListener::bind(&socket).unwrap();
+    let server = std::thread::spawn(move || {
+        let (stream, _) = listener.accept().unwrap();
+        let mut stream = BufReader::new(stream);
+        let mut line = String::new();
+        stream.read_line(&mut line).unwrap();
+        let request: Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(request["op"], "live_metrics_v1");
+        assert_eq!(request["after"], 0);
+        let page = json!({"kind":"live_metrics_v1","version":1,"origin":"origin","epoch":"a".repeat(64),"observed_through":u64::MAX,"epoch_start_after":0,"oldest_retained":u64::MAX,"highest_lost":1,"highest_lost_reason":"evicted","gap":true,"gap_reason":"evicted","next_after":u64::MAX,"entries":[{"record_id":u64::MAX,"point":{"timestamp_ms":0,"name":"m","value":1.0,"host":"h","slice":"s","unit":"u","pid":null,"labels_json":"{}"}}]});
+        writeln!(stream.get_mut(), "{page}").unwrap();
+    });
+    let mut child = Command::new(env!("CARGO_BIN_EXE_fabric-mcp"))
+        .env("FABRIC_ENDPOINT", "127.0.0.1:9")
+        .env_remove("FABRIC_CREDENTIAL")
+        .env("FABRIC_CREDENTIAL_FILE", credential)
+        .env("FABRIC_MCP_LIVE_SOCKET", socket)
+        .env_remove("FABRIC_MCP_MODE")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut input = child.stdin.take().unwrap();
+    let mut output = BufReader::new(child.stdout.take().unwrap());
+    let mut line = String::new();
+    writeln!(input, "{}", json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"cursor-test","version":"1"}}})).unwrap();
+    input.flush().unwrap();
+    output.read_line(&mut line).unwrap();
+    line.clear();
+    writeln!(
+        input,
+        "{}",
+        json!({"jsonrpc":"2.0","method":"notifications/initialized"})
+    )
+    .unwrap();
+    writeln!(input, "{}", json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"live_metrics","arguments":{"after":"0","count":1,"max_bytes":1024}}})).unwrap();
+    input.flush().unwrap();
+    output.read_line(&mut line).unwrap();
+    let response: Value = serde_json::from_str(&line).unwrap();
+    let framed: Value =
+        serde_json::from_str(response["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(framed["untrusted_telemetry"], true);
+    let payload = &framed["telemetry_payload"];
+    assert_eq!(payload["schema_version"], "fabric.cli.v1");
+    assert_eq!(payload["data"]["next_after"], u64::MAX);
+    assert_eq!(payload["data"]["gap_reason"], "evicted");
+    line.clear();
+    writeln!(input, "{}", json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"live_metrics","arguments":{"after":"18446744073709551616","count":1,"max_bytes":1024}}})).unwrap();
+    input.flush().unwrap();
+    output.read_line(&mut line).unwrap();
+    let invalid: Value = serde_json::from_str(&line).unwrap();
+    assert!(invalid["error"].is_object() || invalid["result"]["isError"] == true);
+    let _ = child.kill();
+    let _ = child.wait();
+    server.join().unwrap();
 }
