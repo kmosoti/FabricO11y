@@ -1009,6 +1009,28 @@ struct PinnedParquetExec {
     properties: Arc<PlanProperties>,
     snapshot_budget: Option<Arc<SnapshotBudgetGuard>>,
     spindle_probe: bool,
+    #[cfg(test)]
+    producer_probe: Option<Arc<ProducerProbe>>,
+}
+
+#[cfg(test)]
+#[derive(Debug)]
+struct ProducerProbe {
+    reached: std::sync::mpsc::SyncSender<()>,
+    resume: Mutex<std::sync::mpsc::Receiver<()>>,
+    exited: std::sync::mpsc::SyncSender<()>,
+    batches: std::sync::atomic::AtomicUsize,
+}
+
+#[cfg(test)]
+struct ProducerExit(Option<Arc<ProducerProbe>>);
+#[cfg(test)]
+impl Drop for ProducerExit {
+    fn drop(&mut self) {
+        if let Some(probe) = &self.0 {
+            let _ = probe.exited.try_send(());
+        }
+    }
 }
 
 impl PinnedParquetExec {
@@ -1078,6 +1100,8 @@ impl PinnedParquetExec {
             properties,
             snapshot_budget,
             spindle_probe,
+            #[cfg(test)]
+            producer_probe: None,
         })
     }
 }
@@ -1162,6 +1186,8 @@ impl ExecutionPlan for PinnedParquetExec {
         let limit = self.limit;
         let snapshot_budget = self.snapshot_budget.clone();
         let spindle_probe = self.spindle_probe;
+        #[cfg(test)]
+        let producer_probe = self.producer_probe.clone();
 
         let (raw_tx, mut raw_rx) = tokio::sync::mpsc::channel::<
             datafusion::common::Result<(RecordBatch, MemoryReservation)>,
@@ -1200,6 +1226,8 @@ impl ExecutionPlan for PinnedParquetExec {
         });
 
         builder.spawn_blocking(move || {
+            #[cfg(test)]
+            let _producer_exit = ProducerExit(producer_probe.clone());
             let _snapshot_budget = snapshot_budget;
             let mut remaining_limit = limit;
 
@@ -1436,6 +1464,15 @@ impl ExecutionPlan for PinnedParquetExec {
                         let out_bytes = out_batch.get_array_memory_size();
                         decode_res.try_resize(rg_resident_bytes.saturating_add(out_bytes))?;
                         let batch_res = decode_res.split(out_bytes);
+                        #[cfg(test)]
+                        if let Some(probe) = &producer_probe
+                            && probe.batches.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 2
+                        {
+                            let _ = probe.reached.try_send(());
+                            if let Ok(resume) = probe.resume.lock() {
+                                let _ = resume.recv_timeout(std::time::Duration::from_secs(10));
+                            }
+                        }
                         if raw_tx.blocking_send(Ok((out_batch, batch_res))).is_err() {
                             decode_res.free();
                             footer_res.free();
@@ -2061,6 +2098,114 @@ mod tests {
             query_err.contains("non-regular"),
             "unexpected query err: {query_err}"
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn pinned_producer_retains_reservations_through_drop_and_drains() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+        let dir = non_tmp_dir();
+        let catalog = fabric_store::CatalogStore::open(dir.path()).unwrap();
+        let olap = OlapParquetStore::new(catalog.layout().clone());
+        let rows: Vec<_> = (0..9_000)
+            .map(|i| MetricPoint {
+                timestamp_ms: 1_700_000_000_000 + i,
+                name: "stream.metric".into(),
+                value: i as f64,
+                host: "fixture".into(),
+                slice: "fixture".into(),
+                unit: "fixture".into(),
+                pid: None,
+                labels_json: "{}".into(),
+            })
+            .collect();
+        olap.write_metrics(&rows).unwrap();
+        let pinned = olap.snapshot_pinned_parquet_files("metrics", None).unwrap();
+        assert_eq!(pinned.len(), 1);
+        let pool: Arc<dyn datafusion::execution::memory_pool::MemoryPool> =
+            Arc::new(GreedyMemoryPool::new(16 * 1024 * 1024));
+        let env = RuntimeEnvBuilder::new()
+            .with_memory_pool(Arc::clone(&pool))
+            .build_arc()
+            .unwrap();
+        let ctx =
+            SessionContext::new_with_config_rt(SessionConfig::new().with_target_partitions(1), env);
+        let reservation = MemoryConsumer::new("test-snapshot").register(&pool);
+        reservation.try_resize(64 * 1024).unwrap();
+        let budget = Arc::new(SnapshotBudgetGuard::new(reservation));
+        let weak_budget = Arc::downgrade(&budget);
+        let (reached_tx, reached_rx) = mpsc::sync_channel(1);
+        let (resume_tx, resume_rx) = mpsc::sync_channel(1);
+        let (exited_tx, exited_rx) = mpsc::sync_channel(1);
+        let probe = Arc::new(ProducerProbe {
+            reached: reached_tx,
+            resume: Mutex::new(resume_rx),
+            exited: exited_tx,
+            batches: std::sync::atomic::AtomicUsize::new(0),
+        });
+        let mut exec = PinnedParquetExec::try_new_with_budget(
+            METRICS_SCHEMA.clone(),
+            Arc::from([Arc::from(pinned)]),
+            None,
+            None,
+            Some(budget),
+        )
+        .unwrap();
+        exec.producer_probe = Some(probe);
+        let stream = exec.execute(0, ctx.task_ctx()).unwrap();
+        drop(exec);
+        tokio::time::timeout(Duration::from_secs(8), async {
+            loop {
+                if reached_rx.try_recv().is_ok() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("third real batch reached bounded stall");
+        assert!(pool.reserved() >= 64 * 1024);
+        drop(stream);
+        assert!(
+            weak_budget.upgrade().is_some(),
+            "snapshot reservation must survive stream drop while producer is active"
+        );
+        assert!(pool.reserved() >= 64 * 1024);
+        resume_tx.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(8), async {
+            let mut exited = false;
+            loop {
+                exited |= exited_rx.try_recv().is_ok();
+                if exited && weak_budget.upgrade().is_none() && pool.reserved() == 0 {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("producer and its reservations must finish after receiver drop");
+        let pinned = olap.snapshot_pinned_parquet_files("metrics", None).unwrap();
+        let exec = PinnedParquetExec::try_new(
+            METRICS_SCHEMA.clone(),
+            Arc::from([Arc::from(pinned)]),
+            None,
+            None,
+        )
+        .unwrap();
+        let stream = exec.execute(0, ctx.task_ctx()).unwrap();
+        let batches = tokio::time::timeout(
+            Duration::from_secs(8),
+            datafusion::physical_plan::common::collect(stream),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(batches.len() >= 3);
+        assert_eq!(
+            batches.iter().map(RecordBatch::num_rows).sum::<usize>(),
+            rows.len()
+        );
+        assert_eq!(pool.reserved(), 0);
     }
 
     #[tokio::test]
