@@ -5,6 +5,7 @@ use std::{
 };
 const BINARY_HASH: &str = "6c67e08ba8abb2c60cf8a58c299b5db460c0fbe7226f7453d4878dcc4f6c3867";
 const V4_FIXTURES_HASH: &str = "f6dc07a4bbf45a4055c58634a890821504716e63a4e5c4b8cfb0834a380d3030";
+const V5_FIXTURES_HASH: &str = "5d17ba82aa58cafa3173e8105d8de3d545c4cf4d99a656caceca0ca3395f91f7";
 pub fn check(root: &Path, generate: bool) -> Result<(), String> {
     let binary = env::var_os("FABRIC_WEAVER")
         .map(PathBuf::from)
@@ -37,6 +38,11 @@ pub fn check(root: &Path, generate: bool) -> Result<(), String> {
     if super::evidence::hash(&root.join("registry/v4/fixtures.json"))? != V4_FIXTURES_HASH {
         return Err(
             "v4 wire fixtures drifted; review fixture updates and change their pinned hash".into(),
+        );
+    }
+    if super::evidence::hash(&root.join("registry/v5/fixtures.json"))? != V5_FIXTURES_HASH {
+        return Err(
+            "v5 wire fixtures drifted; review fixture updates and change their pinned hash".into(),
         );
     }
     verify_revision(
@@ -75,7 +81,24 @@ pub fn check(root: &Path, generate: bool) -> Result<(), String> {
         &["descriptor.json"],
         generate,
     )?;
-    println!("Pinned v2 and generated v3/v4 registries and artifacts verified");
+    let v5_template =
+        fs::read_to_string(root.join("registry/v5/templates/registry/rust/descriptor.json.j2"))
+            .map_err(|e| e.to_string())?;
+    if !v5_template.contains(&format!(
+        "\"extends_descriptor_sha256\":\"{v3_descriptor_hash}\""
+    )) {
+        return Err("v5 descriptor template must extend the exact v3 descriptor".into());
+    }
+    verify_revision(
+        binary,
+        root,
+        "registry/v5/model",
+        "registry/v5/templates",
+        "registry/v5",
+        &["descriptor.json"],
+        generate,
+    )?;
+    println!("Pinned v2 and generated v3/v4/v5 registries and artifacts verified");
     Ok(())
 }
 
@@ -334,6 +357,105 @@ mod tests {
             check(temp.path(), true)
                 .unwrap_err()
                 .contains("v4 wire fixtures drifted")
+        );
+        assert_eq!(fs::read(&descriptor).unwrap(), original_descriptor);
+    }
+
+    #[test]
+    fn v5_descriptor_extends_exact_v3_metric_contract_and_bounds() {
+        let original = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let v3: serde_json::Value = serde_json::from_slice(
+            &fs::read(original.join("registry/v3/descriptor.json")).unwrap(),
+        )
+        .unwrap();
+        let v5: serde_json::Value = serde_json::from_slice(
+            &fs::read(original.join("registry/v5/descriptor.json")).unwrap(),
+        )
+        .unwrap();
+        let digest = crate::evidence::hash(&original.join("registry/v3/descriptor.json")).unwrap();
+        assert_eq!(v5["registry"], "fabrico11y/5");
+        assert_eq!(v5["version"], 5);
+        assert_eq!(v5["extends"], "fabrico11y/3");
+        assert_eq!(v5["extends_descriptor_sha256"], digest);
+        assert_eq!(v5["context"], v3["context"]);
+        assert_eq!(v5["generation"], v3["generation"]);
+        assert_eq!(v5["wire"], v3["wire"]);
+        assert_eq!(v5["metric_kinds"], serde_json::json!(["metric"]));
+        assert_eq!(
+            v5["labels"],
+            serde_json::json!({
+                "field": "data.labels",
+                "required": false,
+                "accepted_when_omitted_or_empty": true,
+                "type": "object mapping decoded string keys to decoded UTF-8 string values",
+                "max_entries": 8,
+                "key": {
+                    "min_decoded_ascii_bytes": 1,
+                    "max_decoded_ascii_bytes": 64,
+                    "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$",
+                    "ascii_only": true,
+                },
+                "value": {
+                    "min_decoded_utf8_bytes": 0,
+                    "max_decoded_utf8_bytes": 128,
+                    "reject_unicode_control": true,
+                    "reject_nul": true,
+                },
+                "duplicates": "reject duplicate decoded keys, including JSON escape aliases",
+                "reserved_keys": ["producer", "generation", "sequence", "metric_unit", "metric_type", "reset", "context_run_id", "version", "labels"],
+                "projection": "preserve labels as the nested data.labels field; do not flatten keys into sibling fields",
+            })
+        );
+    }
+
+    #[test]
+    fn v5_artifact_and_valid_model_drift_are_rejected() {
+        let original = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let temp = crate::evidence::non_tmp_tempdir().unwrap();
+        copy(&original.join("registry"), &temp.path().join("registry"));
+        check(temp.path(), false).unwrap();
+
+        let descriptor = temp.path().join("registry/v5/descriptor.json");
+        let original_descriptor = fs::read(&descriptor).unwrap();
+        let mut corrupted = original_descriptor.clone();
+        corrupted.push(b' ');
+        fs::write(&descriptor, &corrupted).unwrap();
+        assert!(
+            check(temp.path(), false)
+                .unwrap_err()
+                .contains("artifact drift")
+        );
+        check(temp.path(), true).unwrap();
+        assert_eq!(fs::read(&descriptor).unwrap(), original_descriptor);
+
+        let model = temp.path().join("registry/v5/model/observations.yaml");
+        let original_model = fs::read_to_string(&model).unwrap();
+        let changed = original_model.replace("At most eight entries", "At most seven entries");
+        assert_ne!(changed, original_model);
+        fs::write(&model, changed).unwrap();
+        assert!(
+            check(temp.path(), false)
+                .unwrap_err()
+                .contains("artifact drift")
+        );
+        assert_eq!(fs::read(&descriptor).unwrap(), original_descriptor);
+    }
+
+    #[test]
+    fn v5_fixture_drift_is_rejected_before_generation() {
+        let original = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let temp = crate::evidence::non_tmp_tempdir().unwrap();
+        copy(&original.join("registry"), &temp.path().join("registry"));
+        let descriptor = temp.path().join("registry/v5/descriptor.json");
+        let original_descriptor = fs::read(&descriptor).unwrap();
+        let fixtures = temp.path().join("registry/v5/fixtures.json");
+        let mut changed = fs::read(&fixtures).unwrap();
+        changed.push(b' ');
+        fs::write(&fixtures, changed).unwrap();
+        assert!(
+            check(temp.path(), true)
+                .unwrap_err()
+                .contains("v5 wire fixtures drifted")
         );
         assert_eq!(fs::read(&descriptor).unwrap(), original_descriptor);
     }

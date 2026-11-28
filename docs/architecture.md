@@ -489,6 +489,32 @@ flowchart LR
     BRIDGE --> ROW["Trace Parquet and query"]
 ```
 
+### Bounded structured metric series
+
+The opt-in `fabrico11y/5` descriptor carries a bounded metric label map under
+the leased run envelope. Spindle validates the original frame and reserves a
+generation-bound series membership in the same savepoint as its raw record.
+The canonical receiver scopes its own reservation by authenticated origin and
+commits it with the original bytes, including when engine publication is
+pending. Exact retries reuse the existing record. Engine recovery publishes
+the pending record without a second accounting update.
+
+The collector projects nested labels from custody into the shared metric
+schema. For canonical V5 metadata the Gorilla ring groups repeated samples
+without the varying sequence in the block key and restores every sample's
+sequence on read. Parquet rows keep the full projected labels and the
+separate Spindle provenance. [Collection limits](collection.md#structured-metric-labels)
+
+```mermaid
+flowchart LR
+    WIRE["Opt-in V5 metric frame"] --> LOCAL["Leased Spindle custody + local series reservation"]
+    LOCAL --> PROJECT["Custody projection with nested labels and provenance"]
+    LOCAL --> CENTRAL["Authenticated canonical custody + origin series window"]
+    CENTRAL --> ENGINE["Pending engine publish and recovery"]
+    PROJECT --> RING["Gorilla ring with exact per-sample sequences"]
+    PROJECT --> ROW["Metric Parquet and query"]
+```
+
 ## Versioned service configuration
 
 The shared loader reads bounded regular files. Explicit service launch paths

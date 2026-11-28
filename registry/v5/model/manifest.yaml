@@ -1,0 +1,4 @@
+file_format: definition_manifest/2.0
+name: fabrico11y-metric-labels
+schema_url: https://github.com/kmosoti/FabricO11y/schemas/5.0.0
+description: Opt-in metric-only observations with a bounded nested labels object, extending the exact fabrico11y/3 envelope and context.

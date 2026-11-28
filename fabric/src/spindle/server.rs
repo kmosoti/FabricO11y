@@ -85,27 +85,32 @@ fn classify_frame(bytes: &[u8]) -> Result<(bool, bool), String> {
     }
     struct ScanVisitor;
     impl<'de> Visitor<'de> for ScanVisitor {
-        type Value = (bool, bool);
+        type Value = (bool, bool, bool);
         fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             formatter.write_str("a JSON object")
         }
         fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Self::Value, M::Error> {
-            let (mut command, mut v4) = (false, false);
+            let (mut command, mut v4, mut v5) = (false, false, false);
             while let Some(key) = map.next_key::<String>()? {
                 let value: &'de RawValue = map.next_value()?;
                 command |= key == "command";
                 // A top-level span is also suspicious when a malformed or
                 // duplicate version tries to disguise a v4-like frame.
                 v4 |= key == "span" || (key == "version" && value.get() == "4");
+                v5 |= key == "version" && value.get() == "5";
             }
-            Ok((command, v4))
+            Ok((command, v4, v5))
         }
     }
-    serde::de::Deserializer::deserialize_map(
+    let (command, v4, v5) = serde::de::Deserializer::deserialize_map(
         &mut serde_json::Deserializer::from_slice(bytes),
         ScanVisitor,
     )
-    .map_err(err)
+    .map_err(err)?;
+    if v5 && command {
+        observation::decode_metric_v5(bytes)?;
+    }
+    Ok((command, v4))
 }
 
 fn parse_request(value: serde_json::Value) -> Result<Request, String> {
@@ -1574,6 +1579,33 @@ mod batch_publication_tests {
 mod connection_accounting_tests {
     use super::*;
     use std::net::Shutdown;
+
+    #[test]
+    fn v5_metric_uses_leased_normal_dispatch_and_keeps_exact_bytes() {
+        let root = tempfile::Builder::new()
+            .tempdir_in(std::env::var_os("TMPDIR").unwrap())
+            .unwrap();
+        let mut daemon = Daemon::open(config(root.path())).unwrap();
+        let request =
+            serde_json::to_vec(&serde_json::json!({"command":"lease","producer":"normal"}))
+                .unwrap();
+        let lease: Reply = serde_json::from_slice(&daemon.handle(&request).unwrap()).unwrap();
+        let Reply::Lease { generation, .. } = lease else {
+            panic!("expected lease")
+        };
+        let raw = serde_json::to_vec(&serde_json::json!({
+            "version":5, "registry":"fabrico11y/5", "context":{"run_id":"f404b128-2c19-412f-bcd0-823f9c1f1b31"},
+            "identity":{"producer":"normal","generation":generation,"sequence":1}, "timestamp_ns":1, "resource":"r",
+            "data":{"kind":"metric","name":"m","unit":"s","value":1.0,"metric_type":"gauge","reset":false,"labels":{"region":"x"}}
+        })).unwrap();
+        assert_eq!(classify_frame(&raw).unwrap(), (false, false));
+        let reply: Reply = serde_json::from_slice(&daemon.handle(&raw).unwrap()).unwrap();
+        assert!(matches!(reply, Reply::Receipt { receipt } if !receipt.duplicate));
+        let again: Reply = serde_json::from_slice(&daemon.handle(&raw).unwrap()).unwrap();
+        assert!(matches!(again, Reply::Receipt { receipt } if receipt.duplicate));
+        let rows = daemon.store.read_raw(0, 1).unwrap();
+        assert_eq!(rows[0].1, raw);
+    }
 
     #[test]
     fn borrowed_classification_and_v4_raw_rejection_precede_dispatch() {

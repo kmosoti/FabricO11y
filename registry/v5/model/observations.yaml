@@ -1,0 +1,19 @@
+groups:
+  - id: registry.fabric.v5.metric_labels
+    type: attribute_group
+    brief: Bounded optional labels object for metric-only v5 observations.
+    note: The wire field is the nested object data.labels, not a flattened attribute projection. Labels may be omitted or be an empty object. At most eight entries are allowed. Each decoded key is 1 to 64 ASCII bytes and matches [A-Za-z_][A-Za-z0-9_.-]*. Each decoded UTF-8 value is 0 to 128 bytes, including the empty string; Unicode control characters and NUL are rejected. Duplicate decoded keys, including JSON escape aliases, are rejected. Keys producer, generation, sequence, metric_unit, metric_type, reset, context_run_id, version, and labels are reserved.
+    stability: development
+    attributes:
+      - id: fabric.metric.labels.key
+        type: string
+        stability: development
+        brief: Decoded key in the nested metric labels object.
+        note: This describes each dynamic key in data.labels and is not a flattened wire attribute. Keys are unique after JSON unescaping, are 1 to 64 ASCII bytes, match [A-Za-z_][A-Za-z0-9_.-]*, and exclude producer, generation, sequence, metric_unit, metric_type, reset, context_run_id, version, and labels.
+        examples: [device.region]
+      - id: fabric.metric.labels.value
+        type: string
+        stability: development
+        brief: Decoded UTF-8 string value paired with a metric label key.
+        note: Each value is at most 128 decoded UTF-8 bytes; the empty string is valid. Unicode control characters and NUL are rejected.
+        examples: [gpu0]

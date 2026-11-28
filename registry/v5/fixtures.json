@@ -1,0 +1,540 @@
+[
+  {
+    "name": "v5-metric-labels-omitted-legacy-shape",
+    "valid": true,
+    "wire": {
+      "version": 5,
+      "registry": "fabrico11y/5",
+      "context": {
+        "run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31"
+      },
+      "identity": {
+        "producer": "fixture",
+        "generation": "g3.fixture-authentication-checked-at-custody",
+        "sequence": 1
+      },
+      "timestamp_ns": 1,
+      "resource": "fixture",
+      "data": {
+        "kind": "metric",
+        "name": "gpu.memory.used",
+        "unit": "By",
+        "value": 0,
+        "metric_type": "gauge",
+        "reset": false
+      }
+    }
+  },
+  {
+    "name": "v5-metric-empty-labels-object",
+    "valid": true,
+    "wire": {
+      "version": 5,
+      "registry": "fabrico11y/5",
+      "context": {
+        "run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31"
+      },
+      "identity": {
+        "producer": "fixture",
+        "generation": "g3.fixture-authentication-checked-at-custody",
+        "sequence": 1
+      },
+      "timestamp_ns": 1,
+      "resource": "fixture",
+      "data": {
+        "kind": "metric",
+        "name": "gpu.memory.used",
+        "unit": "By",
+        "value": 0,
+        "metric_type": "gauge",
+        "reset": false,
+        "labels": {}
+      }
+    }
+  },
+  {
+    "name": "v5-eight-labels-exact-key-and-value-boundaries",
+    "valid": true,
+    "wire": {
+      "version": 5,
+      "registry": "fabrico11y/5",
+      "context": {
+        "run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31"
+      },
+      "identity": {
+        "producer": "fixture",
+        "generation": "g3.fixture-authentication-checked-at-custody",
+        "sequence": 1
+      },
+      "timestamp_ns": 1,
+      "resource": "fixture",
+      "data": {
+        "kind": "metric",
+        "name": "gpu.memory.used",
+        "unit": "By",
+        "value": 0,
+        "metric_type": "gauge",
+        "reset": false,
+        "labels": {
+          "Axxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9",
+          "zone": "gpu0",
+          "g": "0",
+          "pci.address": "0000:03:00.0",
+          "device-region": "vram0",
+          "_owner": "scheduler",
+          "slot1": "1",
+          "empty": ""
+        }
+      }
+    }
+  },
+  {
+    "name": "v5-ninth-label-rejected",
+    "valid": false,
+    "wire": {
+      "version": 5,
+      "registry": "fabrico11y/5",
+      "context": {
+        "run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31"
+      },
+      "identity": {
+        "producer": "fixture",
+        "generation": "g3.fixture-authentication-checked-at-custody",
+        "sequence": 1
+      },
+      "timestamp_ns": 1,
+      "resource": "fixture",
+      "data": {
+        "kind": "metric",
+        "name": "gpu.memory.used",
+        "unit": "By",
+        "value": 0,
+        "metric_type": "gauge",
+        "reset": false,
+        "labels": {
+          "k0": "0",
+          "k1": "1",
+          "k2": "2",
+          "k3": "3",
+          "k4": "4",
+          "k5": "5",
+          "k6": "6",
+          "k7": "7",
+          "k8": "8"
+        }
+      }
+    }
+  },
+  {
+    "name": "v5-key-over-64-decoded-ascii-bytes-rejected",
+    "valid": false,
+    "wire": {
+      "version": 5,
+      "registry": "fabrico11y/5",
+      "context": {
+        "run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31"
+      },
+      "identity": {
+        "producer": "fixture",
+        "generation": "g3.fixture-authentication-checked-at-custody",
+        "sequence": 1
+      },
+      "timestamp_ns": 1,
+      "resource": "fixture",
+      "data": {
+        "kind": "metric",
+        "name": "gpu.memory.used",
+        "unit": "By",
+        "value": 0,
+        "metric_type": "gauge",
+        "reset": false,
+        "labels": {
+          "Axxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx": "v"
+        }
+      }
+    }
+  },
+  {
+    "name": "v5-malformed-key-starting-with-digit-rejected",
+    "valid": false,
+    "wire": {
+      "version": 5,
+      "registry": "fabrico11y/5",
+      "context": {
+        "run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31"
+      },
+      "identity": {
+        "producer": "fixture",
+        "generation": "g3.fixture-authentication-checked-at-custody",
+        "sequence": 1
+      },
+      "timestamp_ns": 1,
+      "resource": "fixture",
+      "data": {
+        "kind": "metric",
+        "name": "gpu.memory.used",
+        "unit": "By",
+        "value": 0,
+        "metric_type": "gauge",
+        "reset": false,
+        "labels": {
+          "9bad": "v"
+        }
+      }
+    }
+  },
+  {
+    "name": "v5-non-ascii-key-rejected",
+    "valid": false,
+    "wire": {
+      "version": 5,
+      "registry": "fabrico11y/5",
+      "context": {
+        "run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31"
+      },
+      "identity": {
+        "producer": "fixture",
+        "generation": "g3.fixture-authentication-checked-at-custody",
+        "sequence": 1
+      },
+      "timestamp_ns": 1,
+      "resource": "fixture",
+      "data": {
+        "kind": "metric",
+        "name": "gpu.memory.used",
+        "unit": "By",
+        "value": 0,
+        "metric_type": "gauge",
+        "reset": false,
+        "labels": {
+          "r\u00e9gion": "v"
+        }
+      }
+    }
+  },
+  {
+    "name": "v5-value-over-128-decoded-utf8-bytes-rejected",
+    "valid": false,
+    "wire": {
+      "version": 5,
+      "registry": "fabrico11y/5",
+      "context": {
+        "run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31"
+      },
+      "identity": {
+        "producer": "fixture",
+        "generation": "g3.fixture-authentication-checked-at-custody",
+        "sequence": 1
+      },
+      "timestamp_ns": 1,
+      "resource": "fixture",
+      "data": {
+        "kind": "metric",
+        "name": "gpu.memory.used",
+        "unit": "By",
+        "value": 0,
+        "metric_type": "gauge",
+        "reset": false,
+        "labels": {
+          "note": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        }
+      }
+    }
+  },
+  {
+    "name": "v5-nul-value-rejected-after-json-decoding",
+    "valid": false,
+    "wire": {
+      "version": 5,
+      "registry": "fabrico11y/5",
+      "context": {
+        "run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31"
+      },
+      "identity": {
+        "producer": "fixture",
+        "generation": "g3.fixture-authentication-checked-at-custody",
+        "sequence": 1
+      },
+      "timestamp_ns": 1,
+      "resource": "fixture",
+      "data": {
+        "kind": "metric",
+        "name": "gpu.memory.used",
+        "unit": "By",
+        "value": 0,
+        "metric_type": "gauge",
+        "reset": false,
+        "labels": {
+          "note": "\u0000"
+        }
+      }
+    }
+  },
+  {
+    "name": "v5-unicode-control-value-rejected-after-json-decoding",
+    "valid": false,
+    "wire": {
+      "version": 5,
+      "registry": "fabrico11y/5",
+      "context": {
+        "run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31"
+      },
+      "identity": {
+        "producer": "fixture",
+        "generation": "g3.fixture-authentication-checked-at-custody",
+        "sequence": 1
+      },
+      "timestamp_ns": 1,
+      "resource": "fixture",
+      "data": {
+        "kind": "metric",
+        "name": "gpu.memory.used",
+        "unit": "By",
+        "value": 0,
+        "metric_type": "gauge",
+        "reset": false,
+        "labels": {
+          "note": "\u0085"
+        }
+      }
+    }
+  },
+  {
+    "name": "v5-reserved-identity-and-metric-keys-rejected",
+    "valid": false,
+    "wire": {
+      "version": 5,
+      "registry": "fabrico11y/5",
+      "context": {
+        "run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31"
+      },
+      "identity": {
+        "producer": "fixture",
+        "generation": "g3.fixture-authentication-checked-at-custody",
+        "sequence": 1
+      },
+      "timestamp_ns": 1,
+      "resource": "fixture",
+      "data": {
+        "kind": "metric",
+        "name": "gpu.memory.used",
+        "unit": "By",
+        "value": 0,
+        "metric_type": "gauge",
+        "reset": false,
+        "labels": {
+          "producer": "x",
+          "generation": "x",
+          "sequence": "x",
+          "metric_unit": "x",
+          "metric_type": "x",
+          "reset": "x",
+          "context_run_id": "x",
+          "version": "x"
+        }
+      }
+    }
+  },
+  {
+    "name": "v5-reserved-labels-container-key-rejected",
+    "valid": false,
+    "wire": {
+      "version": 5,
+      "registry": "fabrico11y/5",
+      "context": {
+        "run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31"
+      },
+      "identity": {
+        "producer": "fixture",
+        "generation": "g3.fixture-authentication-checked-at-custody",
+        "sequence": 1
+      },
+      "timestamp_ns": 1,
+      "resource": "fixture",
+      "data": {
+        "kind": "metric",
+        "name": "gpu.memory.used",
+        "unit": "By",
+        "value": 0,
+        "metric_type": "gauge",
+        "reset": false,
+        "labels": {
+          "labels": "x"
+        }
+      }
+    }
+  },
+  {
+    "name": "v5-labels-null-is-not-omitted-or-empty-object",
+    "valid": false,
+    "wire": {
+      "version": 5,
+      "registry": "fabrico11y/5",
+      "context": {
+        "run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31"
+      },
+      "identity": {
+        "producer": "fixture",
+        "generation": "g3.fixture-authentication-checked-at-custody",
+        "sequence": 1
+      },
+      "timestamp_ns": 1,
+      "resource": "fixture",
+      "data": {
+        "kind": "metric",
+        "name": "gpu.memory.used",
+        "unit": "By",
+        "value": 0,
+        "metric_type": "gauge",
+        "reset": false,
+        "labels": null
+      }
+    }
+  },
+  {
+    "name": "v5-label-value-must-be-string",
+    "valid": false,
+    "wire": {
+      "version": 5,
+      "registry": "fabrico11y/5",
+      "context": {
+        "run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31"
+      },
+      "identity": {
+        "producer": "fixture",
+        "generation": "g3.fixture-authentication-checked-at-custody",
+        "sequence": 1
+      },
+      "timestamp_ns": 1,
+      "resource": "fixture",
+      "data": {
+        "kind": "metric",
+        "name": "gpu.memory.used",
+        "unit": "By",
+        "value": 0,
+        "metric_type": "gauge",
+        "reset": false,
+        "labels": {
+          "gpu": 0
+        }
+      }
+    }
+  },
+  {
+    "name": "v5-labels-must-be-an-object",
+    "valid": false,
+    "wire": {
+      "version": 5,
+      "registry": "fabrico11y/5",
+      "context": {
+        "run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31"
+      },
+      "identity": {
+        "producer": "fixture",
+        "generation": "g3.fixture-authentication-checked-at-custody",
+        "sequence": 1
+      },
+      "timestamp_ns": 1,
+      "resource": "fixture",
+      "data": {
+        "kind": "metric",
+        "name": "gpu.memory.used",
+        "unit": "By",
+        "value": 0,
+        "metric_type": "gauge",
+        "reset": false,
+        "labels": [
+          "gpu0"
+        ]
+      }
+    }
+  },
+  {
+    "name": "v5-nonmetric-data-kind-refused",
+    "valid": false,
+    "wire": {
+      "version": 5,
+      "registry": "fabrico11y/5",
+      "context": {
+        "run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31"
+      },
+      "identity": {
+        "producer": "fixture",
+        "generation": "g3.fixture-authentication-checked-at-custody",
+        "sequence": 1
+      },
+      "timestamp_ns": 1,
+      "resource": "fixture",
+      "data": {
+        "kind": "event",
+        "name": "x",
+        "message": "not a metric"
+      }
+    }
+  },
+  {
+    "name": "v3-legacy-metric-remains-valid-under-v3",
+    "valid": true,
+    "wire": {
+      "version": 3,
+      "registry": "fabrico11y/3",
+      "context": {
+        "run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31"
+      },
+      "identity": {
+        "producer": "fixture",
+        "generation": "g3.fixture-authentication-checked-at-custody",
+        "sequence": 1
+      },
+      "timestamp_ns": 1,
+      "resource": "fixture",
+      "data": {
+        "kind": "metric",
+        "name": "gpu.memory.used",
+        "unit": "By",
+        "value": 0,
+        "metric_type": "gauge",
+        "reset": false
+      }
+    }
+  },
+  {
+    "name": "v3-reader-refuses-v5-labels-unknown-field",
+    "valid": false,
+    "wire": {
+      "version": 3,
+      "registry": "fabrico11y/3",
+      "context": {
+        "run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31"
+      },
+      "identity": {
+        "producer": "fixture",
+        "generation": "g3.fixture-authentication-checked-at-custody",
+        "sequence": 1
+      },
+      "timestamp_ns": 1,
+      "resource": "fixture",
+      "data": {
+        "kind": "metric",
+        "name": "gpu.memory.used",
+        "unit": "By",
+        "value": 0,
+        "metric_type": "gauge",
+        "reset": false,
+        "labels": {
+          "zone": "gpu0"
+        }
+      }
+    }
+  },
+  {
+    "name": "v5-duplicate-decoded-label-key-rejected",
+    "valid": false,
+    "wire_json": "{\"version\":5,\"registry\":\"fabrico11y/5\",\"context\":{\"run_id\":\"f404b128-2c19-412f-bcd0-823f9c1f1b31\"},\"identity\":{\"producer\":\"fixture\",\"generation\":\"g3.fixture-authentication-checked-at-custody\",\"sequence\":1},\"timestamp_ns\":1,\"resource\":\"fixture\",\"data\":{\"kind\":\"metric\",\"name\":\"gpu.memory.used\",\"unit\":\"By\",\"value\":0,\"metric_type\":\"gauge\",\"reset\":false,\"labels\":{\"zone\":\"a\",\"zone\":\"b\"}}}"
+  },
+  {
+    "name": "v5-escaped-alias-duplicate-decoded-label-key-rejected",
+    "valid": false,
+    "wire_json": "{\"version\":5,\"registry\":\"fabrico11y/5\",\"context\":{\"run_id\":\"f404b128-2c19-412f-bcd0-823f9c1f1b31\"},\"identity\":{\"producer\":\"fixture\",\"generation\":\"g3.fixture-authentication-checked-at-custody\",\"sequence\":1},\"timestamp_ns\":1,\"resource\":\"fixture\",\"data\":{\"kind\":\"metric\",\"name\":\"gpu.memory.used\",\"unit\":\"By\",\"value\":0,\"metric_type\":\"gauge\",\"reset\":false,\"labels\":{\"zone\":\"a\",\"zo\\u006ee\":\"b\"}}}"
+  }
+]

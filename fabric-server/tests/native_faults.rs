@@ -27,6 +27,28 @@ fn record(id: u64, raw: &str) -> ForwardRecord {
         raw: raw.into(),
     }
 }
+// Read the exact durable reservation independently of the gateway process.
+fn window_snapshot(path: &Path) -> (i64, Vec<(String, Vec<u8>, i64)>) {
+    let db =
+        rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .unwrap();
+    let floor = db
+        .query_row("SELECT floor FROM v5_series_clock WHERE id=1", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    let mut stmt = db
+        .prepare(
+            "SELECT origin,series_key,last_seen FROM v5_series_window ORDER BY origin,series_key",
+        )
+        .unwrap();
+    let rows = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    (floor, rows)
+}
 struct Gateway {
     child: Child,
     endpoint: String,
@@ -219,10 +241,11 @@ fn unknown_inflight_write_and_gateway_death_preserve_pending_binding() {
         fs::write(&path, value).unwrap();
         fs::set_permissions(path, fs::Permissions::from_mode(0o600)).unwrap();
     }
-    let raw2 = RAW.replace(
-        "18446744073709551615},\"timestamp_ns\"",
-        "2},\"timestamp_ns\"",
-    );
+    let raw2 = r#"{"version":5,"registry":"fabrico11y/5","context":{"run_id":"00000000-0000-4000-8000-000000000001"},"identity":{"producer":"fault","generation":"a","sequence":2},"timestamp_ns":1,"resource":"service","data":{"kind":"metric","name":"finite","unit":"1","value":1.0,"metric_type":"gauge","reset":false,"labels":{"site":"test"}}}"#.to_owned();
+    let expected_key = fabric::observation::decode_metric_v5(raw2.as_bytes())
+        .unwrap()
+        .series_key()
+        .unwrap();
     let mut config = Config {
         listen: "127.0.0.1:0".into(),
         storage: root.path().join("control"),
@@ -344,6 +367,29 @@ fn unknown_inflight_write_and_gateway_death_preserve_pending_binding() {
     );
     gateway.kill();
     let _ = writer.join().unwrap();
+    let pending_path = config.storage.join("canonical.sqlite");
+    let before = window_snapshot(&pending_path);
+    assert!(before.0 > 0);
+    assert_eq!(
+        before.1,
+        vec![("owned-fault-origin".to_owned(), expected_key, before.0)]
+    );
+    {
+        let db = rusqlite::Connection::open_with_flags(
+            &pending_path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .unwrap();
+        let (pending, raw): (u64, Vec<u8>) = db
+            .query_row(
+                "SELECT published,raw FROM records WHERE origin=?1 AND source_id=2",
+                ["owned-fault-origin"],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(pending, 0);
+        assert_eq!(raw, raw2.as_bytes());
+    }
     proxy.release();
     let deadline = Instant::now() + Duration::from_secs(6);
     while !proxy.late.load(Ordering::SeqCst) {
@@ -377,6 +423,10 @@ fn unknown_inflight_write_and_gateway_death_preserve_pending_binding() {
         panic!("recovered prefix")
     };
     assert_eq!(frontiers["owned-fault-origin"], 2);
+    assert_eq!(
+        window_snapshot(&config.storage.join("canonical.sqlite")),
+        before
+    );
     let Response::Rows { rows } = gateway.call(
         node,
         Request::Read {
@@ -402,6 +452,10 @@ fn unknown_inflight_write_and_gateway_death_preserve_pending_binding() {
         ),
         Response::Committed { through: 2, .. }
     ));
+    assert_eq!(
+        window_snapshot(&config.storage.join("canonical.sqlite")),
+        before
+    );
     let raw3 = raw2.replace("2},\"timestamp_ns\"", "3},\"timestamp_ns\"");
     assert!(matches!(
         gateway.call(
