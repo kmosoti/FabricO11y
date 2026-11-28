@@ -6,6 +6,7 @@ pub mod durable_snapshot;
 pub mod evidence_manifest;
 pub mod frontier;
 pub mod snapshot;
+pub mod worker_segment;
 
 pub use application_result::{
     ApplicationPayloadDigest, ApplicationResult, ApplicationResultError, ReportScope,
