@@ -228,6 +228,27 @@ fn hash(path: &Path) -> String {
         .to_owned()
 }
 
+fn plan_cli(binary: &Path, address: &str, credential: &Path, verb: &str, body: &Value) -> Response {
+    let mut child = Command::new(binary)
+        .arg(verb)
+        .env("FABRIC_ENDPOINT", address)
+        .env("FABRIC_CREDENTIAL_FILE", credential)
+        .env_remove("FABRIC_CREDENTIAL")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    serde_json::to_writer(child.stdin.take().unwrap(), body).unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{verb}: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+    serde_json::from_slice(&output.stdout).unwrap()
+}
+
 #[test]
 #[ignore = "run in the confined slice with a selected hashed fabric-mcp binary"]
 fn stdio_reader_writer_match_live_receiver_and_verified_segment() {
@@ -407,6 +428,31 @@ fn stdio_reader_writer_match_live_receiver_and_verified_segment() {
             http_reader.request("/v1/query", &json!({"version":1,"request":query}), true);
         assert!(status.starts_with("HTTP/1.1 403"));
     }
+    let query_probe = std::env::var_os("FABRIC_PLAN_QUERY_TEST_BIN").map(|query_bin| {
+        let query_bin = PathBuf::from(query_bin);
+        assert!(query_bin.is_absolute());
+        let digest = std::env::var("FABRIC_PLAN_QUERY_TEST_SHA256").unwrap();
+        assert_eq!(hash(&query_bin), digest);
+        let Response::PlanSubscribed {
+            subscription,
+            frontier,
+        } = plan_cli(
+            &query_bin,
+            &address,
+            &writer_path,
+            "subscribe-plan",
+            &json!({"scope":"plan"}),
+        )
+        else {
+            panic!("typed CLI subscription failed");
+        };
+        assert_eq!(frontier, 0);
+        (
+            query_bin,
+            digest,
+            json!({"scope":"plan","subscription":subscription}),
+        )
+    });
     let mut writer = Mcp::start(&binary, &address, "writer", &writer_path);
     let arguments = json!({"authority":authority,"command_id":"stable-id","scope":"plan","expected_head":null,"origin":"origin","source_id":"1","proposal_raw":raw});
     let result = if http_enabled {
@@ -445,7 +491,44 @@ fn stdio_reader_writer_match_live_receiver_and_verified_segment() {
     }
     drop(writer);
     drop(reader);
+    let page_input = json!({"scope":"plan","cursor":null,"limit":1,"ttl_secs":30});
+    let after_commit = query_probe.map(|(query_bin, digest, poll)| {
+        for expected in [true, false] {
+            assert!(matches!(
+                plan_cli(&query_bin, &address, &writer_path, "poll-plan-hint", &poll),
+                Response::PlanHint { pending } if pending == expected
+            ));
+        }
+        let page = plan_cli(&query_bin, &address, &writer_path, "plan-page", &page_input);
+        let Response::PlanPage { page: ref read } = page else {
+            panic!("typed CLI page failed");
+        };
+        assert_eq!(read.scope, PlanScope("plan".into()));
+        assert_eq!(read.frontier, 1);
+        assert!(read.next_cursor.is_none());
+        assert_eq!(read.decisions.len(), 1);
+        assert_eq!(read.decisions[0].command_id, "stable-id");
+        (query_bin, digest, poll, serde_json::to_value(page).unwrap())
+    });
     stop.store(true, Ordering::SeqCst);
     task.join().unwrap();
+    if let Some((query_bin, digest, poll, expected)) = after_commit {
+        let server = Server::open(config).unwrap();
+        let address = server.address();
+        let stop = server.stop_handle();
+        let task = thread::spawn(move || server.serve().unwrap());
+        assert!(matches!(
+            plan_cli(&query_bin, &address, &writer_path, "poll-plan-hint", &poll),
+            Response::PlanCursorFailure {
+                reason: canonical::PlanCursorFailure::Revoked
+            }
+        ));
+        let got = plan_cli(&query_bin, &address, &writer_path, "plan-page", &page_input);
+        assert_eq!(serde_json::to_value(got).unwrap(), expected);
+        stop.store(true, Ordering::SeqCst);
+        task.join().unwrap();
+        assert_eq!(hash(&query_bin), digest);
+        println!("verified scoped CLI plan page and advisory hint restart readback");
+    }
     assert_eq!(hash(&binary), expected_hash);
 }

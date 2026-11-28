@@ -251,6 +251,23 @@ eviction or epoch/floor protocol. Acceptance is a research decision, not
 authorization for external execution, and its receipt does not assert
 analytical projection visibility.
 
+### Scoped plan reads and advisory hints
+
+`fabric-query plan-page`, `subscribe-plan` and `poll-plan-hint` accept bounded
+JSON on standard input and use the credential file for the scoped decision
+writer. `plan-page` takes `scope`, an optional `cursor`, `limit` from 1 to 64
+and `ttl_secs` from 1 to 900. A page continuation reads the same frozen
+frontier. `subscribe-plan` takes `scope` and returns a subscription and the
+frontier at registration. `poll-plan-hint` takes `scope` and that subscription.
+Polling consumes a coalesced advisory boolean. A new bounded page read is
+the source of durable decisions. Restart revokes the in-memory subscription.
+
+`FabricQueryClient` selects direct loopback or the CLI before it sends each
+of these operations. Errors leave delivery uncertain once a request may have
+reached the server. These methods return typed cursor failures and make one
+transport attempt. Callers should read the current decisions and establish a
+new subscription when the previous one has been revoked.
+
 ### Projection segment transfer
 
 A canonical Reader may request a version 1 segment ticket for an enrolled
