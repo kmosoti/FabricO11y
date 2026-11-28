@@ -1554,6 +1554,170 @@ mod receipt_tests {
     }
 
     #[test]
+    fn slow_tcp_reader_holds_query_lease_through_cancel_and_write_timeout() {
+        use rustix::{
+            event::{PollFd, PollFlags, Timespec, poll},
+            net::sockopt,
+        };
+        use std::{
+            net::{TcpListener, TcpStream},
+            sync::mpsc,
+        };
+
+        let (_root, server) = fixture();
+        let server = Arc::new(server);
+        let mut rows = Vec::new();
+        for id in 1..=25u64 {
+            let raw = serde_json::json!({"version":2,"registry":"fabrico11y/2",
+                "identity":{"producer":"worker","generation":"generation","sequence":id},
+                "timestamp_ns":id,"resource":"local",
+                "data":{"kind":"log","level":"info","message":"x".repeat(30_000)}})
+            .to_string();
+            let result = call(
+                &server,
+                "alpha",
+                Request::Ingest {
+                    origin: "alpha".into(),
+                    records: vec![ForwardRecord {
+                        source_id: id,
+                        raw: raw.clone(),
+                    }],
+                },
+            )
+            .unwrap();
+            assert!(matches!(result, Response::Committed { through, .. } if through == id));
+            rows.push(canonical::CanonicalRow {
+                canonical_id: id,
+                origin: "alpha".into(),
+                source_id: id,
+                raw,
+            });
+        }
+        server.projection.lock().unwrap().apply(&rows).unwrap();
+        let request = Request::Query {
+            request: QueryRequest {
+                version: fabric::query::API_VERSION,
+                query_id: "slow-reader".into(),
+                authority: None,
+                scope: vec!["alpha".into()],
+                snapshot: Default::default(),
+                filter: Default::default(),
+                operation: fabric::query::Operation::Evidence,
+                budgets: fabric::query::Budgets {
+                    output_bytes: 1024 * 1024,
+                    ..Default::default()
+                },
+                cursor: None,
+            },
+        };
+        let grant = test_grant(&server, "reader", &request);
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (mut socket, _) = listener.accept().unwrap();
+        sockopt::set_socket_recv_buffer_size(&client, 4096).unwrap();
+        sockopt::set_socket_send_buffer_size(&socket, 4096).unwrap();
+        assert!(sockopt::socket_recv_buffer_size(&client).unwrap() <= 16384);
+        assert!(sockopt::socket_send_buffer_size(&socket).unwrap() <= 16384);
+        let observer = socket.try_clone().unwrap();
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (done_tx, done_rx) = mpsc::channel();
+        let owner = server.clone();
+        let worker = thread::spawn(move || {
+            let mut failure = None;
+            respond(
+                Ok((grant, request)),
+                &owner.ledger,
+                &owner.projection,
+                &owner.auth,
+                &owner.projection_error,
+                &owner.reads,
+                |body| {
+                    assert!(matches!(
+                        serde_json::from_slice(body),
+                        Ok(Response::Query { .. })
+                    ));
+                    assert!(body.len() > 512 * 1024 && body.len() <= canonical::MAX_FRAME);
+                    entered_tx.send(body.len()).unwrap();
+                    failure = Some(
+                        canonical::write_frame(
+                            &mut socket,
+                            body,
+                            Instant::now() + Duration::from_secs(2),
+                        )
+                        .unwrap_err(),
+                    );
+                },
+            );
+            done_tx.send(failure.unwrap()).unwrap();
+        });
+        assert!(entered_rx.recv_timeout(Duration::from_secs(15)).unwrap() > 512 * 1024);
+        let deadline = Instant::now() + Duration::from_secs(1);
+        loop {
+            let mut fds = [PollFd::new(&observer, PollFlags::OUT)];
+            let ready = poll(
+                &mut fds,
+                Some(&Timespec {
+                    tv_sec: 0,
+                    tv_nsec: 10_000_000,
+                }),
+            )
+            .unwrap();
+            if ready == 0 {
+                break;
+            }
+            assert!(Instant::now() < deadline, "sender never saturated");
+        }
+        assert!(matches!(done_rx.try_recv(), Err(mpsc::TryRecvError::Empty)));
+        assert_eq!(
+            reserve(&server.reads, "competing", &mut None).unwrap_err(),
+            "query busy"
+        );
+        assert!(matches!(
+            call(
+                &server,
+                "reader",
+                Request::Cancel {
+                    query_id: "slow-reader".into()
+                }
+            )
+            .unwrap(),
+            Response::Cancelled { .. }
+        ));
+        assert_eq!(
+            reserve(&server.reads, "competing", &mut None).unwrap_err(),
+            "query busy"
+        );
+        let error = done_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(
+            error.starts_with("write; outcome unknown:")
+                || error.starts_with("deadline; outcome unknown"),
+            "{error}"
+        );
+        worker.join().unwrap();
+        let next = Request::Query {
+            request: QueryRequest {
+                version: fabric::query::API_VERSION,
+                query_id: "next".into(),
+                authority: None,
+                scope: vec!["alpha".into()],
+                snapshot: Default::default(),
+                filter: Default::default(),
+                operation: fabric::query::Operation::Evidence,
+                budgets: fabric::query::Budgets {
+                    rows: 1,
+                    ..Default::default()
+                },
+                cursor: None,
+            },
+        };
+        assert!(matches!(
+            call(&server, "reader", next),
+            Ok(Response::Query { .. })
+        ));
+        drop(client);
+    }
+
+    #[test]
     fn exact_receipt_lookup_binds_authority_role_origin_and_source() {
         let (_root, server) = fixture();
         let raw = serde_json::json!({"version":2,"registry":"fabrico11y/2", "identity":{"producer":"alpha","generation":"sample","sequence":1}, "timestamp_ns":0,"resource":"service","data":{"kind":"log","level":"info","message":"sample"}}).to_string();
