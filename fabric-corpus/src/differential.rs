@@ -117,6 +117,11 @@ fn group(view: &PortableView, selector: &GroupSelector) -> GroupState {
         GroupState::Selected(matches)
     }
 }
+fn invalid_group_selector(g: &GroupSelector) -> bool {
+    g.attributed_to.is_empty()
+        || g.attributed_to.len() > MAX_ATTRIBUTION_BYTES
+        || g.attributed_to.chars().any(char::is_control)
+}
 /// Imports and verifies both exact portable byte sequences against caller-supplied
 /// expected digests. Those digests must be bound by the caller to trusted sources.
 pub fn compare(
@@ -138,11 +143,7 @@ pub fn compare(
     {
         return Err(DifferentialError::InvalidSelector);
     }
-    if dependencies.groups.iter().any(|g| {
-        g.attributed_to.is_empty()
-            || g.attributed_to.len() > MAX_ATTRIBUTION_BYTES
-            || g.attributed_to.chars().any(char::is_control)
-    }) {
+    if dependencies.groups.iter().any(invalid_group_selector) {
         return Err(DifferentialError::InvalidSelector);
     }
     let before = PortableView::import(from, expected_from).map_err(DifferentialError::From)?;
@@ -204,5 +205,231 @@ pub fn compare(
         relations,
         groups,
         applicability,
+    })
+}
+
+/// Explicit caller-declared AND inputs for one alternative; support relations
+/// are not automatically interpreted as dependencies.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Alternative {
+    pub direct: Dependencies,
+    pub derived: BTreeSet<RevisionDigest>,
+}
+pub const MAX_PROPAGATION_NODES: usize = 64;
+pub const MAX_PROPAGATION_ALTERNATIVES: usize = 256;
+pub const MAX_PROPAGATION_EDGES: usize = 2048;
+pub const MAX_PROPAGATION_WORK: usize = 131_072;
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PropagatedNode {
+    pub applicability: Applicability,
+    pub alternatives: Vec<Applicability>,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Propagation {
+    pub differential: Differential,
+    pub nodes: BTreeMap<RevisionDigest, PropagatedNode>,
+    pub work: usize,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PropagationError {
+    Limit,
+    InvalidGraph,
+    MissingHistoricalOutput,
+    Differential(DifferentialError),
+}
+fn direct_state(
+    alt: &Alternative,
+    d: &Differential,
+    work: &mut usize,
+) -> Result<Applicability, PropagationError> {
+    let mut stale = false;
+    let mut unknown = false;
+    for id in &alt.direct.revisions {
+        *work = work.checked_add(1).ok_or(PropagationError::Limit)?;
+        let p = &d.revisions[id];
+        match (&p.from, &p.to) {
+            (RevisionState::Present(a), RevisionState::Present(b)) => stale |= a != b,
+            _ => unknown = true,
+        }
+    }
+    for id in &alt.direct.relations {
+        *work = work.checked_add(1).ok_or(PropagationError::Limit)?;
+        let p = &d.relations[id];
+        unknown |= p.from != RelationState::Present || p.to != RelationState::Present;
+    }
+    for id in &alt.direct.groups {
+        *work = work.checked_add(1).ok_or(PropagationError::Limit)?;
+        let p = &d.groups[id];
+        match (&p.from, &p.to) {
+            (GroupState::Selected(a), GroupState::Selected(b)) => {
+                stale |= a != b;
+                unknown |= a.values().chain(b.values()).any(|v| !v.is_resolved());
+            }
+            _ => unknown = true,
+        }
+    }
+    if *work > MAX_PROPAGATION_WORK {
+        return Err(PropagationError::Limit);
+    }
+    Ok(if stale {
+        Applicability::Stale
+    } else if unknown {
+        Applicability::Unknown
+    } else {
+        Applicability::Unchanged
+    })
+}
+fn evaluate_derived(
+    base: Applicability,
+    alt: &Alternative,
+    states: &BTreeMap<RevisionDigest, Applicability>,
+    work: &mut usize,
+) -> Result<Applicability, PropagationError> {
+    let mut state = base;
+    for dependency in &alt.derived {
+        *work = work.checked_add(1).ok_or(PropagationError::Limit)?;
+        if *work > MAX_PROPAGATION_WORK {
+            return Err(PropagationError::Limit);
+        }
+        match states[dependency] {
+            Applicability::Stale => state = Applicability::Stale,
+            Applicability::Unknown if state != Applicability::Stale => {
+                state = Applicability::Unknown
+            }
+            _ => (),
+        }
+    }
+    Ok(state)
+}
+fn alternatives_state(alternatives: &[Applicability]) -> Applicability {
+    if alternatives.contains(&Applicability::Unchanged) {
+        Applicability::Unchanged
+    } else if alternatives.iter().all(|s| *s == Applicability::Stale) {
+        Applicability::Stale
+    } else {
+        Applicability::Unknown
+    }
+}
+/// Compares a caller-declared finite graph across two portable byte sequences.
+/// A historical output must be selected and present in the first view. No
+/// authority, chronology, truth or completeness beyond the declaration is implied.
+pub fn propagate(
+    from: &[u8],
+    expected_from: [u8; 32],
+    to: &[u8],
+    expected_to: [u8; 32],
+    graph: &BTreeMap<RevisionDigest, Vec<Alternative>>,
+) -> Result<Propagation, PropagationError> {
+    if graph.is_empty() || graph.len() > MAX_PROPAGATION_NODES {
+        return Err(PropagationError::Limit);
+    }
+    let mut union = Dependencies::default();
+    let mut count = 0usize;
+    let mut edges = 0usize;
+    for (id, alternatives) in graph {
+        if alternatives.is_empty() {
+            return Err(PropagationError::InvalidGraph);
+        }
+        union.revisions.insert(*id);
+        count = count
+            .checked_add(alternatives.len())
+            .ok_or(PropagationError::Limit)?;
+        if count > MAX_PROPAGATION_ALTERNATIVES {
+            return Err(PropagationError::Limit);
+        }
+        for alt in alternatives {
+            let n = alt
+                .direct
+                .revisions
+                .len()
+                .checked_add(alt.direct.relations.len())
+                .and_then(|v| v.checked_add(alt.direct.groups.len()))
+                .and_then(|v| v.checked_add(alt.derived.len()))
+                .ok_or(PropagationError::Limit)?;
+            edges = edges.checked_add(n).ok_or(PropagationError::Limit)?;
+            if edges > MAX_PROPAGATION_EDGES {
+                return Err(PropagationError::Limit);
+            }
+            // Output dependencies must flow through the derived graph. Direct
+            // relation/group selectors remain explicit metadata, without inferred edges.
+            if n == 0
+                || alt.derived.iter().any(|node| !graph.contains_key(node))
+                || alt
+                    .direct
+                    .revisions
+                    .iter()
+                    .any(|node| graph.contains_key(node))
+            {
+                return Err(PropagationError::InvalidGraph);
+            }
+            if alt.direct.groups.iter().any(invalid_group_selector) {
+                return Err(PropagationError::Differential(
+                    DifferentialError::InvalidSelector,
+                ));
+            }
+            union.revisions.extend(&alt.direct.revisions);
+            union.relations.extend(&alt.direct.relations);
+            union.groups.extend(alt.direct.groups.iter().cloned());
+        }
+    }
+    let differential = compare(from, expected_from, to, expected_to, &union)
+        .map_err(PropagationError::Differential)?;
+    if graph
+        .keys()
+        .any(|id| !matches!(differential.revisions[id].from, RevisionState::Present(_)))
+    {
+        return Err(PropagationError::MissingHistoricalOutput);
+    }
+    let mut work = 0usize;
+    let direct: BTreeMap<_, Vec<_>> = graph
+        .iter()
+        .map(|(id, alts)| {
+            Ok((
+                *id,
+                alts.iter()
+                    .map(|a| direct_state(a, &differential, &mut work))
+                    .collect::<Result<Vec<_>, _>>()?,
+            ))
+        })
+        .collect::<Result<_, PropagationError>>()?;
+    let mut states: BTreeMap<_, _> = graph
+        .keys()
+        .map(|id| (*id, Applicability::Unknown))
+        .collect();
+    loop {
+        let mut changed = false;
+        for (id, alts) in graph {
+            let mut evaluated = Vec::with_capacity(alts.len());
+            for (alt, base) in alts.iter().zip(&direct[id]) {
+                evaluated.push(evaluate_derived(*base, alt, &states, &mut work)?);
+            }
+            let next = alternatives_state(&evaluated);
+            if states[id] != next {
+                states.insert(*id, next);
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    let mut nodes = BTreeMap::new();
+    for (id, alts) in graph {
+        let mut results = Vec::with_capacity(alts.len());
+        for (alt, base) in alts.iter().zip(&direct[id]) {
+            results.push(evaluate_derived(*base, alt, &states, &mut work)?);
+        }
+        nodes.insert(
+            *id,
+            PropagatedNode {
+                applicability: states[id],
+                alternatives: results,
+            },
+        );
+    }
+    Ok(Propagation {
+        differential,
+        nodes,
+        work,
     })
 }
