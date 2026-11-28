@@ -20,6 +20,56 @@ const ENTITIES_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("entit
 const ADJ_OUT_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("adj_out");
 const ADJ_IN_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("adj_in");
 const UNITS_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("units");
+
+#[cfg(test)]
+mod sync_fault {
+    use redb::{StorageBackend, backends::FileBackend};
+    use std::{
+        cell::RefCell,
+        io,
+        sync::{
+            Arc,
+            atomic::{AtomicBool, AtomicUsize, Ordering},
+        },
+    };
+
+    #[derive(Debug, Default)]
+    pub(super) struct Control {
+        pub armed: AtomicBool,
+        pub fired: AtomicUsize,
+    }
+    thread_local! { pub(super) static SELECTED: RefCell<Option<Arc<Control>>> = const { RefCell::new(None) }; }
+    #[derive(Debug)]
+    pub(super) struct Backend {
+        pub inner: FileBackend,
+        pub control: Arc<Control>,
+    }
+    impl StorageBackend for Backend {
+        fn len(&self) -> io::Result<u64> {
+            self.inner.len()
+        }
+        fn read(&self, offset: u64, out: &mut [u8]) -> io::Result<()> {
+            self.inner.read(offset, out)
+        }
+        fn set_len(&self, len: u64) -> io::Result<()> {
+            self.inner.set_len(len)
+        }
+        fn write(&self, offset: u64, data: &[u8]) -> io::Result<()> {
+            self.inner.write(offset, data)
+        }
+        fn sync_data(&self) -> io::Result<()> {
+            if self.control.armed.swap(false, Ordering::SeqCst) {
+                self.control.fired.fetch_add(1, Ordering::SeqCst);
+                return Err(io::Error::other("injected catalog commit sync failure"));
+            }
+            self.inner.sync_data()
+        }
+        fn close(&self) -> io::Result<()> {
+            self.inner.close()
+        }
+    }
+}
+
 const WATERMARKS_TABLE: TableDefinition<&str, u64> = TableDefinition::new("watermarks");
 const ANOMALIES_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("anomalies");
 const META_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("meta");
@@ -197,7 +247,16 @@ impl CatalogStore {
             crate::atomic_fd::enforce_private_file_mode(&file, "catalog.redb")?;
             let mut builder = Builder::new();
             builder.set_cache_size(REDB_CACHE_BYTES);
-            match builder.create_file(file) {
+            #[cfg(not(test))]
+            let opened = builder.create_file(file);
+            #[cfg(test)]
+            let opened = match sync_fault::SELECTED.with(|selected| selected.borrow().clone()) {
+                Some(control) => redb::backends::FileBackend::new(file).and_then(|inner| {
+                    builder.create_with_backend(sync_fault::Backend { inner, control })
+                }),
+                None => builder.create_file(file),
+            };
+            match opened {
                 Ok(db) => {
                     state_fd.sync_all().map_err(|e| {
                         format!("failed syncing state dir {}: {e}", state_dir.display())
@@ -415,6 +474,14 @@ impl CatalogStore {
             meta.insert("latest_graph", graph_bytes.as_slice())
                 .map_err(|e| e.to_string())?;
         }
+        #[cfg(test)]
+        sync_fault::SELECTED.with(|selected| {
+            if let Some(control) = selected.borrow().as_ref() {
+                control
+                    .armed
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+        });
         write_txn.commit().map_err(|e| e.to_string())?;
         drop(db);
 
@@ -1054,6 +1121,176 @@ mod tests {
             "newer.marker",
             true,
             false
+        ));
+    }
+
+    #[test]
+    fn failed_commit_sync_never_acknowledges_or_mixes_catalog_tables() {
+        use fabric_graph::{EdgeKind, NodeKind};
+        use std::{
+            collections::BTreeMap,
+            io::Write,
+            process::{Command, Stdio},
+            sync::{Arc, atomic::Ordering},
+            time::{Duration, Instant},
+        };
+        fn fixture(newer: bool) -> (HostSnapshot, DriftReport, CausalGraph) {
+            let snapshot = HostSnapshot {
+                timestamp_unix_ms: if newer {
+                    1_700_000_000_124
+                } else {
+                    1_700_000_000_123
+                },
+                hostname: if newer { "new" } else { "old" }.into(),
+                units: vec![fabric_core::UnitRecord {
+                    name: "test.service".into(),
+                    active_state: if newer { "failed" } else { "active" }.into(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+            let mut graph = CausalGraph::new();
+            graph.upsert_node(
+                "one",
+                NodeKind::Agent,
+                if newer { "new" } else { "old" },
+                BTreeMap::new(),
+            );
+            graph.upsert_node("two", NodeKind::SystemdUnit, "two", BTreeMap::new());
+            graph.add_edge(
+                "one",
+                "two",
+                EdgeKind::Controls,
+                1.0,
+                if newer { "new" } else { "old" },
+            );
+            (snapshot, DriftReport::default(), graph)
+        }
+        let tmp = std::path::PathBuf::from(std::env::var_os("TMPDIR").expect("disk-backed TMPDIR"));
+        assert!(!tmp.starts_with("/tmp") && !tmp.starts_with("/dev/shm"));
+        if let Some(root) = std::env::var_os("FABRIC_CATALOG_SYNC_ROOT") {
+            let store = CatalogStore::open(root).unwrap();
+            let db = store.open_db_with_retry().expect("fresh recovery open");
+            let txn = db.begin_read().expect("fresh recovery read transaction");
+            let actual_watermark = txn
+                .open_table(WATERMARKS_TABLE)
+                .unwrap()
+                .get("collector_last_ms")
+                .unwrap()
+                .unwrap()
+                .value();
+            let newer = match actual_watermark {
+                1_700_000_000_123 => false,
+                1_700_000_000_124 => true,
+                _ => panic!("unexpected recovered watermark: {actual_watermark}"),
+            };
+            let (snapshot, drift, graph) = fixture(newer);
+            let entries = |table: TableDefinition<&str, &[u8]>| {
+                txn.open_table(table)
+                    .unwrap()
+                    .iter()
+                    .unwrap()
+                    .map(|entry| {
+                        let (key, value) = entry.unwrap();
+                        (key.value().to_owned(), value.value().to_vec())
+                    })
+                    .collect::<BTreeMap<_, _>>()
+            };
+            let expected_entities = graph
+                .nodes()
+                .iter()
+                .map(|(key, node)| (key.clone(), serde_json::to_vec(node).unwrap()))
+                .collect();
+            assert_eq!(entries(ENTITIES_TABLE), expected_entities);
+            assert_eq!(
+                entries(UNITS_TABLE),
+                BTreeMap::from([(
+                    "test.service".into(),
+                    serde_json::to_vec(&snapshot.units[0]).unwrap()
+                )])
+            );
+            let edges = serde_json::to_vec(&graph.edges()).unwrap();
+            assert_eq!(
+                entries(ADJ_OUT_TABLE),
+                BTreeMap::from([("one".into(), edges.clone())])
+            );
+            assert_eq!(
+                entries(ADJ_IN_TABLE),
+                BTreeMap::from([("two".into(), edges)])
+            );
+            let meta = txn.open_table(META_TABLE).unwrap();
+            assert_eq!(
+                meta.get("latest_snapshot").unwrap().unwrap().value(),
+                serde_json::to_vec(&snapshot).unwrap()
+            );
+            assert_eq!(
+                meta.get("latest_graph").unwrap().unwrap().value(),
+                serde_json::to_vec(&graph).unwrap()
+            );
+            assert_eq!(
+                entries(ANOMALIES_TABLE).get("latest_drift").unwrap(),
+                &serde_json::to_vec(&drift).unwrap()
+            );
+            let marker = std::env::var_os("FABRIC_CATALOG_SYNC_MARKER").expect("completion marker");
+            fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(marker)
+                .unwrap()
+                .write_all(if newer { b"new\n" } else { b"old\n" })
+                .unwrap();
+            return;
+        }
+        let dir = tempfile::tempdir_in(&tmp).unwrap();
+        let store = CatalogStore::open(dir.path()).unwrap();
+        let (old_snapshot, old_drift, old_graph) = fixture(false);
+        store
+            .commit_cycle(&old_snapshot, &old_drift, &old_graph)
+            .unwrap();
+        let mirror = fs::read(store.layout().live_state_json()).unwrap();
+        let control = Arc::new(sync_fault::Control::default());
+        sync_fault::SELECTED.with(|selected| *selected.borrow_mut() = Some(Arc::clone(&control)));
+        let (new_snapshot, new_drift, new_graph) = fixture(true);
+        let failed = store.commit_cycle(&new_snapshot, &new_drift, &new_graph);
+        sync_fault::SELECTED.with(|selected| *selected.borrow_mut() = None);
+        let error = failed.expect_err("failed sync must not acknowledge commit");
+        assert!(
+            error.contains("injected catalog commit sync failure"),
+            "{error}"
+        );
+        assert_eq!(control.fired.load(Ordering::SeqCst), 1);
+        assert!(!control.armed.load(Ordering::SeqCst));
+        assert_eq!(fs::read(store.layout().live_state_json()).unwrap(), mirror);
+        drop(store);
+        let marker = dir.path().join("recovered.marker");
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "catalog::tests::failed_commit_sync_never_acknowledges_or_mixes_catalog_tables",
+            ])
+            .env("TMPDIR", &tmp)
+            .env("FABRIC_CATALOG_SYNC_ROOT", dir.path())
+            .env("FABRIC_CATALOG_SYNC_MARKER", &marker)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .spawn()
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(30);
+        loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                assert!(status.success(), "fresh recovery failed: {status}");
+                break;
+            }
+            if Instant::now() >= deadline {
+                child.kill().unwrap();
+                child.wait().unwrap();
+                panic!("fresh recovery timed out");
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(matches!(
+            fs::read(marker).unwrap().as_slice(),
+            b"old\n" | b"new\n"
         ));
     }
 
