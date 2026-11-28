@@ -92,6 +92,15 @@ fn write_error(error: rusqlite::Error) -> JournalError {
     }
 }
 
+// The identifier depends only on immutable provision and committed version.
+fn event_digest(provision: &Provision, version: i64) -> Result<String, JournalError> {
+    let mut hash = Sha256::new();
+    hash.update(b"fabric-alert-event-v1\0");
+    hash.update(encode(provision)?);
+    hash.update(version.to_be_bytes());
+    Ok(hash.finalize().iter().map(|b| format!("{b:02x}")).collect())
+}
+
 fn forbidden_state_path(path: &Path) -> bool {
     ["/tmp", "/dev/shm", "/run/shm"]
         .into_iter()
@@ -251,6 +260,7 @@ impl AlertJournal {
     /// version as the high-water mark; subsequent positions retain that mark.
     /// Positions belong to this explicitly opened store and provide no security
     /// boundary or cross-store identity. Authority and scope are caller claims.
+    /// Local consistency checks do not re-evaluate or authenticate event history.
     pub fn read_page(
         &self,
         authority: &str,
@@ -306,18 +316,45 @@ impl AlertJournal {
             let input: Vec<u8> = row.get(2).map_err(|_| JournalError::Corrupt)?;
             let receipt: Vec<u8> = row.get(3).map_err(|_| JournalError::Corrupt)?;
             let receipt: Receipt = decode(&receipt)?;
+            let input: Evaluation = decode(&input)?;
             let wanted = after + entries.len() as u64;
+            let digest = event_digest(&self.provision, (wanted + 1) as i64)
+                .map_err(|_| JournalError::Corrupt)?;
+            let validity_matches = match input.sample {
+                fabric_alert::Sample::Covered {
+                    coverage_start,
+                    coverage_end,
+                    ..
+                } => {
+                    coverage_start <= input.time
+                        && coverage_end == input.time
+                        && receipt.decision.validity == fabric_alert::Validity::Covered
+                }
+                fabric_alert::Sample::Missing(validity) => {
+                    validity != fabric_alert::Validity::Covered
+                        && receipt.decision.validity == validity
+                }
+            };
             if !valid_id(&request_id)
                 || expected < 0
                 || expected as u64 != wanted
                 || receipt.version != wanted + 1
+                || input != receipt.decision.input
+                || input.profile != self.provision.rule.profile
+                || input.source != self.provision.rule.source
+                || !validity_matches
+                || receipt.event_id != format!("alert-v1:{digest}")
+                || receipt
+                    .intent_id
+                    .as_ref()
+                    .is_some_and(|id| id != &format!("intent-v1:{digest}"))
             {
                 return Err(JournalError::Corrupt);
             }
             entries.push(JournalEntry {
                 request_id,
                 expected_version: wanted,
-                input: decode(&input)?,
+                input,
                 receipt,
             });
         }
@@ -394,15 +431,7 @@ impl AlertJournal {
             Outcome::Duplicate(_) => return Err(JournalError::Conflict),
         };
         let next = version.checked_add(1).ok_or(JournalError::Full)?;
-        let mut hash = Sha256::new();
-        hash.update(b"fabric-alert-event-v1\0");
-        hash.update(encode(&self.provision)?);
-        hash.update(next.to_be_bytes());
-        let digest = hash
-            .finalize()
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect::<String>();
+        let digest = event_digest(&self.provision, next)?;
         let event_id = format!("alert-v1:{digest}");
         let intent_id = (old != decision.lifecycle).then(|| format!("intent-v1:{digest}"));
         let receipt = Receipt {
@@ -727,6 +756,65 @@ mod tests {
                 }),
                 1
             ),
+            Err(JournalError::Corrupt)
+        ));
+    }
+
+    #[test]
+    fn page_refuses_valid_but_inconsistent_persisted_entries() {
+        let root = tempfile::tempdir_in(std::env::var_os("TMPDIR").expect("disk TMPDIR")).unwrap();
+        let mut journal = AlertJournal::open(&root.path().join("journal"), provision(4)).unwrap();
+        let original_input = input(1, 1, 11);
+        let receipt = journal
+            .apply("auth", "scope", "one", 0, original_input)
+            .unwrap();
+        let mut changed = original_input;
+        changed.sample = Sample::Covered {
+            value: 12,
+            evidence: [5; 32],
+            coverage_start: 0,
+            coverage_end: 1,
+        };
+        journal
+            .db
+            .execute(
+                "UPDATE alert_events SET input=?1 WHERE id='one'",
+                [encode(&changed).unwrap()],
+            )
+            .unwrap();
+        assert!(matches!(
+            journal.read_page("auth", "scope", None, 1),
+            Err(JournalError::Corrupt)
+        ));
+        let mut changed_receipt = receipt.clone();
+        changed_receipt.decision.input = changed;
+        changed.source = [9; 32];
+        changed_receipt.decision.input.source = changed.source;
+        journal
+            .db
+            .execute(
+                "UPDATE alert_events SET input=?1,receipt=?2 WHERE id='one'",
+                params![encode(&changed).unwrap(), encode(&changed_receipt).unwrap()],
+            )
+            .unwrap();
+        assert!(matches!(
+            journal.read_page("auth", "scope", None, 1),
+            Err(JournalError::Corrupt)
+        ));
+        changed_receipt = receipt.clone();
+        changed_receipt.event_id = "alert-v1:forged".into();
+        journal
+            .db
+            .execute(
+                "UPDATE alert_events SET input=?1,receipt=?2 WHERE id='one'",
+                params![
+                    encode(&original_input).unwrap(),
+                    encode(&changed_receipt).unwrap()
+                ],
+            )
+            .unwrap();
+        assert!(matches!(
+            journal.read_page("auth", "scope", None, 1),
             Err(JournalError::Corrupt)
         ));
     }
