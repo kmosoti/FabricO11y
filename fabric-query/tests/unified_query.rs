@@ -468,3 +468,114 @@ async fn rejects_symlinked_spill_dir_into_tmp_and_preserves_distinct_spindle_seq
         "unexpected error: {err}"
     );
 }
+
+fn partition_metric(timestamp_ms: i64) -> MetricPoint {
+    MetricPoint {
+        timestamp_ms,
+        name: "partition.evidence".into(),
+        value: 1.0,
+        host: "fixture".into(),
+        slice: "fixture".into(),
+        unit: "fixture".into(),
+        pid: None,
+        labels_json: "{}".into(),
+    }
+}
+
+#[tokio::test]
+async fn out_of_range_metric_is_queryable_from_fallback_partition() {
+    let dir = non_tmp_dir();
+    let catalog = CatalogStore::open(dir.path()).unwrap();
+    let olap = OlapParquetStore::new(catalog.layout().clone());
+    let paths = olap.write_metrics(&[partition_metric(i64::MIN)]).unwrap();
+    assert_eq!(paths.len(), 1);
+    let partition = paths[0]
+        .parent()
+        .unwrap()
+        .file_name()
+        .unwrap()
+        .to_str()
+        .unwrap();
+    let partition_day =
+        chrono::NaiveDate::parse_from_str(partition.strip_prefix("dt=").unwrap(), "%Y-%m-%d")
+            .unwrap();
+    let cutoff = chrono::DateTime::<Utc>::from_timestamp_millis(0)
+        .unwrap()
+        .date_naive();
+    assert!(
+        partition_day > cutoff,
+        "fixture requires fallback partition after cutoff"
+    );
+    let query = UnifiedQuerySpec {
+        domain: QueryDomain::Metrics,
+        where_clauses: vec!["timestamp_ms<0".into()],
+        ..Default::default()
+    };
+    let result = execute_unified_query(dir.path(), &query, &[], None)
+        .await
+        .unwrap();
+    assert_eq!(result.row_count, 1);
+    assert_eq!(result.rows[0]["timestamp_ms"].as_i64(), Some(i64::MIN));
+    let array = result.batches[0]
+        .column(0)
+        .as_any()
+        .downcast_ref::<arrow::array::Int64Array>()
+        .unwrap();
+    assert_eq!(array.value(0), i64::MIN);
+}
+
+#[tokio::test]
+async fn metric_since_hint_preserves_typed_rows_across_midnight() {
+    let dir = non_tmp_dir();
+    let catalog = CatalogStore::open(dir.path()).unwrap();
+    let olap = OlapParquetStore::new(catalog.layout().clone());
+    // 2024-01-03T00:00:00Z; include the immediately preceding millisecond.
+    let midnight = 1_704_240_000_000_i64;
+    let samples = [
+        midnight - 86_400_000,
+        midnight - 1,
+        midnight,
+        midnight + 86_400_000,
+    ];
+    let points: Vec<_> = samples.into_iter().map(partition_metric).collect();
+    assert_eq!(olap.write_metrics(&points).unwrap().len(), 3);
+    let full = olap
+        .snapshot_pinned_parquet_files_bounded("metrics", None, 64, 1024 * 1024)
+        .unwrap();
+    let selected = olap
+        .snapshot_pinned_parquet_files_bounded("metrics", Some(midnight), 64, 1024 * 1024)
+        .unwrap();
+    assert_eq!(full.len(), 3);
+    assert_eq!(selected.len(), 2);
+    drop(full);
+    drop(selected);
+    let hinted = UnifiedQuerySpec {
+        domain: QueryDomain::Metrics,
+        since_ms: Some(midnight),
+        ..Default::default()
+    };
+    let textual = UnifiedQuerySpec {
+        domain: QueryDomain::Metrics,
+        where_clauses: vec![format!("timestamp_ms>={midnight}")],
+        ..Default::default()
+    };
+    let left = execute_unified_query(dir.path(), &hinted, &[], None)
+        .await
+        .unwrap();
+    let right = execute_unified_query(dir.path(), &textual, &[], None)
+        .await
+        .unwrap();
+    assert_eq!(left.schema, right.schema);
+    assert_eq!(left.row_count, 2);
+    assert_eq!(left.rows, right.rows);
+    let left_batch = arrow::compute::concat_batches(&left.schema, &left.batches).unwrap();
+    let right_batch = arrow::compute::concat_batches(&right.schema, &right.batches).unwrap();
+    assert_eq!(left_batch, right_batch);
+    assert_eq!(
+        left.rows
+            .iter()
+            .map(|r| r["timestamp_ms"].as_i64().unwrap())
+            .collect::<Vec<_>>(),
+        vec![midnight + 86_400_000, midnight]
+    );
+}
