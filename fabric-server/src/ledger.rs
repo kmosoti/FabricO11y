@@ -862,6 +862,23 @@ CREATE INDEX IF NOT EXISTS pending_records ON records(id) WHERE published=0;").m
         })
         .map_err(err)?;
         tx.execute("INSERT INTO plan_decision(id,scope,writer,command_id,request_hash,previous_head,proposal_id,result) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",params![next,command.scope.0,writer,command.command_id,request_hash,head,proposal.proposal_id,result]).map_err(err)?;
+        // Only the isolated acceptance crash test sets this marker. The normal
+        // receiver build contains no process-control hook.
+        #[cfg(test)]
+        if let Some(marker) = std::env::var_os("FABRIC_TEST_PLAN_INSERT_MARKER") {
+            use std::io::Write;
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(marker)
+                .expect("create insertion marker");
+            file.write_all(b"decision-inserted-before-head\n")
+                .expect("write insertion marker");
+            file.sync_all().expect("sync insertion marker");
+            loop {
+                std::thread::park();
+            }
+        }
         let updated = tx
             .execute(
                 "UPDATE plan_scope SET head=?2 WHERE scope=?1 AND owner=?3 AND head IS ?4",
