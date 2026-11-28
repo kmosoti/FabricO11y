@@ -355,6 +355,7 @@ mod tests {
         Auth {
             reader: "reader".into(),
             writers: Default::default(),
+            writer_bindings: Default::default(),
             nodes: [
                 ("service-telemetry".into(), "separate-telemetry-key".into()),
                 ("workload".into(), "node-key".into()),
