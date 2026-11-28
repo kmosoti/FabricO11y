@@ -140,3 +140,62 @@ impl Hints {
         Ok(std::mem::take(&mut v.pending))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fabric::canonical::PlanCursorFailure;
+
+    #[test]
+    fn slow_hint_coalesces_and_expired_or_revoked_slots_are_reused() {
+        let mut hints = Hints::default();
+        let a: Vec<_> = (0..16)
+            .map(|_| hints.subscribe("writer-a", "scope-a", 1).unwrap().unwrap())
+            .collect();
+        let b: Vec<_> = (0..16)
+            .map(|_| hints.subscribe("writer-b", "scope-b", 1).unwrap().unwrap())
+            .collect();
+        assert_eq!(hints.subscribe("writer-c", "scope-c", 1).unwrap(), None);
+        for _ in 0..100 {
+            hints.signal("scope-a");
+        }
+        assert_eq!(hints.poll("writer-a", "scope-a", 1, &a[0]), Ok(true));
+        assert_eq!(hints.poll("writer-a", "scope-a", 1, &a[0]), Ok(false));
+        assert_eq!(hints.poll("writer-b", "scope-b", 1, &b[0]), Ok(false));
+        assert_eq!(
+            hints.poll("writer-b", "scope-b", 1, &a[1]),
+            Err(PlanCursorFailure::Revoked)
+        );
+
+        hints.subscribers.get_mut(&a[1]).unwrap().expires = Instant::now() - Duration::from_secs(1);
+        let c = hints.subscribe("writer-c", "scope-c", 1).unwrap().unwrap();
+        assert_eq!(
+            hints.poll("writer-a", "scope-a", 1, &a[1]),
+            Err(PlanCursorFailure::Revoked)
+        );
+        assert_eq!(hints.subscribe("writer-c", "scope-c", 1).unwrap(), None);
+        hints.revoke("scope-a");
+        assert_eq!(
+            hints.poll("writer-a", "scope-a", 1, &a[2]),
+            Err(PlanCursorFailure::Revoked)
+        );
+        assert_eq!(hints.poll("writer-b", "scope-b", 1, &b[0]), Ok(false));
+        assert_eq!(hints.poll("writer-c", "scope-c", 1, &c), Ok(false));
+        for _ in 0..15 {
+            hints.subscribe("writer-c", "scope-c", 1).unwrap().unwrap();
+        }
+        assert_eq!(hints.subscribe("writer-c", "scope-c", 1).unwrap(), None);
+        hints.signal("scope-b");
+        hints.signal("scope-b");
+        assert_eq!(hints.poll("writer-b", "scope-b", 1, &b[1]), Ok(true));
+        assert_eq!(hints.poll("writer-b", "scope-b", 1, &b[1]), Ok(false));
+        assert_eq!(hints.poll("writer-c", "scope-c", 1, &c), Ok(false));
+        hints.subscribers.get_mut(&b[1]).unwrap().expires = Instant::now() - Duration::from_secs(1);
+        assert_eq!(
+            hints.poll("writer-b", "scope-b", 1, &b[1]),
+            Err(PlanCursorFailure::Expired)
+        );
+        hints.subscribe("writer-c", "scope-c", 1).unwrap().unwrap();
+        assert_eq!(hints.subscribe("writer-c", "scope-c", 1).unwrap(), None);
+    }
+}
