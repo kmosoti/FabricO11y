@@ -109,3 +109,151 @@ fn each_budget_rejects_before_return_and_exact_limits_pass() {
         Err(LexicalError::InvalidLimits)
     );
 }
+
+#[test]
+fn incremental_matches_frozen_rebuild_and_reports_work() {
+    use fabric_corpus::lexical::{Apply, Incremental, RevisionEvent};
+    let a = body("a", "A b A! éB");
+    let b = body("b", "b a");
+    let mut corpus = Corpus::default();
+    let aid = corpus.admit(a.clone()).unwrap();
+    let bid = corpus.admit(b.clone()).unwrap();
+    let mut incremental = Incremental::new(40, Limits::default()).unwrap();
+    let events = [
+        (41, bid, Some(&b)),
+        (42, [0; 32], None),
+        (43, aid, Some(&a)),
+    ];
+    let mut ids = BTreeSet::new();
+    for (frontier, revision, body) in events {
+        let outcome = incremental
+            .append(RevisionEvent {
+                frontier,
+                revision,
+                body,
+            })
+            .unwrap();
+        if let Apply::Applied { work } = outcome {
+            assert_eq!(work.scanned_bytes, body.map_or(0, |b| b.text.len()));
+        } else {
+            panic!("expected insert");
+        }
+        ids.insert(revision);
+        let snapshot =
+            AsOfView::capture(&corpus, ids.clone(), BTreeSet::new(), BTreeSet::new()).unwrap();
+        assert_eq!(incremental.frontier(), frontier);
+        assert_eq!(
+            incremental.view(),
+            &rebuild(&snapshot, Limits::default()).unwrap()
+        );
+    }
+    assert_eq!(
+        incremental.append(RevisionEvent {
+            frontier: 43,
+            revision: aid,
+            body: Some(&a)
+        }),
+        Ok(Apply::Duplicate)
+    );
+}
+#[test]
+fn incremental_refusals_are_atomic() {
+    use fabric_corpus::lexical::{Apply, Incremental, IncrementalError, RevisionEvent};
+    let a = body("a", "a b a");
+    let aid = a.digest().unwrap();
+    let mut inc = Incremental::new(0, Limits::default()).unwrap();
+    fn event(frontier: u64, revision: [u8; 32], body: Option<&RevisionBody>) -> RevisionEvent<'_> {
+        RevisionEvent {
+            frontier,
+            revision,
+            body,
+        }
+    }
+    assert!(matches!(
+        inc.append(event(1, aid, Some(&a))),
+        Ok(Apply::Applied { .. })
+    ));
+    assert_eq!(inc.append(event(1, aid, Some(&a))), Ok(Apply::Duplicate));
+    let other = body("other", "x y");
+    let oid = other.digest().unwrap();
+    for (e, expected) in [
+        (event(3, oid, Some(&other)), IncrementalError::Gap),
+        (event(0, aid, Some(&a)), IncrementalError::OlderFrontier),
+        (
+            event(1, oid, Some(&other)),
+            IncrementalError::ConflictingReplay,
+        ),
+        (
+            event(2, aid, Some(&other)),
+            IncrementalError::DigestMismatch,
+        ),
+        (event(2, aid, Some(&a)), IncrementalError::RebuildRequired),
+    ] {
+        let before = inc.clone();
+        assert_eq!(inc.append(e), Err(expected));
+        assert_eq!(inc, before);
+    }
+    assert!(matches!(
+        inc.append(event(2, oid, None)),
+        Ok(Apply::Applied { .. })
+    ));
+    let before = inc.clone();
+    assert_eq!(
+        inc.append(event(3, oid, Some(&other))),
+        Err(IncrementalError::RebuildRequired)
+    );
+    assert_eq!(inc, before);
+}
+#[test]
+fn incremental_limits_fail_without_mutating_view() {
+    use fabric_corpus::lexical::{Incremental, IncrementalError, RevisionEvent};
+    let a = body("a", "a b");
+    let b = body("b", "a b");
+    let mut inc = Incremental::new(
+        0,
+        Limits {
+            scan_bytes: 3,
+            ..Limits::default()
+        },
+    )
+    .unwrap();
+    inc.append(RevisionEvent {
+        frontier: 1,
+        revision: a.digest().unwrap(),
+        body: Some(&a),
+    })
+    .unwrap();
+    let before = inc.clone();
+    assert_eq!(
+        inc.append(RevisionEvent {
+            frontier: 2,
+            revision: b.digest().unwrap(),
+            body: Some(&b)
+        }),
+        Err(IncrementalError::Projection(LexicalError::Limit))
+    );
+    assert_eq!(inc, before);
+    let mut full = Incremental::new(0, Limits::default()).unwrap();
+    for n in 0..fabric_corpus::as_of::MAX_VIEW_REVISIONS {
+        let mut id = [0; 32];
+        id[..8].copy_from_slice(&(n as u64).to_be_bytes());
+        full.append(RevisionEvent {
+            frontier: n as u64 + 1,
+            revision: id,
+            body: None,
+        })
+        .unwrap();
+    }
+    let before = full.clone();
+    let mut extra = [0; 32];
+    extra[0] = 1;
+    assert_eq!(
+        full.append(RevisionEvent {
+            frontier: 257,
+            revision: extra,
+            body: None
+        }),
+        Err(IncrementalError::Limit)
+    );
+    assert_eq!(full, before);
+}
