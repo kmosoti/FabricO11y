@@ -381,6 +381,28 @@ fn transaction_fixture() {
             "{field}"
         );
     }
+    // A second connection holds SQLite's write reservation with an uncommitted
+    // policy change. The acceptance transaction cannot return a saved result.
+    policy_db
+        .execute_batch(
+            "BEGIN IMMEDIATE; UPDATE plan_scope SET producer='other-producer' WHERE scope='plan';",
+        )
+        .unwrap();
+    assert!(
+        matches!(accept(&address, WRITER, &lost_cmd), Response::Error { error } if error.contains("database is locked"))
+    );
+    policy_db.execute_batch("COMMIT;").unwrap();
+    assert!(matches!(
+        accept(&address, WRITER, &lost_cmd),
+        Response::Error { .. }
+    ));
+    policy_db
+        .execute(
+            "UPDATE plan_scope SET producer='worker' WHERE scope='plan'",
+            [],
+        )
+        .unwrap();
+    assert_eq!(result(accept(&address, WRITER, &lost_cmd)), saved);
     drop(policy_db);
     let mut altered: AcceptPlan = serde_json::from_str(&lost_cmd).unwrap();
     altered.proposal_raw = b.clone();
