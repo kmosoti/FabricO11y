@@ -1589,6 +1589,7 @@ dependencies = [
  "arrow",
  "chrono",
  "fabric-core",
+ "fabric-corpus",
  "fabric-graph",
  "parking_lot",
  "parquet",
