@@ -195,6 +195,71 @@ fn negative_controls(root: &Path) -> Result<(), String> {
         }
         println!("{name}: false property rejected ({})", output.status);
     }
+    let collection_source =
+        std::fs::read_to_string(root.join("proofs/Collection.lean")).map_err(|e| e.to_string())?;
+    run_lean_witness_control(
+        root,
+        work.path(),
+        &lean,
+        "reachable-witness.lean",
+        &collection_source,
+        r#"
+example : ∃ s : Collection.Window,
+    Collection.Valid s ∧ s.accepted - s.confirmed < s.slots := by
+  refine ⟨⟨0, 0, 1⟩, ?_⟩
+  unfold Collection.Valid
+  decide
+
+theorem selftest_unsat_precondition (s : Collection.Window) :
+    Collection.Valid s → ¬ (s.accepted - s.confirmed > s.slots) := by
+  intro valid impossible
+  unfold Collection.Valid at valid
+  exact Nat.not_lt_of_ge valid.2 impossible
+
+theorem selftest_vacuous_false_claim (s : Collection.Window)
+    (valid : Collection.Valid s)
+    (impossible : s.accepted - s.confirmed > s.slots) : False := by
+  unfold Collection.Valid at valid
+  exact Nat.not_lt_of_ge valid.2 impossible
+"#,
+        None,
+    )?;
+    println!("Collection admission witness accepted; impossible precondition proved universally");
+    println!("False claim under impossible precondition accepted only as a vacuity control");
+    run_lean_witness_control(
+        root,
+        work.path(),
+        &lean,
+        "false-witness.lean",
+        &collection_source,
+        r#"
+example : ∃ s : Collection.Window,
+    Collection.Valid s ∧ s.accepted - s.confirmed < s.slots := by
+  refine ⟨⟨1, 0, 1⟩, ?_⟩
+  unfold Collection.Valid
+  decide
+"#,
+        Some("  decide"),
+    )?;
+    println!("Collection admission false witness rejected");
+    run_lean_witness_control(
+        root,
+        work.path(),
+        &lean,
+        "unsatisfiable-precondition-witness.lean",
+        &collection_source,
+        r#"
+theorem selftest_forbidden_witness :
+    ∃ s : Collection.Window,
+      Collection.Valid s ∧ s.accepted - s.confirmed > s.slots := by
+  refine ⟨⟨1, 0, 1⟩, ?_⟩
+  unfold Collection.Valid
+  decide
+"#,
+        Some("  decide"),
+    )?;
+    println!("Collection impossible precondition rejected an attempted witness");
+
     let frontier_source = std::fs::read_to_string(root.join("admission-kernel/src/telemetry.rs"))
         .map_err(|e| e.to_string())?;
     let commit_gate = "if origin_matches && flush_succeeded && first > committed";
@@ -243,6 +308,83 @@ fn negative_controls(root: &Path) -> Result<(), String> {
     }
     println!("Missing checker refused");
     Ok(())
+}
+
+fn run_lean_witness_control(
+    root: &Path,
+    work: &Path,
+    lean: &Path,
+    name: &str,
+    base: &str,
+    addition: &str,
+    expected_error_marker: Option<&str>,
+) -> Result<(), String> {
+    let file = work.join(name);
+    let source = format!("{base}\n{addition}");
+    std::fs::write(&file, &source).map_err(|e| e.to_string())?;
+    let output = Command::new("timeout")
+        .arg("120")
+        .arg(lean)
+        .args(["-E", "warning"])
+        .arg(&file)
+        .current_dir(root)
+        .output()
+        .map_err(|e| e.to_string())?;
+    let diagnostics = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+    match expected_error_marker {
+        None if !output.status.success() => {
+            return Err(format!(
+                "Lean witness control {name} failed ({}): {diagnostics}",
+                output.status
+            ));
+        }
+        Some(marker) => {
+            if source.lines().filter(|line| *line == marker).count() != 1 {
+                return Err(format!(
+                    "Lean witness control {name} expected exactly one error source marker"
+                ));
+            }
+            let line_number = source
+                .lines()
+                .position(|line| line == marker)
+                .ok_or_else(|| format!("Lean witness control {name} source marker disappeared"))?
+                + 1;
+            let expected_location = format!("{name}:{line_number}:");
+            if !expected_lean_decide_rejection(
+                output.status.code(),
+                &diagnostics,
+                &expected_location,
+            ) {
+                return Err(format!(
+                    "Lean witness control {name} did not produce the expected decide rejection at {expected_location} ({}): {diagnostics}",
+                    output.status
+                ));
+            }
+        }
+        None => {}
+    }
+    Ok(())
+}
+
+fn expected_lean_decide_rejection(
+    exit_code: Option<i32>,
+    diagnostics: &str,
+    expected_location: &str,
+) -> bool {
+    if exit_code != Some(1) {
+        return false;
+    }
+    let error_lines: Vec<_> = diagnostics
+        .lines()
+        .filter(|line| line.contains(" error:"))
+        .collect();
+    error_lines.len() == 1
+        && error_lines[0].contains(expected_location)
+        && error_lines[0].contains("error: Tactic `decide` proved that the proposition")
 }
 
 fn collection(root: &Path) -> Result<(), String> {
@@ -692,4 +834,40 @@ fn telemetry(root: &Path) -> Result<(), String> {
     }
     println!("{report}");
     Ok(())
+}
+
+#[cfg(test)]
+mod witness_control_tests {
+    use super::expected_lean_decide_rejection;
+
+    const EXPECTED: &str = "/data/tmp/false-witness.lean:124:2: error: Tactic `decide` proved that the proposition is false";
+
+    #[test]
+    fn rejects_unrelated_errors_wrong_locations_and_timeouts() {
+        assert!(expected_lean_decide_rejection(
+            Some(1),
+            EXPECTED,
+            "false-witness.lean:124:"
+        ));
+        assert!(!expected_lean_decide_rejection(
+            Some(1),
+            "/data/tmp/false-witness.lean:124:2: error: unexpected parser error",
+            "false-witness.lean:124:"
+        ));
+        assert!(!expected_lean_decide_rejection(
+            Some(1),
+            EXPECTED,
+            "false-witness.lean:125:"
+        ));
+        assert!(!expected_lean_decide_rejection(
+            Some(124),
+            EXPECTED,
+            "false-witness.lean:124:"
+        ));
+        assert!(!expected_lean_decide_rejection(
+            Some(1),
+            &format!("{EXPECTED}\n{EXPECTED}"),
+            "false-witness.lean:124:"
+        ));
+    }
 }
