@@ -2811,6 +2811,35 @@ enum PublishStageError {
 thread_local! {
     static TEST_ALLOCATION_REFUSAL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static TEST_POST_RENAME_PARTITION_SYNC_FAILURE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static TEST_PRE_RENAME_PARTITION_RENAME_EIO: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[cfg(test)]
+pub(crate) const TEST_PARTITION_RENAME_MARKER_ENV: &str = "FABRICO11Y_TEST_PARTITION_RENAME_MARKER";
+
+fn rename_partition_staged_source(source: &Path, destination: &Path) -> std::io::Result<()> {
+    #[cfg(test)]
+    {
+        if TEST_PRE_RENAME_PARTITION_RENAME_EIO.with(|flag| flag.replace(false)) {
+            return Err(std::io::Error::from_raw_os_error(5));
+        }
+        if let Some(marker_path) = std::env::var_os(TEST_PARTITION_RENAME_MARKER_ENV) {
+            let mut marker = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(marker_path)
+                .expect("pre-rename marker must be exclusive");
+            writeln!(marker, "{}", std::process::id())
+                .expect("pre-rename marker must record the child process");
+            marker
+                .sync_all()
+                .expect("pre-rename marker must be visible before parking");
+            loop {
+                std::thread::park();
+            }
+        }
+    }
+    fs::rename(source, destination)
 }
 
 enum StagingOutcome {
@@ -3550,7 +3579,7 @@ impl OlapParquetStore {
             }
             Err(err) => return Err(PublishStageError::PreRename(err)),
         }
-        fs::rename(&source_proc, &final_proc)
+        rename_partition_staged_source(&source_proc, &final_proc)
             .map_err(|e| PublishStageError::PreRename(format!("parquet rename: {e}")))?;
         staged.mark_published();
         match open_regular_file_in_dir_nofollow(part_fd, &staged.final_name, "published parquet") {
@@ -4514,6 +4543,16 @@ impl OlapParquetStore {
     #[cfg(test)]
     pub(crate) fn test_post_rename_partition_sync_failure_pending() -> bool {
         TEST_POST_RENAME_PARTITION_SYNC_FAILURE.with(std::cell::Cell::get)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn arm_test_pre_rename_partition_rename_eio() {
+        TEST_PRE_RENAME_PARTITION_RENAME_EIO.with(|flag| flag.set(true));
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_pre_rename_partition_rename_eio_pending() -> bool {
+        TEST_PRE_RENAME_PARTITION_RENAME_EIO.with(std::cell::Cell::get)
     }
 
     fn write_batches_to_staging_bounded<I>(
