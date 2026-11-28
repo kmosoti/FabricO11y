@@ -184,6 +184,7 @@ pub struct SegmentTicket {
     pub digest: String,
     pub start: u64,
     pub end: u64,
+    /// Opaque seconds on this receiver instance’s monotonic clock, not Unix time.
     pub expires: u64,
     pub mac: String,
 }

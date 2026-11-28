@@ -2,10 +2,7 @@
 use fabric::canonical::SegmentTicket;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
-use std::{
-    io::Read,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{io::Read, time::Instant};
 
 const DOMAIN: &[u8] = b"fabric-projection-segment-ticket-v1\0";
 const MAX_RANGE: u64 = 32 * 1024 * 1024;
@@ -18,12 +15,6 @@ pub(super) fn new_key() -> Result<[u8; 32], String> {
         .and_then(|mut f| f.read_exact(&mut key))
         .map_err(|_| "ticket key unavailable")?;
     Ok(key)
-}
-fn now() -> Result<u64, String> {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .map_err(|_| "ticket clock unavailable".into())
 }
 fn valid(t: &SegmentTicket) -> bool {
     t.version == 1
@@ -74,6 +65,7 @@ fn decode(s: &str) -> Option<[u8; 32]> {
 #[allow(clippy::too_many_arguments)]
 pub(super) fn issue(
     key: &[u8; 32],
+    epoch: Instant,
     version: u32,
     authority: String,
     origin: String,
@@ -88,7 +80,11 @@ pub(super) fn issue(
         digest,
         start,
         end,
-        expires: now()?.checked_add(TTL).ok_or("ticket clock overflow")?,
+        expires: epoch
+            .elapsed()
+            .as_secs()
+            .checked_add(TTL)
+            .ok_or("ticket clock overflow")?,
         mac: String::new(),
     };
     if !valid(&t) {
@@ -99,11 +95,12 @@ pub(super) fn issue(
 }
 pub(super) fn verify(
     key: &[u8; 32],
+    epoch: Instant,
     t: &SegmentTicket,
     offset: u64,
     length: u32,
 ) -> Result<(), String> {
-    verify_at(key, t, offset, length, now()?)
+    verify_at(key, t, offset, length, epoch.elapsed().as_secs())
 }
 fn verify_at(
     key: &[u8; 32],
@@ -136,6 +133,7 @@ mod tests {
         let key = [3; 32];
         let t = issue(
             &key,
+            Instant::now(),
             1,
             "authority".into(),
             "origin".into(),
