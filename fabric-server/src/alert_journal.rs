@@ -9,6 +9,7 @@ use std::{
     fs::{self, File, OpenOptions},
     os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
     path::Path,
+    time::{Duration, Instant},
 };
 
 const MAX_EVENTS: u32 = 4096;
@@ -115,8 +116,28 @@ fn require_disk(directory: &File) -> Result<(), JournalError> {
     Ok(())
 }
 
+/// Local work state, not evidence of notification delivery.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IntentState {
+    LegacyUnmanaged,
+    Queued,
+    Leased,
+    Uncertain,
+}
+/// Opaque, process-local capability; it is invalid after reopen or in another journal.
+#[derive(Debug)]
+pub struct IntentLease {
+    intent_id: String,
+    session: String,
+    fence: i64,
+}
+const MAX_LEASE: Duration = Duration::from_secs(300);
+
 pub struct AlertJournal {
     db: Connection,
+    session: String,
+    active: Option<(String, i64, Instant)>,
+    work_cutover: i64,
     _owner: File,
     provision: Provision,
 }
@@ -201,7 +222,7 @@ impl AlertJournal {
             return Err(JournalError::Storage);
         }
         drop(file);
-        let db = Connection::open(path).map_err(|_| JournalError::Storage)?;
+        let mut db = Connection::open(path).map_err(|_| JournalError::Storage)?;
         db.execute_batch("PRAGMA journal_mode=PERSIST; PRAGMA synchronous=EXTRA; PRAGMA temp_store=MEMORY; CREATE TABLE IF NOT EXISTS alert_state(id INTEGER PRIMARY KEY CHECK(id=1), provision BLOB NOT NULL, version INTEGER NOT NULL, checkpoint BLOB NOT NULL); CREATE TABLE IF NOT EXISTS alert_events(id TEXT PRIMARY KEY, expected INTEGER NOT NULL, input BLOB NOT NULL, receipt BLOB NOT NULL);").map_err(|_| JournalError::Storage)?;
         let page_size: u64 = db
             .pragma_query_value(None, "page_size", |r| r.get(0))
@@ -231,11 +252,113 @@ impl AlertJournal {
         if saved != encode(&provision)? {
             return Err(JournalError::ScopeMismatch);
         }
+        // Additive migration intentionally leaves old receipt-only intents unmanaged.
+        // Recovery and schema marker commit together after provision and quota checks.
+        let session = fabric::canonical::random_nonce_hex().map_err(|_| JournalError::Storage)?;
+        let work_cutover;
+        {
+            let tx = db
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .map_err(write_error)?;
+            let schema: i64 = tx
+                .pragma_query_value(None, "user_version", |r| r.get(0))
+                .map_err(|_| JournalError::Corrupt)?;
+            let tables: i64 = tx.query_row("SELECT count(*) FROM sqlite_schema WHERE type='table' AND name IN ('alert_work_meta','alert_intent_work')", [], |r| r.get(0)).map_err(|_| JournalError::Corrupt)?;
+            match (schema, tables) {
+                (0, 0) => {
+                    tx.execute_batch("CREATE TABLE alert_work_meta(id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL, cutover INTEGER NOT NULL); CREATE TABLE alert_intent_work(intent TEXT PRIMARY KEY, request_id TEXT NOT NULL UNIQUE, fence INTEGER NOT NULL, state TEXT NOT NULL);").map_err(write_error)?;
+                    tx.execute("INSERT INTO alert_work_meta SELECT 1,1,version FROM alert_state WHERE id=1", []).map_err(write_error)?;
+                    tx.pragma_update(None, "user_version", 1)
+                        .map_err(write_error)?;
+                }
+                (1, 2) => {}
+                _ => return Err(JournalError::Corrupt),
+            }
+            let (count, version, cutover): (i64, i64, i64) = tx
+                .query_row(
+                    "SELECT count(*),coalesce(max(version),0),coalesce(max(cutover),-1) FROM alert_work_meta",
+                    [],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                )
+                .map_err(|_| JournalError::Corrupt)?;
+            if count != 1 || version != 1 || cutover < 0 {
+                return Err(JournalError::Corrupt);
+            }
+            work_cutover = cutover;
+            let current: i64 = tx
+                .query_row("SELECT version FROM alert_state WHERE id=1", [], |r| {
+                    r.get(0)
+                })
+                .map_err(|_| JournalError::Corrupt)?;
+            if current < cutover || current as u64 > u64::from(provision.capacity) {
+                return Err(JournalError::Corrupt);
+            }
+            let oversized: i64 = tx
+                .query_row(
+                    "SELECT count(*) FROM alert_events WHERE length(receipt)>?1 OR length(id)>?2",
+                    params![MAX_STATE as i64, MAX_ID as i64],
+                    |r| r.get(0),
+                )
+                .map_err(|_| JournalError::Corrupt)?;
+            let oversized_work: i64 = tx.query_row("SELECT count(*) FROM alert_intent_work WHERE length(intent)>?1 OR length(request_id)>?2 OR length(state)>16", params![MAX_ID as i64,MAX_ID as i64], |r| r.get(0)).map_err(|_| JournalError::Corrupt)?;
+            if oversized != 0 || oversized_work != 0 {
+                return Err(JournalError::Corrupt);
+            }
+            let mut history = tx.prepare("SELECT e.id,e.receipt,w.intent FROM alert_events e LEFT JOIN alert_intent_work w ON w.request_id=e.id WHERE e.expected>=?1").map_err(|_| JournalError::Corrupt)?;
+            let mut historical_rows = history
+                .query([cutover])
+                .map_err(|_| JournalError::Corrupt)?;
+            while let Some(row) = historical_rows.next().map_err(|_| JournalError::Corrupt)? {
+                let receipt: Vec<u8> = row.get(1).map_err(|_| JournalError::Corrupt)?;
+                let receipt: Receipt = decode(&receipt)?;
+                let intent: Option<String> = row.get(2).map_err(|_| JournalError::Corrupt)?;
+                if intent != receipt.intent_id {
+                    return Err(JournalError::Corrupt);
+                }
+            }
+            drop(historical_rows);
+            drop(history);
+            let mut stmt = tx.prepare("SELECT w.intent,w.request_id,w.fence,w.state,e.receipt FROM alert_intent_work w LEFT JOIN alert_events e ON e.id=w.request_id ORDER BY w.intent").map_err(|_| JournalError::Corrupt)?;
+            let mut rows = stmt.query([]).map_err(|_| JournalError::Corrupt)?;
+            let mut work_count = 0u32;
+            while let Some(row) = rows.next().map_err(|_| JournalError::Corrupt)? {
+                work_count = work_count.checked_add(1).ok_or(JournalError::Corrupt)?;
+                if work_count > provision.capacity {
+                    return Err(JournalError::Corrupt);
+                }
+                let intent: String = row.get(0).map_err(|_| JournalError::Corrupt)?;
+                let id: String = row.get(1).map_err(|_| JournalError::Corrupt)?;
+                let fence: i64 = row.get(2).map_err(|_| JournalError::Corrupt)?;
+                let state: String = row.get(3).map_err(|_| JournalError::Corrupt)?;
+                let receipt: Vec<u8> = row.get(4).map_err(|_| JournalError::Corrupt)?;
+                let receipt: Receipt = decode(&receipt)?;
+                if !valid_id(&id)
+                    || receipt.intent_id.as_deref() != Some(intent.as_str())
+                    || fence < 0
+                    || !matches!(state.as_str(), "queued" | "leased" | "uncertain")
+                    || (state == "queued" && fence != 0)
+                    || (state != "queued" && fence == 0)
+                {
+                    return Err(JournalError::Corrupt);
+                }
+            }
+            drop(rows);
+            drop(stmt);
+            tx.execute(
+                "UPDATE alert_intent_work SET state='uncertain' WHERE state='leased'",
+                [],
+            )
+            .map_err(write_error)?;
+            tx.commit().map_err(write_error)?;
+        }
         // Commit creates database, journal and lock names in this directory.
         // Surface a failed directory barrier instead of reporting a durable open.
         directory.sync_all().map_err(|_| JournalError::Storage)?;
         Ok(Self {
             db,
+            session,
+            active: None,
+            work_cutover,
             _owner: owner,
             provision,
         })
@@ -372,6 +495,132 @@ impl AlertJournal {
             next,
         })
     }
+    /// Inspect an event's local work state. Historical receipt-only intents are
+    /// explicitly unmanaged; a receipt without an intent returns None. This is
+    /// persisted state: expiration is observed by claim or abandon, not this read.
+    pub fn intent_state(&self, request_id: &str) -> Result<Option<IntentState>, JournalError> {
+        let Some(receipt) = self.read(request_id)? else {
+            return Ok(None);
+        };
+        let Some(intent) = receipt.intent_id else {
+            return Ok(None);
+        };
+        let row: Option<(String, String, i64)> = self
+            .db
+            .query_row(
+                "SELECT intent,state,fence FROM alert_intent_work WHERE request_id=?1",
+                [request_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()
+            .map_err(|_| JournalError::Storage)?;
+        match row {
+            None => {
+                let expected: i64 = self
+                    .db
+                    .query_row(
+                        "SELECT expected FROM alert_events WHERE id=?1",
+                        [request_id],
+                        |r| r.get(0),
+                    )
+                    .map_err(|_| JournalError::Corrupt)?;
+                if expected < 0 || expected >= self.work_cutover {
+                    return Err(JournalError::Corrupt);
+                }
+                Ok(Some(IntentState::LegacyUnmanaged))
+            }
+            Some((id, state, fence)) if id == intent && fence == 0 && state == "queued" => {
+                Ok(Some(IntentState::Queued))
+            }
+            Some((id, state, fence)) if id == intent && fence > 0 && state == "leased" => {
+                Ok(Some(IntentState::Leased))
+            }
+            Some((id, state, fence)) if id == intent && fence > 0 && state == "uncertain" => {
+                Ok(Some(IntentState::Uncertain))
+            }
+            _ => Err(JournalError::Corrupt),
+        }
+    }
+    // Process-local monotonic time is never stored. A missed deadline is uncertain,
+    // not retryable: a worker may have acted before its lease was lost.
+    fn expire_at(&mut self, now: Instant) -> Result<(), JournalError> {
+        if let Some((id, fence, deadline)) = &self.active
+            && now >= *deadline
+        {
+            let n = self.db.execute("UPDATE alert_intent_work SET state='uncertain' WHERE intent=?1 AND fence=?2 AND state='leased'", params![id, fence]).map_err(write_error)?;
+            if n != 1 {
+                return Err(JournalError::Corrupt);
+            }
+            self.active = None;
+        }
+        Ok(())
+    }
+    /// Claim one new local intent once. The fence reserves it; no retry,
+    /// reclaim, external authorization or delivery outcome is implied.
+    pub fn claim_intent(
+        &mut self,
+        authority: &str,
+        scope: &str,
+        request_id: &str,
+        duration: Duration,
+    ) -> Result<IntentLease, JournalError> {
+        self.claim_intent_at(authority, scope, request_id, duration, Instant::now())
+    }
+    fn claim_intent_at(
+        &mut self,
+        authority: &str,
+        scope: &str,
+        request_id: &str,
+        duration: Duration,
+        now: Instant,
+    ) -> Result<IntentLease, JournalError> {
+        if authority != self.provision.authority || scope != self.provision.scope {
+            return Err(JournalError::ScopeMismatch);
+        }
+        if duration.is_zero() || duration > MAX_LEASE {
+            return Err(JournalError::Invalid);
+        }
+        let deadline = now.checked_add(duration).ok_or(JournalError::Invalid)?;
+        self.expire_at(now)?;
+        if self.active.is_some() {
+            return Err(JournalError::Conflict);
+        }
+        if self.intent_state(request_id)? != Some(IntentState::Queued) {
+            return Err(JournalError::Conflict);
+        }
+        let intent = self
+            .read(request_id)?
+            .and_then(|r| r.intent_id)
+            .ok_or(JournalError::Corrupt)?;
+        let n = self.db.execute("UPDATE alert_intent_work SET state='leased',fence=fence+1 WHERE request_id=?1 AND intent=?2 AND state='queued' AND fence=0", params![request_id, intent]).map_err(write_error)?;
+        if n != 1 {
+            return Err(JournalError::Corrupt);
+        }
+        self.active = Some((intent.clone(), 1, deadline));
+        Ok(IntentLease {
+            intent_id: intent,
+            session: self.session.clone(),
+            fence: 1,
+        })
+    }
+    /// Relinquishment does not establish what the worker did; the result is uncertain.
+    pub fn abandon_intent(&mut self, lease: IntentLease) -> Result<(), JournalError> {
+        self.expire_at(Instant::now())?;
+        if lease.session != self.session
+            || !self
+                .active
+                .as_ref()
+                .is_some_and(|(id, fence, _)| id == &lease.intent_id && *fence == lease.fence)
+        {
+            return Err(JournalError::Stale);
+        }
+        let n = self.db.execute("UPDATE alert_intent_work SET state='uncertain' WHERE intent=?1 AND fence=?2 AND state='leased'", params![lease.intent_id, lease.fence]).map_err(write_error)?;
+        if n != 1 {
+            return Err(JournalError::Corrupt);
+        }
+        self.active = None;
+        Ok(())
+    }
     /// ID is caller-stable within this store. All state and intent commit together.
     pub fn apply(
         &mut self,
@@ -445,6 +694,9 @@ impl AlertJournal {
             params![request_id, version, input_bytes, encode(&receipt)?],
         )
         .map_err(write_error)?;
+        if let Some(intent) = &receipt.intent_id {
+            tx.execute("INSERT INTO alert_intent_work(intent,request_id,fence,state) VALUES(?1,?2,0,'queued')", params![intent,request_id]).map_err(write_error)?;
+        }
         tx.execute(
             "UPDATE alert_state SET version=?1,checkpoint=?2 WHERE id=1",
             params![next, encode(&reducer.checkpoint())?],
@@ -493,6 +745,224 @@ mod tests {
             },
         }
     }
+    #[test]
+    fn local_intent_fence_expiry_and_restart_are_uncertain() {
+        let root = tempfile::tempdir_in(std::env::var_os("TMPDIR").expect("disk TMPDIR")).unwrap();
+        let path = root.path().join("journal");
+        let mut j = AlertJournal::open(&path, provision(4)).unwrap();
+        let receipt = j.apply("auth", "scope", "one", 0, input(1, 1, 11)).unwrap();
+        assert!(receipt.intent_id.is_some());
+        assert_eq!(j.intent_state("one").unwrap(), Some(IntentState::Queued));
+        assert!(matches!(
+            j.claim_intent("auth", "scope", "one", Duration::ZERO),
+            Err(JournalError::Invalid)
+        ));
+        assert!(matches!(
+            j.claim_intent("other", "scope", "one", Duration::from_secs(1)),
+            Err(JournalError::ScopeMismatch)
+        ));
+        let now = Instant::now();
+        let lease = j
+            .claim_intent_at("auth", "scope", "one", Duration::from_secs(1), now)
+            .unwrap();
+        assert_eq!(j.intent_state("one").unwrap(), Some(IntentState::Leased));
+        assert!(matches!(
+            j.claim_intent("auth", "scope", "one", Duration::from_secs(1)),
+            Err(JournalError::Conflict)
+        ));
+        j.expire_at(now + Duration::from_secs(1)).unwrap();
+        assert_eq!(j.intent_state("one").unwrap(), Some(IntentState::Uncertain));
+        assert!(matches!(j.abandon_intent(lease), Err(JournalError::Stale)));
+        let other = j.apply("auth", "scope", "two", 1, input(2, 3, 11)).unwrap();
+        assert!(other.intent_id.is_some());
+        let old = j
+            .claim_intent("auth", "scope", "two", Duration::from_secs(30))
+            .unwrap();
+        drop(j);
+        let mut reopened = AlertJournal::open(&path, provision(4)).unwrap();
+        assert_eq!(
+            reopened.intent_state("two").unwrap(),
+            Some(IntentState::Uncertain)
+        );
+        assert!(matches!(
+            reopened.abandon_intent(old),
+            Err(JournalError::Stale)
+        ));
+        assert!(matches!(
+            reopened.claim_intent("auth", "scope", "two", Duration::from_secs(1)),
+            Err(JournalError::Conflict)
+        ));
+    }
+
+    #[test]
+    fn work_insert_failure_rolls_back_event_and_legacy_stays_unmanaged() {
+        let root = tempfile::tempdir_in(std::env::var_os("TMPDIR").expect("disk TMPDIR")).unwrap();
+        let path = root.path().join("journal");
+        let mut j = AlertJournal::open(&path, provision(2)).unwrap();
+        j.db.execute_batch("CREATE TRIGGER fail_work BEFORE INSERT ON alert_intent_work BEGIN SELECT RAISE(ABORT,'fail'); END;").unwrap();
+        assert!(j.apply("auth", "scope", "one", 0, input(1, 1, 11)).is_err());
+        assert!(j.read("one").unwrap().is_none());
+        j.db.execute_batch("DROP TRIGGER fail_work;").unwrap();
+        let receipt = j.apply("auth", "scope", "one", 0, input(1, 1, 11)).unwrap();
+        assert_eq!(
+            j.apply("auth", "scope", "one", 0, input(1, 1, 11)).unwrap(),
+            receipt
+        );
+        j.db.execute("DELETE FROM alert_work_meta", []).unwrap();
+        drop(j);
+        assert!(matches!(
+            AlertJournal::open(&path, provision(2)),
+            Err(JournalError::Corrupt)
+        ));
+    }
+
+    fn create_v0(path: &Path) -> (Provision, Receipt) {
+        fs::create_dir(path).unwrap();
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
+        let db = Connection::open(path.join("alert.sqlite")).unwrap();
+        fs::set_permissions(path.join("alert.sqlite"), fs::Permissions::from_mode(0o600)).unwrap();
+        db.execute_batch("CREATE TABLE alert_state(id INTEGER PRIMARY KEY CHECK(id=1), provision BLOB NOT NULL, version INTEGER NOT NULL, checkpoint BLOB NOT NULL); CREATE TABLE alert_events(id TEXT PRIMARY KEY, expected INTEGER NOT NULL, input BLOB NOT NULL, receipt BLOB NOT NULL);").unwrap();
+        let p = provision(2);
+        let sample = input(1, 1, 11);
+        let mut reducer = Reducer::new(p.rule).unwrap();
+        let Outcome::Applied(decision) = reducer.evaluate(sample).unwrap() else {
+            panic!("expected event")
+        };
+        let digest = event_digest(&p, 1).unwrap();
+        let receipt = Receipt {
+            event_id: format!("alert-v1:{digest}"),
+            intent_id: Some(format!("intent-v1:{digest}")),
+            version: 1,
+            decision,
+        };
+        db.execute(
+            "INSERT INTO alert_state VALUES(1,?1,1,?2)",
+            params![encode(&p).unwrap(), encode(&reducer.checkpoint()).unwrap()],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO alert_events VALUES('one',0,?1,?2)",
+            params![encode(&sample).unwrap(), encode(&receipt).unwrap()],
+        )
+        .unwrap();
+        drop(db);
+        (p, receipt)
+    }
+
+    #[test]
+    fn genuine_v0_migrates_without_backfilling_legacy_intents() {
+        let root = tempfile::tempdir_in(std::env::var_os("TMPDIR").expect("disk TMPDIR")).unwrap();
+        let path = root.path().join("journal");
+        let (p, receipt) = create_v0(&path);
+        let mut j = AlertJournal::open(&path, p).unwrap();
+        assert_eq!(j.read("one").unwrap(), Some(receipt));
+        assert_eq!(
+            j.intent_state("one").unwrap(),
+            Some(IntentState::LegacyUnmanaged)
+        );
+        assert!(matches!(
+            j.claim_intent("auth", "scope", "one", Duration::from_secs(1)),
+            Err(JournalError::Conflict)
+        ));
+        j.apply("auth", "scope", "two", 1, input(2, 3, 11)).unwrap();
+        assert_eq!(j.intent_state("two").unwrap(), Some(IntentState::Queued));
+        assert!(matches!(
+            j.apply("auth", "scope", "three", 2, input(3, 4, 11)),
+            Err(JournalError::Full)
+        ));
+        j.db.execute_batch("DROP TABLE alert_intent_work").unwrap();
+        drop(j);
+        assert!(matches!(
+            AlertJournal::open(&path, provision(2)),
+            Err(JournalError::Corrupt)
+        ));
+    }
+
+    #[test]
+    fn failed_v0_migration_rolls_back_schema_and_retries() {
+        let root = tempfile::tempdir_in(std::env::var_os("TMPDIR").expect("disk TMPDIR")).unwrap();
+        let path = root.path().join("journal");
+        let (p, receipt) = create_v0(&path);
+        let db = Connection::open(path.join("alert.sqlite")).unwrap();
+        let original_state: (Vec<u8>, i64, Vec<u8>) = db
+            .query_row(
+                "SELECT provision,version,checkpoint FROM alert_state WHERE id=1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        let original_input: Vec<u8> = db
+            .query_row("SELECT input FROM alert_events WHERE id='one'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        let bad = vec![b'x'; MAX_STATE + 1];
+        db.execute("UPDATE alert_events SET receipt=?1 WHERE id='one'", [&bad])
+            .unwrap();
+        drop(db);
+        assert!(matches!(
+            AlertJournal::open(&path, p.clone()),
+            Err(JournalError::Corrupt)
+        ));
+        let db = Connection::open(path.join("alert.sqlite")).unwrap();
+        let marker: i64 = db
+            .pragma_query_value(None, "user_version", |r| r.get(0))
+            .unwrap();
+        let tables: i64 = db.query_row("SELECT count(*) FROM sqlite_schema WHERE type='table' AND name IN ('alert_work_meta','alert_intent_work')", [], |r| r.get(0)).unwrap();
+        let state: (Vec<u8>, i64, Vec<u8>) = db
+            .query_row(
+                "SELECT provision,version,checkpoint FROM alert_state WHERE id=1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        let (actual_input, actual_bad): (Vec<u8>, Vec<u8>) = db
+            .query_row(
+                "SELECT input,receipt FROM alert_events WHERE id='one'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((marker, tables), (0, 0));
+        assert_eq!(state, original_state);
+        assert_eq!(actual_input, original_input);
+        assert_eq!(actual_bad, bad);
+        db.execute(
+            "UPDATE alert_events SET receipt=?1 WHERE id='one'",
+            [encode(&receipt).unwrap()],
+        )
+        .unwrap();
+        drop(db);
+        let j = AlertJournal::open(&path, p).unwrap();
+        assert_eq!(j.read("one").unwrap(), Some(receipt));
+        assert_eq!(
+            j.intent_state("one").unwrap(),
+            Some(IntentState::LegacyUnmanaged)
+        );
+    }
+
+    #[test]
+    fn corrupt_work_and_cross_journal_lease_fail_closed() {
+        let root = tempfile::tempdir_in(std::env::var_os("TMPDIR").expect("disk TMPDIR")).unwrap();
+        let mut a = AlertJournal::open(&root.path().join("a"), provision(2)).unwrap();
+        let mut b = AlertJournal::open(&root.path().join("b"), provision(2)).unwrap();
+        a.apply("auth", "scope", "one", 0, input(1, 1, 11)).unwrap();
+        b.apply("auth", "scope", "one", 0, input(1, 1, 11)).unwrap();
+        let token = a
+            .claim_intent("auth", "scope", "one", Duration::from_secs(30))
+            .unwrap();
+        b.claim_intent("auth", "scope", "one", Duration::from_secs(30))
+            .unwrap();
+        assert!(matches!(b.abandon_intent(token), Err(JournalError::Stale)));
+        b.db.execute("UPDATE alert_intent_work SET state='bad'", [])
+            .unwrap();
+        drop(b);
+        assert!(matches!(
+            AlertJournal::open(&root.path().join("b"), provision(2)),
+            Err(JournalError::Corrupt)
+        ));
+    }
+
     #[test]
     fn refuses_non_disk_state_before_creating_journal_files() {
         for invalid in [
@@ -834,6 +1304,13 @@ mod tests {
             let receipt = journal
                 .apply("auth", "scope", "one", 0, input(1, 1, 11))
                 .unwrap();
+            let _lease = journal
+                .claim_intent("auth", "scope", "one", Duration::from_secs(300))
+                .unwrap();
+            assert_eq!(
+                journal.intent_state("one").unwrap(),
+                Some(IntentState::Leased)
+            );
             let mut marker = OpenOptions::new()
                 .write(true)
                 .create_new(true)
@@ -881,7 +1358,7 @@ mod tests {
             assert!(Instant::now() < deadline, "child readiness deadline");
             std::thread::sleep(Duration::from_millis(10));
         }
-        // The marker appears only after the committed receipt has been written.
+        // The marker appears after both the event and the local lease commit.
         let bytes = std::fs::read(&marker).unwrap();
         let receipt: Receipt = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(receipt.decision.lifecycle, Lifecycle::Pending);
@@ -893,7 +1370,21 @@ mod tests {
         let status = child.0.wait().unwrap();
         assert_eq!(status.signal(), Some(9));
         let mut reopened = AlertJournal::open(&root.path().join("journal"), provision(4)).unwrap();
-        assert_eq!(reopened.read("one").unwrap(), Some(receipt));
+        assert_eq!(reopened.read("one").unwrap(), Some(receipt.clone()));
+        assert_eq!(
+            reopened.intent_state("one").unwrap(),
+            Some(IntentState::Uncertain)
+        );
+        assert!(matches!(
+            reopened.claim_intent("auth", "scope", "one", Duration::from_secs(1)),
+            Err(JournalError::Conflict)
+        ));
+        assert_eq!(
+            reopened
+                .apply("auth", "scope", "one", 0, input(1, 1, 11))
+                .unwrap(),
+            receipt
+        );
         let next = reopened
             .apply("auth", "scope", "two", 1, input(2, 3, 11))
             .unwrap();
