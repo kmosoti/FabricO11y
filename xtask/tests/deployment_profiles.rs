@@ -1910,10 +1910,39 @@ fn snapshot_readback_survives_packaged_restart() {
     let baseline_ref = reference(&compare_a_id, &compare_a);
     let candidate_ref = reference(&compare_b_id, &compare_b);
     let bad_comparison_ref = reference(&bad_compare_id, &bad_compare);
+    let attempt_schema = "fabric.prior-failure.attempt-observation.v1";
+    let attempt_identity = json!({"attempt":"attempt-1","candidate":"candidate-1","intended_strategy":"strategy","actual_artifact":"artifact","diagnosis":"timeout"});
+    let attempt_body = json!({"schema":attempt_schema,"attempt":"attempt-1","candidate":"candidate-1","intended_strategy":"strategy","actual_artifact":"artifact","diagnosis":"timeout","state":"observed_failure"});
+    let attempt_id = report_id(116);
+    let attempt = record(
+        &mut adapter,
+        &attempt_id,
+        None,
+        attempt_schema,
+        &attempt_body,
+    );
+    let wrong_schema_id = report_id(117);
+    let mut wrong_schema_body = attempt_body.clone();
+    wrong_schema_body["schema"] = "example.case.v1".into();
+    let wrong_schema = record(
+        &mut adapter,
+        &wrong_schema_id,
+        None,
+        "example.case.v1",
+        &wrong_schema_body,
+    );
+    let attempt_request = json!({"command":"verify_attempt_observation", "reference":reference(&attempt_id, &attempt),
+        "expected_scope":{"origin":source.origin,"producer":"batch-fixture"},
+        "expected_original_artifact_digest":attempt["original_artifact_digest"],
+        "expected_identity":attempt_identity,"timeout_ms":30000});
+    let mut wrong_schema_request = attempt_request.clone();
+    wrong_schema_request["reference"] = reference(&wrong_schema_id, &wrong_schema);
+    wrong_schema_request["expected_original_artifact_digest"] =
+        wrong_schema["original_artifact_digest"].clone();
     until(
         "snapshot canonical handoff",
         Duration::from_secs(30),
-        || (source.health().canonical_through >= 17).then_some(()),
+        || (source.health().canonical_through >= 19).then_some(()),
     );
     adapter.kill_wait();
     server.kill_wait();
@@ -2008,6 +2037,42 @@ fn snapshot_readback_survives_packaged_restart() {
         bad.get("error").is_some() && bad.get("snapshot_comparison").is_none(),
         "{bad}"
     );
+    batch_send(&mut adapter, &attempt_request);
+    let verified = replies.recv_timeout(Duration::from_secs(35)).unwrap();
+    let observation = &verified["verified_attempt_observation"];
+    assert_eq!(observation["report_id"], attempt_id, "{verified}");
+    assert_eq!(observation["receipt"]["id"], attempt["receipt"]["id"]);
+    assert_eq!(observation["observation"], attempt_body);
+    for field in [
+        "scope",
+        "diagnosis",
+        "payload_digest",
+        "artifact_digest",
+        "source_id",
+        "schema",
+    ] {
+        let mut request = attempt_request.clone();
+        match field {
+            "scope" => request["expected_scope"]["producer"] = "other".into(),
+            "diagnosis" => request["expected_identity"]["diagnosis"] = "other".into(),
+            "payload_digest" => {
+                request["reference"]["payload_digest"]["hex"] = "f".repeat(64).into()
+            }
+            "artifact_digest" => {
+                request["expected_original_artifact_digest"]["hex"] = "f".repeat(64).into()
+            }
+            "source_id" => request["reference"]["expected_source_id"] = 999.into(),
+            "schema" => request = wrong_schema_request.clone(),
+            _ => unreachable!(),
+        }
+        batch_send(&mut adapter, &request);
+        let rejected = replies.recv_timeout(Duration::from_secs(35)).unwrap();
+        assert!(
+            rejected.get("error").is_some()
+                && rejected.get("verified_attempt_observation").is_none(),
+            "{field}: {rejected}"
+        );
+    }
     for id in [&bad_digest_id, &missing_id] {
         batch_send(
             &mut adapter,
@@ -2041,6 +2106,11 @@ fn snapshot_readback_survives_packaged_restart() {
     assert!(
         reply.get("error").is_some() && reply.get("verified_snapshot").is_none(),
         "{reply}"
+    );
+    batch_send(&mut wrong, &attempt_request);
+    let rejected = replies.recv_timeout(Duration::from_secs(35)).unwrap();
+    assert!(
+        rejected.get("error").is_some() && rejected.get("verified_attempt_observation").is_none()
     );
     wrong.kill_wait();
     server.kill_wait();

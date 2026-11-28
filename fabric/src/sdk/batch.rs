@@ -10,6 +10,7 @@ use crate::{
 use fabric_evidence::{
     ReportScope,
     application_result::{ApplicationPayloadDigest, ApplicationResult},
+    attempt_observation::{AttemptIdentity, AttemptObservation},
     durable_snapshot::{
         ApplicationReference, CaseEvidence, Cutoff, Definition, DurableSnapshot, Payload,
         read_case_measurement,
@@ -238,6 +239,17 @@ pub struct VerifiedSnapshotComparison {
     pub cases: BTreeMap<String, Observation>,
 }
 
+/// An authenticated receipt-bound report, not an independently verified failure.
+#[derive(Clone, Debug, Serialize)]
+pub struct VerifiedAttemptObservation {
+    pub report_id: String,
+    pub scope: ReportScope,
+    pub receipt: Receipt,
+    pub application_payload_digest: ApplicationPayloadDigest,
+    pub original_artifact_digest: OriginalArtifactDigest,
+    pub observation: AttemptObservation,
+}
+
 struct CanonicalReader {
     client: crate::query::Client,
     authority: String,
@@ -459,6 +471,47 @@ impl BatchClient {
             }
         }
         Ok(())
+    }
+
+    /// Read one expected observation through the owner receipt and configured Reader.
+    pub fn verify_attempt_observation(
+        &mut self,
+        reference: &ApplicationReference,
+        expected_scope: &ReportScope,
+        expected_original_artifact_digest: &OriginalArtifactDigest,
+        expected_identity: &AttemptIdentity,
+        timeout: Duration,
+    ) -> Result<VerifiedAttemptObservation, BatchError> {
+        if timeout.is_zero() || timeout > Duration::from_secs(30) || !expected_identity.validate() {
+            return Err(BatchError::Invalid(
+                "invalid attempt observation request".into(),
+            ));
+        }
+        let deadline = Instant::now()
+            .checked_add(timeout)
+            .ok_or_else(|| BatchError::Invalid("attempt timeout overflow".into()))?;
+        let (verified, receipt) =
+            self.verify_application_until(reference.report_id.as_str(), deadline)?;
+        if verified.result.scope() != expected_scope
+            || verified.result.application_payload_digest() != &reference.payload_digest
+            || verified.result.original_artifact_digest() != expected_original_artifact_digest
+            || reference
+                .expected_source_id
+                .is_some_and(|id| id.get() != receipt.id)
+        {
+            return Err(BatchError::MismatchedReceipt);
+        }
+        let observation = AttemptObservation::from_result(&verified.result, expected_identity)
+            .map_err(|_| BatchError::Invalid("invalid attempt observation".into()))?;
+        check_read_deadline(deadline)?;
+        Ok(VerifiedAttemptObservation {
+            report_id: verified.result.report_id().to_owned(),
+            scope: expected_scope.clone(),
+            receipt,
+            application_payload_digest: verified.result.application_payload_digest().clone(),
+            original_artifact_digest: verified.result.original_artifact_digest().clone(),
+            observation,
+        })
     }
 
     /// Compare two explicitly named verified boundaries under one total deadline.
@@ -985,6 +1038,13 @@ pub fn batch_adapter_reply(client: &mut BatchClient, bytes: &[u8]) -> serde_json
             candidate: ApplicationReference,
             timeout_ms: u64,
         },
+        VerifyAttemptObservation {
+            reference: ApplicationReference,
+            expected_scope: ReportScope,
+            expected_original_artifact_digest: OriginalArtifactDigest,
+            expected_identity: AttemptIdentity,
+            timeout_ms: u64,
+        },
         ReadApplicationParent {
             report_id: String,
         },
@@ -1114,6 +1174,22 @@ pub fn batch_adapter_reply(client: &mut BatchClient, bytes: &[u8]) -> serde_json
                 Err(error) => error_reply(error),
             }
         }
+        Ok(Command::VerifyAttemptObservation {
+            reference,
+            expected_scope,
+            expected_original_artifact_digest,
+            expected_identity,
+            timeout_ms,
+        }) => match client.verify_attempt_observation(
+            &reference,
+            &expected_scope,
+            &expected_original_artifact_digest,
+            &expected_identity,
+            Duration::from_millis(timeout_ms),
+        ) {
+            Ok(result) => serde_json::json!({"verified_attempt_observation":result}),
+            Err(error) => error_reply(error),
+        },
         Ok(Command::ReadApplicationParent { report_id }) => {
             match client.read_application_parent(&report_id) {
                 Ok(result) => serde_json::json!({"verified_parent":result}),

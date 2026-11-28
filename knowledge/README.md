@@ -56,6 +56,7 @@ TOML-native records without changing that cohort or its count.
 | [D-0203 · Bounded lexical rebuild](decisions/D-0203-bounded-lexical.md) | `agent` | `false` | Deterministic within-revision token adjacency with explicit limits |
 | [D-0202 · Portable corpus views](decisions/D-0202-portable-corpus.md) | `agent` | `false` | Bounded deterministic view transfer and availability claims |
 | [D-0201 · Explicit corpus as-of views](decisions/D-0201-corpus-as-of.md) | `agent` | `false` | Bounded frozen membership and conjunctive support claims |
+| [D-0348 · Receipt-bound reported attempts](decisions/D-0348-receipt-bound-attempts.md) | `agent` | `false` | Strict authenticated attempt readback and its limits |
 | [D-0200 · Frozen experiment snapshots](decisions/D-0200-frozen-snapshots.md) | `agent` | `false` | Fixed roster, explicit boundaries and missingness-aware comparisons |
 | [D-0270 · Conditional canonical plan acceptance](decisions/D-0270-conditional-plan-acceptance.md) | `agent` | `false` | Authenticated single-owner scope and atomic decision retry |
 | [D-0223 · Live cursor cadence](decisions/D-0223-live-cursor-cadence.md) | `agent` | `false` | Bounded opt-in Spindle polling |

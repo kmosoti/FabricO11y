@@ -410,6 +410,19 @@ boundary. A recognized malformed or mismatched measurement fails the comparison;
 other schemas do not supply a value. Results are observational and make no
 causal or statistical significance claim.
 
+The `verify_attempt_observation` batch command reads one confirmed report
+using an explicit `reference` (report ID, canonical payload digest and optional
+source ID), `expected_scope`, `expected_original_artifact_digest`,
+`expected_identity`, and `timeout_ms` (1–30000). The identity contains bounded
+`attempt`, `candidate`, `intended_strategy`, `actual_artifact`, and `diagnosis`
+strings. Only the strict `fabric.prior-failure.attempt-observation.v1` payload
+with state `observed_failure` is accepted, and every field must match the
+caller’s expectation. The response includes the receipt and reported
+observation. Authority comes from the configured Reader and local outbox; the
+original artifact digest is a bound report claim, not a rehash of unavailable
+original bytes. A reported observation does not establish cause, verifier
+execution, or an enforcement verdict.
+
 To verify a confirmed application at a canonical authority, start batch mode
 with `--canonical-reader ENDPOINT AUTHORITY CREDENTIAL_FILE` after the outbox
 argument. The endpoint must be loopback or an authenticated loopback tunnel;
