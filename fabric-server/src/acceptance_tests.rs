@@ -577,6 +577,7 @@ fn transaction_fixture() {
 
 #[test]
 fn segment_tickets_bind_real_reader_and_verified_resume() {
+    use std::os::unix::fs::MetadataExt;
     let scratch = std::env::var_os("TMPDIR").unwrap();
     let root = tempfile::tempdir_in(scratch).unwrap();
     let config = config(root.path());
@@ -610,7 +611,17 @@ fn segment_tickets_bind_real_reader_and_verified_resume() {
             .unwrap();
     let segment = &manifest["manifest"]["segments"][0];
     let digest = segment["digest"].as_str().unwrap().to_owned();
-    let bytes = fs::read(config.projection.join(segment["file"].as_str().unwrap())).unwrap();
+    let segment_path = config.projection.join(segment["file"].as_str().unwrap());
+    let bytes = fs::read(&segment_path).unwrap();
+    let initial = fs::metadata(&segment_path).unwrap();
+    let unchanged = || {
+        let current = fs::metadata(&segment_path).unwrap();
+        assert_eq!(
+            (current.dev(), current.ino()),
+            (initial.dev(), initial.ino())
+        );
+        assert_eq!(fs::read(&segment_path).unwrap(), bytes);
+    };
     let address = server.address();
     let stop = server.stop_handle();
     let task = thread::spawn(move || server.serve().unwrap());
@@ -658,6 +669,7 @@ fn segment_tickets_bind_real_reader_and_verified_resume() {
             matches!(resumed, Response::SegmentChunk { offset, bytes: b } if offset == split as u64 && b == bytes[split..split + len])
         );
     }
+    unchanged();
     let mut tampered = ticket.clone();
     tampered.digest = "b".repeat(64);
     assert!(matches!(
@@ -682,6 +694,16 @@ fn segment_tickets_bind_real_reader_and_verified_resume() {
     assert!(matches!(
         exchange(&address, READER, &read(ticket, 0, 1)),
         Response::Error { .. }
+    ));
+    unchanged();
+    let fresh_ticket = match exchange(&address, READER, &issue("origin")) {
+        Response::SegmentTicket { ticket } => ticket,
+        other => panic!("{other:?}"),
+    };
+    fs::remove_file(&segment_path).unwrap();
+    assert!(matches!(
+        exchange(&address, READER, &read(fresh_ticket, 0, 1)),
+        Response::Error { error } if error == "projection segment unavailable"
     ));
     stop.store(true, Ordering::SeqCst);
     task.join().unwrap();
