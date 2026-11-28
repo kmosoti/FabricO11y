@@ -865,10 +865,9 @@ fn local_live_metric_cursor_socket_profile() {
                 count: 64,
                 max_bytes: 32768,
             },
-        ) {
-            if page.entries.iter().any(|entry| entry.record_id == first_id) {
-                break page;
-            }
+        ) && page.entries.iter().any(|entry| entry.record_id == first_id)
+        {
+            break page;
         }
         assert!(Instant::now() < ready, "live cursor readiness deadline");
         thread::sleep(Duration::from_millis(20));
@@ -943,16 +942,15 @@ fn local_live_metric_cursor_socket_profile() {
                 count: 64,
                 max_bytes: 32768,
             },
-        ) {
-            if page.gap {
-                assert!(page.highest_lost > after);
-                assert_eq!(
-                    page.highest_lost_reason,
-                    Some(fabric_collect::live_cursor::LossReason::Evicted)
-                );
-                assert!(page.oldest_retained.is_some());
-                break;
-            }
+        ) && page.gap
+        {
+            assert!(page.highest_lost > after);
+            assert_eq!(
+                page.highest_lost_reason,
+                Some(fabric_collect::live_cursor::LossReason::Evicted)
+            );
+            assert!(page.oldest_retained.is_some());
+            break;
         }
         assert!(Instant::now() < deadline, "cursor wrap deadline");
         thread::sleep(Duration::from_millis(20));
