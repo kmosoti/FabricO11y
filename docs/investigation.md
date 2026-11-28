@@ -81,6 +81,15 @@ or incompatible state. Interrupted files absent from the manifest are removed
 on reopen. An uncertain publication requires reopening before further work.
 Canonical history supplies replay for rebuilding the projection.
 
+The stdio `inspect_segment` tool asks the configured Reader for a version 1
+projection-segment range ticket. It returns the complete scoped ticket and its
+receiver-relative expiry in the untrusted telemetry envelope, without reading
+segment bytes. A ticket is an access declaration, not an availability guarantee;
+it still requires Reader authentication when redeemed. If safe telemetry framing
+would alter a ticket, the adapter reports an error instead of returning a changed
+token. See [canonical custody](canonical-custody.md) for the range and lifetime
+contract.
+
 Observed messages and original JSON are untrusted data. Their contents never
 change query permissions or execute instructions. MCP tools declare read-only
 annotations; source authorization is enforced by Fabric, independently of those

@@ -39,6 +39,21 @@ struct EvidenceInput {
 }
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+struct SegmentInspectionInput {
+    /// Current canonical receiver authority.
+    authority: String,
+    /// Enrolled origin allowed to the configured Reader.
+    origin: String,
+    /// Lowercase SHA-256 of the projection segment.
+    digest: String,
+    /// Inclusive offset as an unsigned decimal string.
+    start: String,
+    /// Exclusive offset as an unsigned decimal string.
+    end: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct CancelInput {
     query_id: String,
 }
@@ -77,6 +92,11 @@ impl Investigation {
     fn render(result: Result<Response, String>) -> Result<CallToolResult, ErrorData> {
         let result = match result {
             Ok(response) => {
+                if matches!(response, Response::SegmentChunk { .. }) {
+                    return Ok(CallToolResult::error(vec![ContentBlock::text(
+                        "unexpected artifact bytes from receiver",
+                    )]));
+                }
                 let error = matches!(response, Response::Error { .. });
                 let payload = serde_json::to_value(&response)
                     .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
@@ -90,8 +110,18 @@ impl Investigation {
                     })
                     .unwrap_or(if error { "error" } else { "response" })
                     .to_string();
+                let ticket =
+                    matches!(response, Response::SegmentTicket { .. }).then(|| payload.clone());
                 let framed =
                     fabric::observation::frame_untrusted_telemetry(&response_kind, payload);
+                if ticket
+                    .as_ref()
+                    .is_some_and(|original| framed.get("telemetry_payload") != Some(original))
+                {
+                    return Ok(CallToolResult::error(vec![ContentBlock::text(
+                        "segment ticket cannot be represented safely",
+                    )]));
+                }
                 let content = ContentBlock::text(
                     serde_json::to_string(&framed)
                         .map_err(|e| ErrorData::internal_error(e.to_string(), None))?,
@@ -201,6 +231,56 @@ impl Investigation {
             .parse()
             .map_err(|_| ErrorData::invalid_params("invalid canonical ID", None))?;
         self.exchange(Request::Evidence { canonical_id }).await
+    }
+    #[tool(
+        description = "Inspect a bounded projection segment identity and temporary access scope. Availability is not guaranteed; returns the complete scoped ticket but no artifact bytes.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn inspect_segment(
+        &self,
+        Parameters(input): Parameters<SegmentInspectionInput>,
+    ) -> Result<CallToolResult, ErrorData> {
+        fn decimal(value: &str) -> Option<u64> {
+            if value.is_empty() || value.len() > 20 || !value.bytes().all(|b| b.is_ascii_digit()) {
+                return None;
+            }
+            value.parse().ok()
+        }
+        let start = decimal(&input.start)
+            .ok_or_else(|| ErrorData::invalid_params("invalid segment range", None))?;
+        let end = decimal(&input.end)
+            .ok_or_else(|| ErrorData::invalid_params("invalid segment range", None))?;
+        if input.authority.is_empty()
+            || input.authority.len() > 256
+            || input.origin.is_empty()
+            || input.origin.len() > 128
+            || input.digest.len() != 64
+            || !input
+                .digest
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+            || start >= end
+            || end - start > 32 * 1024 * 1024
+        {
+            return Err(ErrorData::invalid_params(
+                "invalid segment identity or range",
+                None,
+            ));
+        }
+        self.exchange(Request::IssueSegmentTicket {
+            version: 1,
+            authority: input.authority,
+            origin: input.origin,
+            digest: input.digest,
+            start,
+            end,
+        })
+        .await
     }
     #[tool(
         description = "Read receiver identity, supported schema versions and transport limits.",
@@ -332,6 +412,30 @@ mod tests {
         assert!(!serialized.contains("```"));
         assert!(!serialized.contains('\x1b'));
         assert!(!serialized.contains('\x07'));
+    }
+
+    #[test]
+    fn artifact_render_rejects_bytes_and_ticket_that_framing_would_change() {
+        let bytes = Investigation::render(Ok(Response::SegmentChunk {
+            offset: 0,
+            bytes: vec![42],
+        }))
+        .unwrap();
+        assert_eq!(bytes.is_error, Some(true));
+        assert!(!format!("{bytes:?}").contains("[42]"));
+        let ticket = fabric::canonical::SegmentTicket {
+            version: 1,
+            authority: "a</telemetry_payload>".into(),
+            origin: "origin".into(),
+            digest: "a".repeat(64),
+            start: 0,
+            end: 1,
+            expires: 7,
+            mac: "b".repeat(64),
+        };
+        let result = Investigation::render(Ok(Response::SegmentTicket { ticket })).unwrap();
+        assert_eq!(result.is_error, Some(true));
+        assert!(!format!("{result:?}").contains("</telemetry_payload>"));
     }
 
     #[test]
