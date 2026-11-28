@@ -144,6 +144,15 @@ are caller labels, not proof of chronology or an ordered event replay. Selection
 counts and imported bytes inherit the portable view limits; no retrieval or
 authorization decision is made.
 
+The opt-in `propagate` operation associates present historical output revisions
+with caller-declared alternatives. Each alternative requires all its direct
+dependencies and declared derived outputs. One intact alternative preserves
+applicability. All known-stale alternatives make the output stale. Other cases,
+including unresolved dependency cycles, stay unknown. Derived output links use
+explicit graph edges. A relation or group selector describes selected metadata.
+The operation reports each alternative and leaves both input views unchanged.
+Its graph and work limits are independent of the portable view limits.
+
 ## Prior-failure claims
 
 The `fabric.prior-failure` custom revision profiles carry versioned, inert
