@@ -12,6 +12,7 @@ pub mod parquet_guard;
 pub mod paths;
 pub mod restored_evidence;
 pub mod ring;
+pub mod worker_capture;
 
 pub use catalog::{CatalogStore, PersistedLiveState, SpindleProjectionFrontier};
 pub use janitor::{JanitorConfig, JanitorStats, RetentionJanitor};
@@ -25,3 +26,10 @@ pub use olap::{
 pub use parquet_guard::MAX_PARQUET_FOOTER_SERIALIZED_BYTES;
 pub use paths::{validate_non_tmp_path_on_disk, validated_storage_layout};
 pub use ring::{DEFAULT_RING_BUDGET_BYTES, HotMetricRing, RingStats};
+pub use worker_capture::{
+    ArchiveError as WorkerCaptureArchiveError, ArchiveReceipt as WorkerCaptureArchiveReceipt,
+    ArchiveReplay as WorkerCaptureArchiveReplay, AttemptKind as WorkerCaptureAttemptKind,
+    AttemptOutcome as WorkerCaptureAttemptOutcome, AttemptedEvent as WorkerCaptureAttemptedEvent,
+    MAX_WORKER_ARCHIVE_ATTEMPTS, MAX_WORKER_ARCHIVE_BYTES, MAX_WORKER_ARCHIVE_EVENT_BYTES,
+    replay_archive as replay_worker_capture_archive, write_archive as write_worker_capture_archive,
+};
