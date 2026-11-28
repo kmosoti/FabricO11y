@@ -1,5 +1,5 @@
 use fabric_app_core::{Change, Error, Event, MAX_PAGES, Phase, State};
-use fabric_query_contract::QueryRequest;
+use fabric_query_contract::{Operation, QueryRequest, RunKey};
 use serde_json::{Value, json};
 fn request() -> QueryRequest {
     serde_json::from_str(include_str!("../../fixtures/request.json")).unwrap()
@@ -182,5 +182,51 @@ fn invalid_authority_and_duplicate_scope_do_not_start() {
             expected_authority: "auth-1".into(),
         },
         Error::InvalidRequest,
+    );
+}
+
+#[test]
+fn run_summary_requires_a_matching_run_and_rejects_foreign_rows() {
+    let mut state = State::default();
+    let mut detail = request();
+    detail.operation = Operation::RunSummary;
+    unchanged(
+        &mut state,
+        Event::Start {
+            request: Box::new(detail.clone()),
+            expected_authority: "auth-1".into(),
+        },
+        Error::InvalidRequest,
+    );
+    detail.filter.run = Some(RunKey::Global {
+        run_id: "00000000-0000-4000-8000-000000000002".into(),
+    });
+    state
+        .transition(Event::Start {
+            request: Box::new(detail),
+            expected_authority: "auth-1".into(),
+        })
+        .unwrap();
+    let mut response = page();
+    response["coverage"]["complete"] = json!(true);
+    response["coverage"]["truncated"] = json!(false);
+    response["next_cursor"] = Value::Null;
+    unchanged(
+        &mut state,
+        Event::Response {
+            generation: 1,
+            bytes: encoded(&response),
+        },
+        Error::InvalidResponse,
+    );
+    let row = response["rows"][0].clone();
+    response["rows"] = json!([row.clone(), row]);
+    unchanged(
+        &mut state,
+        Event::Response {
+            generation: 1,
+            bytes: encoded(&response),
+        },
+        Error::RowLimit,
     );
 }

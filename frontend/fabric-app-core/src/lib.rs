@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-//! Pure, bounded ListRuns state. An adapter authenticates the peer, supplies the
+//! Pure, bounded ListRuns and RunSummary state. An adapter authenticates the peer, supplies the
 //! expected authority and bounds incoming bytes before allocating a response.
 use fabric_query_contract::{
     API_VERSION, Coverage, Operation, QueryRequest, QueryResponse, RunKey, RunSummary,
@@ -170,7 +170,12 @@ impl State {
                     || expected_authority.len() > 256
                     || expected_authority.contains('\0')
                     || request.authority.as_deref() != Some(expected_authority.as_str())
-                    || !matches!(request.operation, Operation::ListRuns)
+                    || !matches!(
+                        request.operation,
+                        Operation::ListRuns | Operation::RunSummary
+                    )
+                    || (matches!(request.operation, Operation::RunSummary)
+                        && request.filter.run.is_none())
                     || request.cursor.is_some()
                     || request.budgets.rows as usize > MAX_ROWS
                     || request.budgets.output_bytes as usize > MAX_RESPONSE_BYTES
@@ -221,6 +226,8 @@ impl State {
                     serde_json::from_slice(&bytes).map_err(|_| Error::InvalidResponse)?;
                 if response.rows.len() > pending.request.budgets.rows as usize
                     || response.rows.len() > MAX_ROWS
+                    || (matches!(pending.request.operation, Operation::RunSummary)
+                        && response.rows.len() > 1)
                 {
                     return Err(Error::RowLimit);
                 }
@@ -293,7 +300,10 @@ impl State {
                                 && valid_text(run_id, 128)
                         }
                     };
-                    if !valid {
+                    if !valid
+                        || (matches!(pending.request.operation, Operation::RunSummary)
+                            && pending.request.filter.run.as_ref() != Some(&row.run))
+                    {
                         return Err(Error::InvalidResponse);
                     }
                     if decoded[..index].iter().any(|prior| prior.run == row.run)
