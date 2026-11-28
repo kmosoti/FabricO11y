@@ -1,4 +1,5 @@
 //! Rebuildable, durable Parquet projection. Canonical custody remains in Fabric.
+pub mod transfer;
 pub mod unified;
 use arrow::{
     array::{Array, ArrayRef, StringArray, UInt64Array},
