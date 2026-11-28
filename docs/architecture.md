@@ -354,6 +354,18 @@ All collection and query execution obeys hard self-preservation limits:
   - `state/catalog.redb` + `state/live_state.json`: live entity registry, adjacency tables (`adj_out`/`adj_in`), unit hygiene records, watermarks (including `spindle_watermark_id`, persisted strictly **after** all OLAP Parquet domain flushes succeed), and recent anomalies.
   - `HotMetricRing` (in RAM, Sans-I/O in `fabric-core`): strictly capped at `32 MiB` with modular `wrapping` Gorilla delta-of-delta + XOR compression (preserving `labels_json`), buffer rollback on failed flush, and 60s Parquet flushes.
   - `olap/{metrics,logs,traces,fs_events,edges}/dt=YYYY-MM-DD/*.parquet`: ZSTD-compressed Arrow/Parquet partitions bounded by `RetentionJanitor` (`4 GiB` default cap, >7d downsampling).
+- **Finite worker-event replay archive (`fabric-store::worker_capture`):** A caller supplies an ordered finite transcript of segment and terminal attempts with exact-byte claims. The versioned `FWCA` v1 file is limited to `4 MiB`, `1,024` attempts, and `1 MiB` per event. Replay reopens one regular file without following symlinks, checks the caller-supplied expected physical digest and worker scope, then feeds attempts in order to the pure `WorkerSegmentVerifier`. It returns per-attempt outcomes and the verifier's completeness state; missing, malformed, unsupported-version, over-limit, digest, scope, and storage failures return typed errors without a completion result. Writes atomically replace the caller-selected filename, so callers must supply a dedicated caller-controlled archive directory. This finite local replay file is separate from the default telemetry storage tree: it does not capture a live stream, authenticate a producer, reserve space, establish custody, or act as a worker checkpoint.
+
+```mermaid
+flowchart LR
+    CALLER["Caller-supplied ordered attempts + per-event exact-byte claims"] --> WRITE["fabric-store::worker_capture::write_archive"]
+    WRITE -->|"FWCA v1 · atomic file replacement"| FILE["Dedicated caller-controlled directory"]
+    EXPECTED["Independently retained expected physical digest + scope"] --> REPLAY["replay_archive"]
+    FILE --> REPLAY
+    REPLAY --> PURE["Pure WorkerSegmentVerifier"]
+    PURE --> RESULT["Ordered outcomes + completeness, or typed refusal"]
+```
+
 - **Bounded staged Parquet compaction:** `fabric-store` writes a replacement to a new
   staging inode before changing validated inputs. The compaction output cap is
   `64 MiB`; it applies to the serialized replacement file, including its footer.
