@@ -165,3 +165,70 @@ async fn live_cursor_surfaces_daemon_error_and_rejects_wrong_version() {
     );
     task.await.unwrap();
 }
+
+#[tokio::test]
+async fn rejects_skipped_unseen_entries() {
+    let root = Scratch::new();
+    let socket = root.0.join("daemon.sock");
+    let listener = UnixListener::bind(&socket).unwrap();
+    let task = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let mut stream = BufReader::new(stream);
+        let mut line = String::new();
+        stream.read_line(&mut line).await.unwrap();
+        let reply = serde_json::json!({"kind":"live_metrics_v1","version":1,"origin":"origin","epoch":"a".repeat(64),"observed_through":10,"epoch_start_after":0,"oldest_retained":1,"highest_lost":0,"highest_lost_reason":null,"gap":false,"gap_reason":null,"next_after":10,"entries":[{"record_id":1,"point":{"timestamp_ms":0,"name":"m","value":1.0,"host":"h","slice":"s","unit":"u","pid":null,"labels_json":"{}"}}]});
+        stream
+            .get_mut()
+            .write_all(format!("{reply}\n").as_bytes())
+            .await
+            .unwrap();
+    });
+    assert!(
+        client(socket)
+            .try_query_live_metrics(&request())
+            .await
+            .unwrap_err()
+            .contains("invalid daemon live cursor response")
+    );
+    task.await.unwrap();
+}
+
+#[tokio::test]
+async fn cancelled_call_discards_inflight_connection() {
+    let root = Scratch::new();
+    let socket = root.0.join("daemon.sock");
+    let listener = UnixListener::bind(&socket).unwrap();
+    let (seen_tx, seen_rx) = tokio::sync::oneshot::channel();
+    let task = tokio::spawn(async move {
+        let (first, _) = listener.accept().await.unwrap();
+        let mut first = BufReader::new(first);
+        let mut line = String::new();
+        first.read_line(&mut line).await.unwrap();
+        seen_tx.send(()).unwrap();
+        let (second, _) = listener.accept().await.unwrap();
+        let mut second = BufReader::new(second);
+        line.clear();
+        second.read_line(&mut line).await.unwrap();
+        let reply = serde_json::json!({"kind":"live_metrics_v1","version":1,"origin":"origin","epoch":"a".repeat(64),"observed_through":0,"epoch_start_after":0,"oldest_retained":null,"highest_lost":0,"highest_lost_reason":null,"gap":false,"gap_reason":null,"next_after":0,"entries":[]});
+        second
+            .get_mut()
+            .write_all(format!("{reply}\n").as_bytes())
+            .await
+            .unwrap();
+    });
+    let c = client(socket);
+    let cloned = c.clone();
+    let call = tokio::spawn(async move { cloned.try_query_live_metrics(&request()).await });
+    seen_rx.await.unwrap();
+    call.abort();
+    let _ = call.await;
+    let page = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        c.try_query_live_metrics(&request()),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(page.next_after, 0);
+    task.await.unwrap();
+}
