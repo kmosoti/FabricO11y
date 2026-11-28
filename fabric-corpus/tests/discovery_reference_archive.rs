@@ -2,6 +2,8 @@
 use fabric_corpus::{
     Corpus, Kind, RevisionBody,
     as_of::AsOfView,
+    differential::Applicability,
+    handoff::{Continuation, Declaration, Handoff, Marker},
     portable::{Availability, AvailabilityClaim, PortableView},
 };
 use sha2::{Digest, Sha256};
@@ -164,6 +166,52 @@ fn archive_snapshot(text: &str) -> (Vec<u8>, [u8; 32]) {
     .export()
     .unwrap()
 }
+fn changed_snapshot(bytes: &[u8], digest: [u8; 32], missing: bool) -> (Vec<u8>, [u8; 32]) {
+    let original = PortableView::import(bytes, digest).unwrap();
+    let root = *original.view().revisions().keys().next().unwrap();
+    let view = if missing {
+        AsOfView::capture(
+            &Corpus::default(),
+            BTreeSet::from([root]),
+            BTreeSet::new(),
+            BTreeSet::new(),
+        )
+        .unwrap()
+    } else {
+        original.view().clone()
+    };
+    let claims = BTreeMap::from([(
+        root,
+        AvailabilityClaim {
+            archive: Availability::Exact,
+            current: Availability::Missing,
+        },
+    )]);
+    PortableView::new(view, claims).unwrap().export().unwrap()
+}
+fn bounded_bytes(path: &Path) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    fs::File::open(path)
+        .unwrap()
+        .take((MAX_ARCHIVE + 1) as u64)
+        .read_to_end(&mut bytes)
+        .unwrap();
+    assert!(bytes.len() <= MAX_ARCHIVE);
+    bytes
+}
+fn write_exact(dir: &Path, name: &str, bytes: &[u8]) {
+    assert!(bytes.len() <= MAX_ARCHIVE);
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(dir.join(name))
+        .unwrap();
+    file.write_all(bytes).unwrap();
+    file.sync_all().unwrap();
+    let mut permissions = file.metadata().unwrap().permissions();
+    permissions.set_readonly(true);
+    file.set_permissions(permissions).unwrap();
+}
 fn read_verified(path: &Path, expected: [u8; 32]) -> PortableView {
     let metadata = fs::metadata(path).unwrap();
     assert!(metadata.len() <= MAX_ARCHIVE as u64);
@@ -208,6 +256,81 @@ fn archive_worker() {
         texts.push(archived_text(&view).to_owned());
     }
     assert_eq!(texts, ["room", "full"]);
+    let original = bounded_bytes(&dir.join("0.bin"));
+    let basis = parse_hash(&env::var("FABRIC_REFERENCE_HASH_0").unwrap());
+    let root = parse_hash(&env::var("FABRIC_HANDOFF_ROOT").unwrap());
+    let policy = parse_hash(&env::var("FABRIC_HANDOFF_POLICY").unwrap());
+    let expected_handoff = parse_hash(&env::var("FABRIC_HANDOFF_DIGEST").unwrap());
+    let handoff_bytes = bounded_bytes(&dir.join("handoff.bin"));
+    let handoff = Handoff::import(
+        &handoff_bytes,
+        expected_handoff,
+        &original,
+        root,
+        policy,
+        basis,
+    )
+    .unwrap();
+    assert_eq!(
+        (
+            handoff.declaration().evidence_omission,
+            handoff.declaration().dissent,
+            handoff.declaration().continuation
+        ),
+        (Marker::Omitted, Marker::Unknown, Continuation::Unresolved)
+    );
+    assert!(
+        Handoff::import(
+            &handoff_bytes,
+            expected_handoff,
+            &original,
+            root,
+            [0; 32],
+            basis
+        )
+        .is_err()
+    );
+    assert!(
+        Handoff::import(
+            &handoff_bytes,
+            expected_handoff,
+            &original,
+            root,
+            policy,
+            [0; 32]
+        )
+        .is_err()
+    );
+    assert!(
+        Handoff::import(
+            &handoff_bytes,
+            expected_handoff,
+            &original,
+            [0; 32],
+            policy,
+            basis
+        )
+        .is_err()
+    );
+    let mut altered = handoff_bytes.clone();
+    altered[0] ^= 1;
+    assert!(Handoff::import(&altered, expected_handoff, &original, root, policy, basis).is_err());
+    let changed = bounded_bytes(&dir.join("changed.bin"));
+    let missing = bounded_bytes(&dir.join("missing.bin"));
+    let changed_digest = parse_hash(&env::var("FABRIC_CHANGED_DIGEST").unwrap());
+    let missing_digest = parse_hash(&env::var("FABRIC_MISSING_DIGEST").unwrap());
+    assert_eq!(
+        handoff.compare_current(&original, &changed, changed_digest, root, policy),
+        Ok(Applicability::Stale)
+    );
+    assert_eq!(
+        handoff.compare_current(&original, &missing, missing_digest, root, policy),
+        Ok(Applicability::Unknown)
+    );
+    assert_eq!(handoff.bytes(), handoff_bytes);
+    assert_eq!(handoff.digest(), expected_handoff);
+    println!("\nHANDOFF_REPLAY_OK");
+
     // libtest may print its progress prefix without a terminating newline.
     println!();
     for n in 0..ATTEMPTS {
@@ -254,6 +377,27 @@ fn scripted_consumers_replay_same_verified_portable_archive() {
         permissions.set_readonly(true);
         file.set_permissions(permissions).unwrap();
     }
+    let basis = PortableView::import(&snapshots[0].0, snapshots[0].1).unwrap();
+    let root = *basis.view().revisions().keys().next().unwrap();
+    let policy = [3; 32];
+    let declaration = Declaration {
+        basis_digest: snapshots[0].1,
+        root,
+        policy_id: policy,
+        revisions: BTreeSet::from([root]),
+        relations: BTreeSet::new(),
+        citations: vec![],
+        evidence_omission: Marker::Omitted,
+        dissent: Marker::Unknown,
+        continuation: Continuation::Unresolved,
+    };
+    let handoff =
+        Handoff::create(declaration, &snapshots[0].0, root, policy, snapshots[0].1).unwrap();
+    let changed = changed_snapshot(&snapshots[0].0, snapshots[0].1, false);
+    let missing = changed_snapshot(&snapshots[0].0, snapshots[0].1, true);
+    write_exact(&dir.0, "handoff.bin", handoff.bytes());
+    write_exact(&dir.0, "changed.bin", &changed.0);
+    write_exact(&dir.0, "missing.bin", &missing.0);
     let expected = std::array::from_fn(|i| {
         let view = PortableView::import(&snapshots[i].0, snapshots[i].1).unwrap();
         match archived_text(&view) {
@@ -281,7 +425,12 @@ fn scripted_consumers_replay_same_verified_portable_archive() {
             .env("FABRIC_REFERENCE_DIR", &dir.0)
             .env("FABRIC_REFERENCE_MODE", mode)
             .env("FABRIC_REFERENCE_HASH_0", hex(&snapshots[0].1))
-            .env("FABRIC_REFERENCE_HASH_1", hex(&snapshots[1].1));
+            .env("FABRIC_REFERENCE_HASH_1", hex(&snapshots[1].1))
+            .env("FABRIC_HANDOFF_ROOT", hex(&root))
+            .env("FABRIC_HANDOFF_POLICY", hex(&policy))
+            .env("FABRIC_HANDOFF_DIGEST", hex(&handoff.digest()))
+            .env("FABRIC_CHANGED_DIGEST", hex(&changed.1))
+            .env("FABRIC_MISSING_DIGEST", hex(&missing.1));
         let (status, stdout, stderr) = bounded_worker(command);
         assert!(
             status.success(),
@@ -289,6 +438,13 @@ fn scripted_consumers_replay_same_verified_portable_archive() {
             String::from_utf8_lossy(&stderr)
         );
         let stdout = String::from_utf8(stdout).unwrap();
+        assert_eq!(
+            stdout
+                .lines()
+                .filter(|line| *line == "HANDOFF_REPLAY_OK")
+                .count(),
+            1
+        );
         let rows = records(&stdout);
         assert_eq!(rows.len(), ATTEMPTS);
         let mut accepted = 0;
